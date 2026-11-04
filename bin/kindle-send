@@ -555,6 +555,33 @@ def run_setup():
     return 0
 
 
+HISTORY_SHOWN = 20
+ROUTE_LABELS = {"email": "Email", "usb": "USB"}
+RESULT_LABELS = {"sent": "Sent to Amazon", "copied": "Copied to Kindle"}
+
+
+def history_line(entry):
+    """`Nov 4 23:17 · Dune.epub · Email · Sent to Amazon`, in local time."""
+    when = entry_time(entry).astimezone()
+    stamp = f"{when:%b} {when.day} {when:%H:%M}"
+    route = ROUTE_LABELS.get(entry.get("route"), str(entry.get("route")))
+    result = RESULT_LABELS.get(entry.get("result"))
+    if result is None:
+        result = f"Failed: {entry['reason']}" if entry.get("reason") else "Failed"
+    return " · ".join([stamp, str(entry.get("name")), route, result])
+
+
+def show_history():
+    """Print the last 20 Sends, newest first."""
+    entries = [e for e in read_history() if entry_time(e) is not None]
+    entries.sort(key=entry_time, reverse=True)
+    if not entries:
+        print("No Sends yet.")
+    for entry in entries[:HISTORY_SHOWN]:
+        print(history_line(entry))
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="kindle-send")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -565,7 +592,11 @@ def main(argv=None):
     plan_parser = sub.add_parser("plan", help="classify Books for the Picker")
     plan_parser.add_argument("--folders", action="store_true", help="scan the Book folders")
     plan_parser.add_argument("files", nargs="*")
+    sub.add_parser("history", help="print the last 20 Sends")
     args = parser.parse_args(argv)
+
+    if args.command == "history":
+        return show_history()
 
     if args.command == "plan":
         plan(args.folders, args.files)

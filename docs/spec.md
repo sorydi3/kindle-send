@@ -209,7 +209,8 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 
 - `~/.local/state/kindle-send/history.jsonl`, one line per Book: `{"time","name","size","route","result","reason"?}`. Entries older than 90 days are dropped on write.
 - Same Book = same file name and size.
-- Used only for: the Picker's "sent N days ago" mark, the Send limit count, and `kindle-send history` (last 20, e.g. `Nov 4 23:17 · Dune.epub · Email · Sent to Amazon`).
+- Failed Sends are recorded too, but only successful ones (`sent` or `copied`) mark a Book as sent (`lastSent`) or count toward the Send limit (`sent` only).
+- Used only for: the Picker's "sent N days ago" mark, the Send limit count, and `kindle-send history` (last 20, newest first, local time, e.g. `Nov 4 23:17 · Dune.epub · Email · Sent to Amazon`; also `… · USB · Copied to Kindle` and `… · Email · Failed: <reason>`).
 - Re-sending needs no confirmation.
 
 ## 13. Failure reasons
