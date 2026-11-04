@@ -18,6 +18,7 @@ A spec ready to build from for a native omarchy-shell plugin that sends local Bo
 <!-- one line per resolved ticket: [title](issues/NN-slug.md): gist -->
 
 - [What can an omarchy-shell menu and service plugin do?](issues/03-plugin-api-facts.md): menu is free-form QML opened with a JSON payload; service runs processes and notifies via `notify-send`; settings live in `shell.json`; outside callers use `omarchy-shell shell summon` or a service `IpcHandler`.
+- [How can a script send Gmail mail and keep the app password safe on this machine?](issues/04-smtp-and-secrets-facts.md): Python `smtplib` over `smtp.gmail.com`; raw attachment ceiling about 25 MiB; app password in the already-running gnome-keyring via `secret-tool`, read by the send script, not QML.
 
 ## Not yet specified
 
