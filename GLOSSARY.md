@@ -21,3 +21,5 @@
 **Book folders**: the folders the picker looks in for Books. Books outside them are sent from the file manager instead.
 
 **Send limit**: the plugin's own cap on how often it emails the Kindle address, kept below Amazon's unpublished throttle. Books over the limit wait their turn.
+
+**Send history**: the record of Books already sent, with when, by which Route, and the result. Two files with the same name and size count as the same Book.
