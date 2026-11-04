@@ -21,10 +21,11 @@ A spec ready to build from for a native omarchy-shell plugin that sends local Bo
 - [How can a script send Gmail mail and keep the app password safe on this machine?](issues/04-smtp-and-secrets-facts.md): Python `smtplib` over `smtp.gmail.com`; raw attachment ceiling about 25 MiB; app password in the already-running gnome-keyring via `secret-tool`, read by the send script, not QML.
 - [What exactly does Amazon accept by email to a Kindle address?](issues/01-email-route-facts.md): EPUB/PDF/DOCX and more, 50 MB and 25 attachments per email (Gmail's ~25 MiB is the real ceiling); must rate-limit; no success email, failure-notice recipient unknown; email is the only scriptable route.
 - [How does a Kindle behave over USB on Linux?](issues/02-usb-route-facts.md): older Kindles mount as a drive (auto-mounted by udiskie), 2024 Kindles and Scribe use MTP (`gio`); copy into `documents/`; EPUB is not readable over USB, so it needs converting; detect by vendor id `1949`.
+- [How is the Route chosen for each Send?](issues/05-route-choice.md): automatic per Book (email if format and size allow, else USB), email preferred, user can override in the picker; USB without a Kindle becomes an in-memory Pending Send; one email per Book; no silent fallback on failure.
 
 ## Not yet specified
 
-- **Feedback and failure handling**: what the user sees while a Send runs and after it. The Email route can fail silently (Amazon rejects by replying to the sender), so what "success" means needs thought once the Routes are understood.
+- **Feedback and failure handling**: what the user sees while a Send runs and after it. The Email route can fail silently (Amazon rejects by replying to the sender), so what "success" means needs thought once the Routes are understood. Also: how Pending Sends are shown and whether they can be cancelled, and how the plugin stays under Amazon's send throttle.
 - **First-run setup**: how the Kindle address, Gmail account and app password get entered the first time.
 - **Send history**: whether to remember what was sent, and whether that's useful at all.
 - **Install and layout**: where the source lives, and how it's linked into the plugins folder (likely like window-restore).

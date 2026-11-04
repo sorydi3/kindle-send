@@ -11,3 +11,7 @@
 **Send**: one request to deliver one or more Books to the Kindle.
 
 **Route**: how a Send reaches the Kindle. Either **Email route** (attachment to the Kindle address) or **USB route** (copying onto the Kindle while it is plugged in).
+
+**Email limit**: the largest Book the Email route can carry. Set by Gmail, not Amazon.
+
+**Pending Send**: a Book whose USB Route is waiting for the Kindle to be plugged in. Forgotten if the shell restarts.
