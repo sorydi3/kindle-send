@@ -242,13 +242,126 @@ def error_text(error):
     return str(error) or type(error).__name__
 
 
+# Formats the USB Route takes (spec §5); EPUB after Conversion.
+USB_FORMATS = {"epub", "pdf", "txt", "azw3", "azw", "mobi", "prc", "kfx"}
+DEFAULT_BOOK_FOLDERS = ["~/Books", "~/Downloads"]
+
+
+def book_folders(settings):
+    folders = settings.get("bookFolders")
+    if not isinstance(folders, list) or not folders:
+        folders = DEFAULT_BOOK_FOLDERS
+    return [Path(os.path.expanduser(str(f))) for f in folders]
+
+
+SUBFOLDER_DEPTH = 3
+
+
+def supported(book):
+    fmt = book_format(book)
+    return fmt in EMAIL_MIME or fmt in USB_FORMATS
+
+
+def scan_folders(folders):
+    """Supported Books in the Book folders and up to 3 levels of subfolders, hidden folders skipped."""
+    books = []
+
+    def walk(folder, depth):
+        try:
+            entries = sorted(folder.iterdir())
+        except OSError:
+            return
+        for entry in entries:
+            if entry.is_dir():
+                if depth < SUBFOLDER_DEPTH and not entry.name.startswith("."):
+                    walk(entry, depth + 1)
+            elif entry.is_file() and supported(entry):
+                books.append(entry)
+
+    for folder in folders:
+        walk(folder, 0)
+    return books
+
+
+DEFAULT_ADVERTISED = 35_882_577
+EMAIL_OVERHEAD = 64 * 1024
+BASE64_GROWTH = 1.37
+
+
+def email_limit():
+    """Estimated largest Book the Email route takes, from the cached advertised size (spec §5)."""
+    try:
+        advertised = int(json.loads((state_dir() / "email-limit.json").read_text())["advertised"])
+    except (OSError, ValueError, KeyError, TypeError):
+        advertised = DEFAULT_ADVERTISED
+    return int((advertised - EMAIL_OVERHEAD) / BASE64_GROWTH)
+
+
+def choose_route(fmt, size, limit):
+    """Route rules 1 and 2: Email if the format and size allow it, otherwise USB."""
+    usb_ok = fmt in USB_FORMATS
+    if fmt not in EMAIL_MIME:
+        return {"route": "usb", "routeReason": f"{fmt.upper()} can't be sent by email.",
+                "emailOk": False, "usbOk": usb_ok}
+    if size > limit:
+        return {"route": "usb", "routeReason": f"Too big for email ({megabytes(size)} MB).",
+                "emailOk": False, "usbOk": usb_ok}
+    return {"route": "email", "routeReason": "", "emailOk": True, "usbOk": usb_ok}
+
+
+def last_sent(history):
+    """(name, size) -> time of the latest successful Send, from the Send history."""
+    latest = {}
+    for entry in history:
+        when = entry_time(entry)
+        if when is None or entry.get("result") not in ("sent", "copied"):
+            continue
+        key = (entry.get("name"), entry.get("size"))
+        if key not in latest or when >= latest[key][0]:
+            latest[key] = (when, entry["time"])
+    return {key: value[1] for key, value in latest.items()}
+
+
+def classify(book, limit, sent):
+    st = book.stat()
+    fmt = book_format(book)
+    return {"path": str(book), "name": book.name, "format": fmt, "size": st.st_size,
+            "mtime": int(st.st_mtime), **choose_route(fmt, st.st_size, limit),
+            "lastSent": sent.get((book.name, st.st_size))}
+
+
+def plan(folders_wanted, files):
+    """Classify Books for the Picker (spec §3), newest first."""
+    settings = load_settings()
+    missing = missing_settings(settings)
+    if missing:
+        emit({"setupNeeded": True, "missing": missing})
+    books = scan_folders(book_folders(settings)) if folders_wanted else []
+    books += [Path(f) for f in files if Path(f).is_file() and supported(Path(f))]
+    unique = {}
+    for book in books:
+        unique.setdefault(book.resolve(), book)
+    limit, sent = email_limit(), last_sent(read_history())
+    rows = [classify(book, limit, sent) for book in unique.values()]
+    rows.sort(key=lambda row: row["mtime"], reverse=True)
+    for row in rows:
+        emit(row)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="kindle-send")
     sub = parser.add_subparsers(dest="command", required=True)
     send = sub.add_parser("send", help="send one Book")
     send.add_argument("--route", choices=["email"], required=True)
     send.add_argument("file")
+    plan_parser = sub.add_parser("plan", help="classify Books for the Picker")
+    plan_parser.add_argument("--folders", action="store_true", help="scan the Book folders")
+    plan_parser.add_argument("files", nargs="*")
     args = parser.parse_args(argv)
+
+    if args.command == "plan":
+        plan(args.folders, args.files)
+        return 0
 
     if args.command == "send":
         book = Path(args.file)
