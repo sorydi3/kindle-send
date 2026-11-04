@@ -21,23 +21,46 @@ function progressAt(books, index) {
            body: (index + 1) + " of " + books.length + ": " + books[index].name }
 }
 
+const COPIED = "Copied to Kindle."
+const EJECTED = "Kindle ejected, safe to unplug."
+const EJECT_PLEASE = "Please eject the Kindle."
+
+// Eject once after the last USB Book of a Send, if any Book was copied.
+function needsEject(results) {
+  return results.some(function(r) { return r.result === "copied" })
+}
+
+// A progress stage line ("copying", …) of the Book at `index`, or null if it changes nothing.
+function stageAt(books, index, stage) {
+  if (stage !== "copying") return null
+  const body = books.length === 1 ? books[0].name : (index + 1) + " of " + books.length + ": " + books[index].name
+  return { headline: "Copying to Kindle…", body: body }
+}
+
 // results: [{ name, result: "sent"|"copied"|"failed", reason?, fixBySetup? }]
+// eject: the `kindle-send eject` line after the last USB Book, or null if there was none.
 // Returns { headline, body, urgency, setup } where setup means a click should open setup.
-function summary(results) {
+function summary(results, eject) {
   const failed = results.filter(function(r) { return r.result === "failed" })
   const setup = failed.some(function(r) { return r.fixBySetup === true })
-  const urgency = failed.length > 0 ? "critical" : "normal"
+  const ejectLine = eject ? (eject.ejected === true ? EJECTED : EJECT_PLEASE) : ""
+  // A Kindle still mounted needs the user, so that summary stays on screen too.
+  const urgency = failed.length > 0 || (eject && eject.ejected !== true) ? "critical" : "normal"
+  const done = function(r) { return r.result === "copied" ? COPIED : SENT }
+  const anySent = results.some(function(r) { return r.result === "sent" })
 
   if (results.length === 1) {
     const only = results[0]
     if (only.result === "failed") return { headline: "Couldn't send " + only.name, body: only.reason, urgency: urgency, setup: setup }
-    return { headline: only.name, body: SENT + " " + ARRIVES, urgency: urgency, setup: setup }
+    const tail = only.result === "copied" ? ejectLine : ARRIVES
+    return { headline: only.name, body: done(only) + (tail ? " " + tail : ""), urgency: urgency, setup: setup }
   }
 
   const lines = results.map(function(r) {
-    return r.name + ": " + (r.result === "failed" ? r.reason : SENT)
+    return r.name + ": " + (r.result === "failed" ? r.reason : done(r))
   })
-  if (failed.length < results.length) lines.push(ARRIVES)
+  if (anySent) lines.push(ARRIVES)
+  if (ejectLine) lines.push(ejectLine)
   const headline = failed.length === 0 ? "Sent " + plural(results.length, "Book")
     : failed.length === results.length ? "Couldn't send " + plural(results.length, "Book")
     : plural(failed.length, "Book") + " of " + results.length + " failed"

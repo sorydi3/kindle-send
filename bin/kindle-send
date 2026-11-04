@@ -351,6 +351,125 @@ def plan(folders_wanted, files):
         emit(row)
 
 
+# --- USB route (spec §7) ----------------------------------------------------
+
+
+KINDLE_VENDOR_ID = "1949"  # Amazon's USB vendor id
+
+
+def run_tool(argv):
+    """Run a system tool; (returncode, stdout, stderr), or (None, "", error) if it's missing."""
+    try:
+        out = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as error:
+        return None, "", str(error)
+    return out.returncode, out.stdout, out.stderr
+
+
+def usb_vendor(device):
+    code, out, _ = run_tool(["udevadm", "info", "--query=property", f"--name={device}"])
+    if code != 0:
+        return None
+    for line in out.splitlines():
+        key, _, value = line.partition("=")
+        if key == "ID_VENDOR_ID":
+            return value.strip().lower()
+    return None
+
+
+def find_kindle():
+    """The mounted Kindle as {"mount", "partition", "device"}, or None.
+
+    A mounted block device (whole disk or partition) whose USB vendor id is Amazon's.
+    """
+    code, out, _ = run_tool(["lsblk", "-J", "-l", "-o", "NAME,PATH,PKNAME,TYPE,MOUNTPOINTS"])
+    if code != 0:
+        return None
+    try:
+        devices = json.loads(out).get("blockdevices") or []
+    except (ValueError, AttributeError):
+        return None
+    for dev in devices:
+        mounts = [m for m in (dev.get("mountpoints") or []) if m and m.startswith("/")]
+        if not mounts or not dev.get("path") or usb_vendor(dev["path"]) != KINDLE_VENDOR_ID:
+            continue
+        parent = dev.get("pkname")
+        return {"mount": mounts[0], "partition": dev["path"],
+                "device": f"/dev/{parent}" if parent else dev["path"]}
+    return None
+
+
+def free_space(mount):
+    return shutil.disk_usage(mount).free
+
+
+def kindle_status():
+    kindle = find_kindle()
+    if kindle is None:
+        return {"present": False}
+    return {"present": True, "mount": kindle["mount"], "free": free_space(kindle["mount"])}
+
+
+def copy_to_kindle(source, mount):
+    """Copy `source` into documents/ under a temporary name, then rename and flush (spec §7)."""
+    documents = Path(mount) / "documents"
+    documents.mkdir(exist_ok=True)
+    part = documents / f".{source.name}.part"
+    try:
+        with open(source, "rb") as src, open(part, "wb") as dst:
+            shutil.copyfileobj(src, dst, 1024 * 1024)
+            dst.flush()
+            os.fsync(dst.fileno())
+        os.replace(part, documents / source.name)  # replaces a same-name file
+        fd = os.open(documents, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError as error:
+        with contextlib.suppress(OSError):
+            part.unlink()
+        raise SendFailed(f"Couldn't copy to the Kindle: {error.strerror or error}.") from None
+
+
+def eject():
+    """Unmount the Kindle and power it off (spec §7)."""
+    kindle = find_kindle()
+    if kindle is None:
+        return {"ejected": False, "reason": "Kindle not plugged in."}
+    for argv in (["udisksctl", "unmount", "-b", kindle["partition"]],
+                 ["udisksctl", "power-off", "-b", kindle["device"]]):
+        code, out, err = run_tool(argv)
+        if code != 0:
+            lines = [l.strip() for l in (err or out).splitlines() if l.strip()]
+            return {"ejected": False, "reason": lines[0] if lines else f"{argv[1]} failed."}
+    return {"ejected": True}
+
+
+def convert_for_usb(book, workdir):
+    """The AZW3 Conversion of an EPUB, written in `workdir` (spec §8). Not built yet (#23)."""
+    raise SendFailed("EPUB needs Conversion to go over USB, which isn't available yet. Send it by email.")
+
+
+def send_usb(book):
+    fmt = book_format(book)
+    if fmt not in USB_FORMATS:
+        raise SendFailed(f"{fmt.upper()} can't be read over USB. Send it by email.")
+    if not book.is_file():
+        raise SendFailed(f"File not found: {book.name}.")
+    kindle = find_kindle()
+    if kindle is None:
+        raise SendFailed("Kindle not plugged in. Plug it in and send again.")
+    with tempfile.TemporaryDirectory(prefix="kindle-send-") as workdir:
+        source = convert_for_usb(book, Path(workdir)) if fmt == "epub" else book
+        size = source.stat().st_size
+        if size > free_space(kindle["mount"]):
+            raise SendFailed(f"Not enough space on the Kindle (needs {megabytes(size)} MB).")
+        emit({"stage": "copying"})
+        copy_to_kindle(source, kindle["mount"])
+    return {"result": "copied"}
+
+
 # --- setup wizard (spec §9) -------------------------------------------------
 
 
@@ -559,13 +678,22 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="kindle-send")
     sub = parser.add_subparsers(dest="command", required=True)
     send = sub.add_parser("send", help="send one Book")
-    send.add_argument("--route", choices=["email"], required=True)
+    send.add_argument("--route", choices=["email", "usb"], required=True)
     send.add_argument("file")
     sub.add_parser("setup", help="interactive setup wizard (needs a terminal)")
     plan_parser = sub.add_parser("plan", help="classify Books for the Picker")
     plan_parser.add_argument("--folders", action="store_true", help="scan the Book folders")
     plan_parser.add_argument("files", nargs="*")
+    sub.add_parser("kindle", help="is the Kindle plugged in over USB?")
+    sub.add_parser("eject", help="unmount and power off the Kindle")
     args = parser.parse_args(argv)
+
+    if args.command == "kindle":
+        emit(kindle_status())
+        return 0
+    if args.command == "eject":
+        emit(eject())
+        return 0
 
     if args.command == "plan":
         plan(args.folders, args.files)
@@ -576,7 +704,7 @@ def main(argv=None):
     if args.command == "send":
         book = Path(args.file)
         try:
-            result = send_email(book)
+            result = send_usb(book) if args.route == "usb" else send_email(book)
         except SendFailed as failure:
             result = failure.result()
         record_send(book, args.route, result)
