@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+"""kindle-send: send local ebooks to a Kindle by email or USB.
+
+Standard library only. See docs/spec.md.
+"""
+import argparse
+import json
+import os
+import smtplib
+import subprocess
+import sys
+from datetime import datetime, timedelta
+from email.message import EmailMessage
+from pathlib import Path
+
+PLUGIN_ID = "sorydi3.kindle-send"
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = 465
+SMTP_TIMEOUT = 60
+
+# Formats Amazon accepts by email (spec §5), with the MIME type to attach them as.
+EMAIL_MIME = {
+    "epub": "application/epub+zip",
+    "pdf": "application/pdf",
+    "txt": "text/plain",
+    "doc": "application/msword",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "rtf": "application/rtf",
+    "html": "text/html",
+    "htm": "text/html",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "gif": "image/gif",
+    "bmp": "image/bmp",
+}
+
+
+def book_format(book):
+    """Lower-case extension without the dot, e.g. 'epub'."""
+    return Path(book).suffix.lower().lstrip(".")
+
+
+def emit(obj):
+    print(json.dumps(obj), flush=True)
+
+
+def shell_json_path():
+    override = os.environ.get("KINDLE_SEND_SHELL_JSON")
+    if override:
+        return Path(override)
+    config = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(config) / "omarchy" / "shell.json"
+
+
+def load_settings():
+    """The plugin's entry from shell.json, or {} if there is none."""
+    try:
+        data = json.loads(shell_json_path().read_text())
+    except (OSError, ValueError):
+        return {}
+    for entry in data.get("plugins", []) if isinstance(data, dict) else []:
+        if isinstance(entry, dict) and entry.get("id") == PLUGIN_ID:
+            return entry
+    return {}
+
+
+def lookup_password(sender):
+    """App password from the keyring via `secret-tool lookup`; None if missing or empty."""
+    try:
+        out = subprocess.run(
+            ["secret-tool", "lookup", "service", "kindle-send", "user", sender],
+            capture_output=True, text=True,
+        )
+    except OSError:
+        return None
+    password = out.stdout.rstrip("\n") if out.returncode == 0 else ""
+    return password or None
+
+
+def build_message(book, sender, kindle):
+    book = Path(book)
+    msg = EmailMessage()
+    msg["From"] = sender
+    msg["To"] = kindle
+    msg["Subject"] = book.stem
+    msg.set_content("Sent by kindle-send.")
+    maintype, subtype = EMAIL_MIME[book_format(book)].split("/")
+    msg.add_attachment(book.read_bytes(), maintype=maintype, subtype=subtype, filename=book.name)
+    return msg
+
+
+class SendFailed(Exception):
+    """A per-Book failure, reported as a result line rather than a crash."""
+
+    def __init__(self, reason, fix_by_setup=False):
+        super().__init__(reason)
+        self.reason = reason
+        self.fix_by_setup = fix_by_setup
+
+    def result(self):
+        line = {"result": "failed", "reason": self.reason}
+        if self.fix_by_setup:
+            line["fixBySetup"] = True
+        return line
+
+
+EMAIL_SETTINGS = ("kindleAddress", "senderAddress")
+
+
+def missing_settings(settings, required=EMAIL_SETTINGS):
+    """Names of required settings that are absent or blank, in a stable order."""
+    return [key for key in required if not str(settings.get(key) or "").strip()]
+
+
+def state_dir():
+    state = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(state) / "kindle-send"
+
+
+def save_email_limit(advertised):
+    """Cache Gmail's advertised size so `plan` can estimate the Email limit (spec §5)."""
+    path = state_dir() / "email-limit.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"advertised": advertised}) + "\n")
+
+
+HISTORY_DAYS = 90
+
+
+def history_path():
+    return state_dir() / "history.jsonl"
+
+
+def read_history():
+    """All Send history entries, oldest first. Unreadable lines are skipped."""
+    try:
+        lines = history_path().read_text().splitlines()
+    except OSError:
+        return []
+    entries = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries
+
+
+def entry_time(entry):
+    try:
+        when = datetime.fromisoformat(entry["time"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return when if when.tzinfo else when.astimezone()
+
+
+def record_send(book, route, result):
+    """Append one Book's result to the Send history, dropping entries older than 90 days."""
+    now = datetime.now().astimezone()
+    try:
+        size = book.stat().st_size
+    except OSError:
+        size = 0
+    entry = {"time": now.isoformat(timespec="seconds"), "name": book.name, "size": size,
+             "route": route, "result": result["result"]}
+    if "reason" in result:
+        entry["reason"] = result["reason"]
+    cutoff = now - timedelta(days=HISTORY_DAYS)
+    kept = [e for e in read_history() if (entry_time(e) or now) >= cutoff]
+    path = history_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text("".join(json.dumps(e) + "\n" for e in kept + [entry]))
+    os.replace(tmp, path)
+
+
+def send_email(book):
+    fmt = book_format(book)
+    if fmt not in EMAIL_MIME:
+        raise SendFailed(f"{fmt.upper()} can't be sent by email. Switch it to USB.")
+    if not book.is_file():
+        raise SendFailed(f"File not found: {book.name}.")
+    settings = load_settings()
+    missing = missing_settings(settings)
+    if missing:
+        raise SendFailed(f"Not set up: {', '.join(missing)} missing.", fix_by_setup=True)
+    sender, kindle = settings["senderAddress"], settings["kindleAddress"]
+    password = lookup_password(sender)
+    if not password:
+        raise SendFailed("No app password stored.", fix_by_setup=True)
+    emit({"stage": "sending"})
+    msg = build_message(book, sender, kindle)
+    too_big = SendFailed(f"Too big for email ({megabytes(book.stat().st_size)} MB). Switch it to USB.")
+    try:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
+            server.ehlo()
+            server.login(sender, password)
+            advertised = advertised_size(server)
+            if advertised:
+                save_email_limit(advertised)
+                if len(msg.as_bytes()) > advertised:
+                    raise too_big
+            server.send_message(msg)
+    except smtplib.SMTPAuthenticationError:
+        raise SendFailed("Gmail rejected the app password.", fix_by_setup=True) from None
+    except smtplib.SMTPResponseException as error:
+        if error.smtp_code == 552:
+            raise too_big from None
+        raise unreachable(error, password) from None
+    except (smtplib.SMTPException, OSError) as error:
+        raise unreachable(error, password) from None
+    return {"result": "sent"}
+
+
+def megabytes(size):
+    return max(1, round(size / 1_000_000))
+
+
+def advertised_size(server):
+    """Gmail's maximum message size from its EHLO SIZE line, or None."""
+    try:
+        return int(server.esmtp_features.get("size", "")) or None
+    except ValueError:
+        return None
+
+
+def unreachable(error, password):
+    # Never let the password leak into a reason, whatever the server echoes.
+    return SendFailed(f"Couldn't reach Gmail: {error_text(error).replace(password, '***')}.")
+
+
+def error_text(error):
+    """A short, password-free description of an SMTP or network error."""
+    if isinstance(error, smtplib.SMTPResponseException):
+        message = error.smtp_error
+        if isinstance(message, bytes):
+            message = message.decode("utf-8", "replace")
+        return f"{error.smtp_code} {message}".strip()
+    return str(error) or type(error).__name__
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="kindle-send")
+    sub = parser.add_subparsers(dest="command", required=True)
+    send = sub.add_parser("send", help="send one Book")
+    send.add_argument("--route", choices=["email"], required=True)
+    send.add_argument("file")
+    args = parser.parse_args(argv)
+
+    if args.command == "send":
+        book = Path(args.file)
+        try:
+            result = send_email(book)
+        except SendFailed as failure:
+            result = failure.result()
+        record_send(book, args.route, result)
+        emit(result)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
