@@ -223,3 +223,11 @@ def test_files_are_classified_and_unsupported_or_missing_ones_left_out(ks, home,
     _, lines = run(ks, capsys, "plan", str(pdf), str(cbz), str(tmp_path / "gone.epub"))
 
     assert [line["path"] for line in lines] == [str(pdf)]
+
+
+def test_files_with_spaces_and_non_ascii_names_are_planned(ks, home, set_up, capsys, tmp_path):
+    book = make_book(tmp_path / "Mes livres" / "L'Étranger — Camus.epub")
+
+    _, lines = run(ks, capsys, "plan", str(book))
+
+    assert [(line["path"], line["name"]) for line in lines] == [(str(book), "L'Étranger — Camus.epub")]
