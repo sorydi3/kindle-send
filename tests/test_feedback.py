@@ -84,6 +84,15 @@ def test_copying_stage_updates_the_notification():
     assert call("stageAt", books, 0, "sending") is None
 
 
+def test_converting_stage_names_the_book():
+    books = [{"name": "Dune.epub"}, {"name": "Atlas.pdf"}]
+
+    assert call("stageAt", books, 0, "converting") == {"headline": "Converting Dune.epub…",
+                                                       "body": "1 of 2"}
+    assert call("stageAt", books[:1], 0, "converting") == {"headline": "Converting Dune.epub…",
+                                                           "body": ""}
+
+
 @pytest.mark.parametrize("results, wanted", [
     ([{"result": "sent"}], False),
     ([{"result": "sent"}, {"result": "copied"}], True),

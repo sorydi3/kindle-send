@@ -447,9 +447,26 @@ def eject():
     return {"ejected": True}
 
 
+EBOOK_CONVERT = "ebook-convert"
+CONVERSION_TIMEOUT = 600
+
+
 def convert_for_usb(book, workdir):
-    """The AZW3 Conversion of an EPUB, written in `workdir` (spec §8). Not built yet (#23)."""
-    raise SendFailed("EPUB needs Conversion to go over USB, which isn't available yet. Send it by email.")
+    """The AZW3 Conversion of an EPUB, written in `workdir` (spec §8). The EPUB is only read."""
+    emit({"stage": "converting"})
+    target = workdir / f"{book.stem}.azw3"
+    try:
+        out = subprocess.run([EBOOK_CONVERT, str(book), str(target)],
+                             capture_output=True, text=True, timeout=CONVERSION_TIMEOUT)
+    except FileNotFoundError:
+        raise SendFailed("Install calibre to send EPUB over USB (sudo pacman -S calibre).") from None
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SendFailed(f"Couldn't convert: {error}.") from None
+    if out.returncode != 0 or not target.is_file():
+        first = next((l.strip() for l in out.stderr.splitlines() if l.strip()),
+                     f"ebook-convert exited with {out.returncode}")
+        raise SendFailed(f"Couldn't convert: {first.rstrip('.')}.")
+    return target
 
 
 def send_usb(book):

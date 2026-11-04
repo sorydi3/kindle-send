@@ -30,8 +30,12 @@ function needsEject(results) {
   return results.some(function(r) { return r.result === "copied" })
 }
 
-// A progress stage line ("copying", …) of the Book at `index`, or null if it changes nothing.
+// A progress stage line ("converting", "copying") of the Book at `index`, or null if it changes nothing.
 function stageAt(books, index, stage) {
+  if (stage === "converting") {
+    return { headline: "Converting " + books[index].name + "…",
+             body: books.length === 1 ? "" : (index + 1) + " of " + books.length }
+  }
   if (stage !== "copying") return null
   const body = books.length === 1 ? books[0].name : (index + 1) + " of " + books.length + ": " + books[index].name
   return { headline: "Copying to Kindle…", body: body }
