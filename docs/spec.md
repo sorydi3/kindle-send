@@ -188,7 +188,7 @@ On a rerun, current values are filled in, and `Enter` keeps each one (including 
 
 ## 10. Feedback ([#15](https://github.com/sorydi3/kindle-send/issues/15))
 
-All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` urgency, `--exec` on click); buttons through `notify-send -A`.
+All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` urgency, `--exec` on click). It defaults to low urgency; only critical notifications stay on screen. There are no notification buttons (the server draws none).
 
 - **One notification per Send, updated in place:** "Sending N Books…" → "Converting <Book>…" → "Copying to Kindle…" → summary.
 - **Summary**, one line per Book (a single sentence for one Book):
@@ -196,7 +196,7 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
   - USB: "Copied to Kindle." plus "Kindle ejected, safe to unplug" or "Please eject the Kindle."
 - **All fine:** normal urgency, disappears after a few seconds.
 - **Any failure:** critical, stays until dismissed, names each failed Book with its reason. If the reason is a missing setting or a rejected password, clicking runs setup.
-- **Pending Send:** a lasting notification "Waiting for Kindle: <Book>. Plug it in to send." with a **Cancel** button.
+- **Pending Send:** a lasting (critical) notification "Waiting for Kindle: <Book>. Plug it in to send. Click to manage." Omarchy's notification server draws no buttons, so clicking it opens the Picker, where `Delete` on the waiting line cancels.
 - **Send limit hold:** "Holding N Books to stay under Amazon's limit. Next in M min."
 
 ## 11. Send limit ([#15](https://github.com/sorydi3/kindle-send/issues/15), [#16](https://github.com/sorydi3/kindle-send/issues/16))
@@ -240,7 +240,7 @@ Modelled on `~/Projects/omarchy-window-restore/scripts/install.sh`.
 3. **Edit config, after asking for each edit, each backed up first and wrapped in `>>> kindle-send … >>>` / `<<< kindle-send <<<` markers:**
    - `~/.config/hypr/bindings.lua`: `SUPER + SHIFT + K` → `omarchy-shell shell toggle sorydi3.kindle-send`
    - `~/.config/omarchy/extensions/omarchy-menu.jsonc`: "Send to Kindle" (toggle the picker) and "Send to Kindle → Setup" (floating terminal running `kindle-send setup`)
-4. **Reload:** `omarchy-shell -q shell rescanPlugins`, `nautilus -q`.
+4. **Enable and reload:** `omarchy plugin enable sorydi3.kindle-send` (it has no bar widget, so nothing else enables it), `omarchy-shell -q shell rescanPlugins`, `nautilus -q`.
 5. **Finish:** offer to run `kindle-send setup`.
 
 Rerun install to update.
@@ -252,7 +252,7 @@ Rerun install to update.
 1. Fresh install on this machine: dependency check passes, config edits are asked about, the keybinding opens the Picker, and the Picker shows "Set up Send to Kindle".
 2. Setup stores settings in `shell.json` and the password in the keyring (non-empty), creates `~/Books`, and the test EPUB arrives on the Kindle.
 3. A small EPUB in `~/Downloads` shows Route Email. Sending it gives "Sent to Amazon…", it appears on the Kindle, and the Picker then marks it "sent just now".
-4. A PDF over the Email limit shows Route USB. With the Kindle unplugged, it becomes a Pending Send with a Cancel button. Plugging in copies it into `documents/`, ejects the Kindle, and it shows in the Kindle library.
+4. A PDF over the Email limit shows Route USB. With the Kindle unplugged, it becomes a Pending Send; clicking its notification opens the Picker, where `Delete` cancels. Plugging in copies it into `documents/`, ejects the Kindle, and it shows in the Kindle library.
 5. An EPUB switched to USB with `Tab` fails with the Calibre message when Calibre isn't installed, and converts and copies when it is.
 6. Nautilus: selecting a PDF and a CBZ and right-clicking shows "Send to Kindle". The Picker opens with just the PDF marked, and a notification lists the CBZ as unsupported. Right-clicking a folder shows no item.
 7. Sending 25 small Books by email: the first 20 go out at least 10 s apart, and the rest are held with a "Next in M min" notification.
