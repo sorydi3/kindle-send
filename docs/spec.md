@@ -223,7 +223,7 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 | App password missing or rejected | "Gmail rejected the app password." / "No app password stored." | yes |
 | Too big for email | "Too big for email (N MB). Switch it to USB." | no |
 | Format refused on USB | "<FORMAT> can't be read over USB. Send it by email." | no |
-| EPUB over USB, no Calibre | "Install calibre to send EPUB over USB." | no |
+| EPUB over USB, no Calibre | "Install calibre to send EPUB over USB (`sudo pacman -S calibre`)." | no |
 | Conversion failed | "Couldn't convert: <first line of error>." | no |
 | Not enough space on Kindle | "Not enough space on the Kindle (needs N MB)." | no |
 | Network or SMTP error | "Couldn't reach Gmail: <error>." | no |
