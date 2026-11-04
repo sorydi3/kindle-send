@@ -17,3 +17,5 @@
 **Pending Send**: a Book whose USB Route is waiting for the Kindle to be plugged in. Forgotten if the shell restarts.
 
 **Conversion**: making a Kindle-readable copy of a Book (EPUB to AZW3) so it can take the USB Route. The original Book is never changed.
+
+**Book folders**: the folders the picker looks in for Books. Books outside them are sent from the file manager instead.
