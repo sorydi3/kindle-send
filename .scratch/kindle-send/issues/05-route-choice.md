@@ -1,7 +1,7 @@
 # How is the Route chosen for each Send?
 
 Type: grilling
-Status: open
+Status: claimed
 Blocked by: 01, 02
 Parent: ../map.md
 
