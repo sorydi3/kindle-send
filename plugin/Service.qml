@@ -64,9 +64,23 @@ Item {
     root.results = root.results.concat([Feedback.resultFor(book, sender.lines, exitCode, sender.didStart)])
     root.bookIndex += 1
     if (root.bookIndex < send.books.length) { root.sendBook(); return }
-    const s = Feedback.summary(root.results)
+    // One eject after the last USB Book of the Send (spec §7).
+    if (Feedback.needsEject(root.results)) { root.startEject(); return }
+    root.finishSend(null)
+  }
+
+  function finishSend(eject) {
+    const send = root.current
+    const s = Feedback.summary(root.results, eject)
     root.notify(send.id, s.headline, s.body, s.urgency, s.setup ? root.setupCommand : [])
     root.startNext()
+  }
+
+  function showStage(line) {
+    const send = root.current
+    if (!send || !line || !line.stage) return
+    const p = Feedback.stageAt(send.books, root.bookIndex, line.stage)
+    if (p) root.notify(send.id, p.headline, p.body, "normal", [])
   }
 
   Process {
@@ -75,7 +89,10 @@ Item {
     property bool didStart: false
     stdout: SplitParser {
       onRead: function(line) {
-        try { sender.lines = sender.lines.concat([JSON.parse(line)]) } catch (e) {}
+        let v = null
+        try { v = JSON.parse(line) } catch (e) { return }
+        sender.lines = sender.lines.concat([v])
+        root.showStage(v)
       }
     }
     onStarted: didStart = true
@@ -83,6 +100,40 @@ Item {
     onRunningChanged: if (!running && !didStart && root.busy) root.bookDone(-1)
     // Deferred, so the next Book starts after this run has fully stopped.
     onExited: function(exitCode) { Qt.callLater(function() { root.bookDone(exitCode) }) }
+  }
+
+  // --- Eject ----------------------------------------------------------------
+
+  function startEject() {
+    ejector.done = false
+    ejector.didStart = false
+    ejector.running = true
+  }
+
+  // The last {"ejected": ...} line, or a failure if there was none.
+  function ejectDone(exitCode) {
+    if (ejector.done) return
+    ejector.done = true
+    let result = { ejected: false, reason: "kindle-send eject stopped without a result (exit " + exitCode + ")." }
+    const lines = ejectOut.text.split("\n")
+    for (let i = 0; i < lines.length; i++) {
+      try {
+        const v = JSON.parse(lines[i])
+        if (v && v.ejected !== undefined) result = v
+      } catch (e) {}
+    }
+    root.finishSend(result)
+  }
+
+  Process {
+    id: ejector
+    property bool didStart: false
+    property bool done: true
+    command: ["kindle-send", "eject"]
+    stdout: StdioCollector { id: ejectOut }
+    onStarted: didStart = true
+    onRunningChanged: if (!running && !didStart && !done) root.ejectDone(-1)
+    onExited: function(exitCode) { Qt.callLater(function() { root.ejectDone(exitCode) }) }
   }
 
   // --- Notifications ------------------------------------------------------
