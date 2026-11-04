@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "sorydi3.kindle-send",
+  "name": "Send to Kindle",
+  "version": "0.1.0",
+  "description": "Send ebooks to your Kindle by email or USB",
+  "kinds": ["menu", "service"],
+  "keepLoaded": true,
+  "entryPoints": { "menu": "Picker.qml", "service": "Service.qml" }
+}
