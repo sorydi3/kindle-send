@@ -50,17 +50,26 @@ def write_shell_json(home, **settings):
 
 
 class FakeKeyring:
-    """A fake `secret-tool` first on PATH. Logs its argv, prints the stored password."""
+    """A fake `secret-tool` first on PATH. Logs its argv, prints the stored password.
+
+    `secret-tool store` stands in for the user typing at its own prompt: it
+    stores whatever `will_type()` set (nothing, if it wasn't called).
+    """
 
     def __init__(self, tmp_path, monkeypatch):
         self.dir = tmp_path / "fakebin"
         self.dir.mkdir()
         self.store = tmp_path / "keyring-password"
+        self.typed = tmp_path / "keyring-typed"
         self.log = tmp_path / "secret-tool.log"
         tool = self.dir / "secret-tool"
         tool.write_text(
             "#!/bin/bash\n"
             f'echo "$@" >> "{self.log}"\n'
+            'if [ "$1" = store ]; then\n'
+            f'  [ -f "{self.typed}" ] && cp "{self.typed}" "{self.store}"\n'
+            "  exit 0\n"
+            "fi\n"
             f'[ -f "{self.store}" ] || exit 1\n'
             f'cat "{self.store}"\n'
         )
@@ -69,6 +78,12 @@ class FakeKeyring:
 
     def set_password(self, password):
         self.store.write_text(password)
+
+    def will_type(self, password):
+        self.typed.write_text(password)
+
+    def password(self):
+        return self.store.read_text() if self.store.exists() else None
 
     def calls(self):
         return self.log.read_text().splitlines() if self.log.exists() else []
