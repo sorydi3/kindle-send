@@ -147,3 +147,71 @@ def smtp(ks, monkeypatch):
     FakeSMTP.send_error = None
     monkeypatch.setattr(ks.smtplib, "SMTP_SSL", FakeSMTP)
     return FakeSMTP
+
+
+class FakeUsb:
+    """Fake `lsblk`, `udevadm` and `udisksctl` first on PATH, so no test sees a real drive.
+
+    `plug()` adds a mounted drive backed by a temp dir. `udisksctl` only logs its
+    argv; `fail_eject()` makes it exit 1 with an error on stderr.
+    """
+
+    def __init__(self, tmp_path, monkeypatch):
+        self.dir = tmp_path / "fakeusb"
+        self.dir.mkdir()
+        self.devices = []
+        self.lsblk_json = tmp_path / "lsblk.json"
+        self.vendor_dir = tmp_path / "vendors"
+        self.vendor_dir.mkdir()
+        self.log = tmp_path / "udisksctl.log"
+        self.eject_error = tmp_path / "udisksctl.error"
+        self._write()
+        self._tool("lsblk", f'cat "{self.lsblk_json}"\n')
+        self._tool(
+            "udevadm",
+            'for a in "$@"; do case "$a" in --name=*) dev="${a#--name=}";; esac; done\n'
+            f'f="{self.vendor_dir}/$(basename "$dev")"\n'
+            '[ -f "$f" ] || exit 1\n'
+            'echo "DEVNAME=$dev"\n'
+            'echo "ID_BUS=usb"\n'
+            'echo "ID_VENDOR_ID=$(cat "$f")"\n',
+        )
+        self._tool(
+            "udisksctl",
+            f'echo "$@" >> "{self.log}"\n'
+            f'if [ -f "{self.eject_error}" ]; then cat "{self.eject_error}" >&2; exit 1; fi\n',
+        )
+        monkeypatch.setenv("PATH", f"{self.dir}{os.pathsep}{os.environ['PATH']}")
+
+    def _tool(self, name, body):
+        tool = self.dir / name
+        tool.write_text("#!/bin/bash\n" + body)
+        tool.chmod(tool.stat().st_mode | stat.S_IEXEC)
+
+    def _write(self):
+        self.lsblk_json.write_text(json.dumps({"blockdevices": self.devices}))
+
+    def plug(self, mount, vendor="1949", disk="sdx", partition=None):
+        """A drive mounted at `mount`: the whole disk, or `partition` of it."""
+        mount.mkdir(parents=True, exist_ok=True)
+        self.devices.append({"name": disk, "path": f"/dev/{disk}", "pkname": None, "type": "disk",
+                             "mountpoints": [] if partition else [str(mount)]})
+        if partition:
+            self.devices.append({"name": partition, "path": f"/dev/{partition}", "pkname": disk,
+                                 "type": "part", "mountpoints": [str(mount)]})
+        for name in (disk, partition):
+            if name:
+                (self.vendor_dir / name).write_text(vendor)
+        self._write()
+        return mount
+
+    def fail_eject(self, message):
+        self.eject_error.write_text(message + "\n")
+
+    def calls(self):
+        return self.log.read_text().splitlines() if self.log.exists() else []
+
+
+@pytest.fixture
+def usb(tmp_path, monkeypatch, home):
+    return FakeUsb(tmp_path, monkeypatch)
