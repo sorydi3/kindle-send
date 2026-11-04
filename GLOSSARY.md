@@ -15,3 +15,5 @@
 **Email limit**: the largest Book the Email route can carry. Set by Gmail, not Amazon.
 
 **Pending Send**: a Book whose USB Route is waiting for the Kindle to be plugged in. Forgotten if the shell restarts.
+
+**Conversion**: making a Kindle-readable copy of a Book (EPUB to AZW3) so it can take the USB Route. The original Book is never changed.
