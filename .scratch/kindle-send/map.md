@@ -17,10 +17,11 @@ A spec ready to build from for a native omarchy-shell plugin that sends local Bo
 
 <!-- one line per resolved ticket: [title](issues/NN-slug.md): gist -->
 
+- [What can an omarchy-shell menu and service plugin do?](issues/03-plugin-api-facts.md): menu is free-form QML opened with a JSON payload; service runs processes and notifies via `notify-send`; settings live in `shell.json`; outside callers use `omarchy-shell shell summon` or a service `IpcHandler`.
+
 ## Not yet specified
 
 - **Feedback and failure handling**: what the user sees while a Send runs and after it. The Email route can fail silently (Amazon rejects by replying to the sender), so what "success" means needs thought once the Routes are understood.
-- **Nautilus right-click entry**: how it calls into the same sending code (script, extension, or a message to the plugin service). Depends on how the plugin exposes its sending.
 - **First-run setup**: how the Kindle address, Gmail account and app password get entered the first time.
 - **Send history**: whether to remember what was sent, and whether that's useful at all.
 - **Install and layout**: where the source lives, and how it's linked into the plugins folder (likely like window-restore).
