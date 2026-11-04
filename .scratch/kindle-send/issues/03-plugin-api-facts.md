@@ -1,7 +1,7 @@
 # What can an omarchy-shell menu and service plugin do?
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 Parent: ../map.md
 

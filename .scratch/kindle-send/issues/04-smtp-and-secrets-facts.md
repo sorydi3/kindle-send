@@ -1,7 +1,7 @@
 # How can a script send Gmail mail and keep the app password safe on this machine?
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 Parent: ../map.md
 

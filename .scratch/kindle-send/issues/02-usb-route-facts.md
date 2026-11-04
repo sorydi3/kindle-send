@@ -1,7 +1,7 @@
 # How does a Kindle behave over USB on Linux?
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 Parent: ../map.md
 

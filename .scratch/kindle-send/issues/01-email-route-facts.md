@@ -1,7 +1,7 @@
 # What exactly does Amazon accept by email to a Kindle address?
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 Parent: ../map.md
 
