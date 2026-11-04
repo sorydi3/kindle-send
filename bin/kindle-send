@@ -337,6 +337,10 @@ def plan(folders_wanted, files):
     """Classify Books for the Picker (spec §3), newest first."""
     settings = load_settings()
     missing = missing_settings(settings)
+    # Without a stored app password nothing can be emailed either (spec §9).
+    # Only its absence is reported, never the password itself.
+    if not missing and lookup_password(settings["senderAddress"]) is None:
+        missing = ["appPassword"]
     if missing:
         emit({"setupNeeded": True, "missing": missing})
     books = scan_folders(book_folders(settings)) if folders_wanted else []

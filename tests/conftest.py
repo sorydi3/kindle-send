@@ -36,6 +36,19 @@ def home(tmp_path, monkeypatch):
     return home
 
 
+@pytest.fixture(autouse=True)
+def no_real_keyring(tmp_path, monkeypatch):
+    """Every test gets an empty fake `secret-tool` first on PATH, so the real
+    keyring is never read, even by a test that forgot the `keyring` fixture.
+    The `keyring` fixture puts its own fake in front of this one."""
+    guard = tmp_path / "guardbin"
+    guard.mkdir()
+    tool = guard / "secret-tool"
+    tool.write_text("#!/bin/sh\nexit 1\n")
+    tool.chmod(tool.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", f"{guard}{os.pathsep}{os.environ['PATH']}")
+
+
 @pytest.fixture
 def ks(home):
     return load_script()
