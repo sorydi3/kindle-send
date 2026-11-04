@@ -4,11 +4,15 @@
 Standard library only. See docs/spec.md.
 """
 import argparse
+import contextlib
+import io
 import json
 import os
+import shutil
 import smtplib
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
@@ -244,7 +248,6 @@ def error_text(error):
 
 # Formats the USB Route takes (spec §5); EPUB after Conversion.
 USB_FORMATS = {"epub", "pdf", "txt", "azw3", "azw", "mobi", "prc", "kfx"}
-DEFAULT_BOOK_FOLDERS = ["~/Books", "~/Downloads"]
 
 
 def book_folders(settings):
@@ -348,12 +351,217 @@ def plan(folders_wanted, files):
         emit(row)
 
 
+# --- setup wizard (spec §9) -------------------------------------------------
+
+
+AMAZON_DEVICES_HELP = "https://www.amazon.com/mycd"
+APP_PASSWORDS_URL = "https://myaccount.google.com/apppasswords"
+DEFAULT_BOOK_FOLDERS = ["~/Books", "~/Downloads"]
+DEFAULT_LIMITS = {"minEmailGapSeconds": 10, "maxEmailsPerHour": 20}
+
+
+class SetupCancelled(Exception):
+    pass
+
+
+def ask(prompt, current=None):
+    """One line from the user; Enter keeps `current`. Never used for the password."""
+    shown = f"{prompt} [{current}]: " if current else f"{prompt}: "
+    while True:
+        try:
+            answer = input(shown).strip()
+        except (EOFError, KeyboardInterrupt):
+            raise SetupCancelled from None
+        if answer:
+            return answer
+        if current:
+            return current
+
+
+def ask_address(prompt, current):
+    while True:
+        address = ask(prompt, current)
+        if "@" in address and " " not in address:
+            return address
+        print("That doesn't look like an email address.")
+
+
+def ask_yes_no(prompt, default):
+    hint = "Y/n" if default else "y/N"
+    while True:
+        try:
+            answer = input(f"{prompt} [{hint}]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            raise SetupCancelled from None
+        if not answer:
+            return default
+        if answer in ("y", "yes", "n", "no"):
+            return answer.startswith("y")
+
+
+def store_password(sender):
+    """Let `secret-tool store` prompt in the terminal; the wizard never sees the password."""
+    while True:
+        print("Paste the app password at the prompt below (it isn't shown).")
+        try:
+            subprocess.run(["secret-tool", "store", "--label=kindle-send Gmail",
+                            "service", "kindle-send", "user", sender])
+        except OSError:
+            print("secret-tool is missing. Install libsecret, then run setup again.")
+            raise SetupCancelled from None
+        if lookup_password(sender):
+            print("App password stored in the keyring.")
+            return
+        print("Nothing was stored.")
+        try:
+            input("Press Enter to try again. ")
+        except (EOFError, KeyboardInterrupt):
+            raise SetupCancelled from None
+
+
+def password_step(sender):
+    print(f"\n3. Gmail app password. Create one at {APP_PASSWORDS_URL}")
+    print("   (needs 2-Step Verification on the Google account).")
+    if lookup_password(sender):
+        if not ask_yes_no("An app password is stored. Replace it?", False):
+            return
+    store_password(sender)
+
+
+def save_settings(updates):
+    """Merge `updates` into the plugin's entry in shell.json, keeping everything else."""
+    path = shell_json_path()
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        text = ""
+    try:
+        data = json.loads(text) if text.strip() else {}
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        print(f"{path} isn't valid JSON, so setup won't touch it. Fix it and run setup again.")
+        raise SetupCancelled
+    plugins = data.setdefault("plugins", [])
+    entry = next((p for p in plugins if isinstance(p, dict) and p.get("id") == PLUGIN_ID), None)
+    if entry is None:
+        entry = {"id": PLUGIN_ID}
+        plugins.append(entry)
+    for key, value in DEFAULT_LIMITS.items():
+        entry.setdefault(key, value)
+    entry.update(updates)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".kindle-send.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as out:
+        out.write(json.dumps(data, indent=2) + "\n")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def wizard():
+    current = load_settings()
+    print("Send to Kindle setup. Press Enter to keep the value in [brackets].\n")
+
+    print("1. Your Kindle's email address (…@kindle.com). Find it at")
+    print(f"   amazon.com → Manage Your Content and Devices → Devices: {AMAZON_DEVICES_HELP}")
+    kindle = ask_address("Kindle address", current.get("kindleAddress"))
+
+    print("\n2. The Gmail address to send from.")
+    sender = ask_address("Gmail address", current.get("senderAddress"))
+
+    password_step(sender)
+
+    print(f"\n4. Add {sender} to Amazon's Approved Personal Document Email List:")
+    print(f"   {AMAZON_DEVICES_HELP} → Preferences → Personal Document Settings.")
+    print("   Without this, Amazon silently drops every Book.")
+    try:
+        input("Press Enter when done. ")
+    except (EOFError, KeyboardInterrupt):
+        raise SetupCancelled from None
+
+    print("\n5. Book folders the Picker lists, separated by commas.")
+    folders = current.get("bookFolders") or DEFAULT_BOOK_FOLDERS
+    answer = ask("Book folders", ", ".join(folders))
+    folders = [f.strip() for f in answer.split(",") if f.strip()]
+
+    save_settings({"kindleAddress": kindle, "senderAddress": sender, "bookFolders": folders})
+    print(f"Settings saved to {shell_json_path()}.")
+
+    books = Path.home() / "Books"
+    if not books.is_dir():
+        books.mkdir(parents=True)
+        print(f"Created {books}.")
+
+    print("\n7. Test send.")
+    if ask_yes_no(f"Send a small test Book to {kindle} now?", True):
+        run_test_send(kindle)
+    print("\nSetup done.")
+
+
+TEST_BOOK_TITLE = "Kindle Send Test"
+
+
+def test_epub_path():
+    """The bundled test EPUB: $KINDLE_SEND_TEST_EPUB, else assets/test.epub beside bin/."""
+    override = os.environ.get("KINDLE_SEND_TEST_EPUB")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent.parent / "assets" / "test.epub"
+
+
+def run_test_send(kindle):
+    """Email the test EPUB, named after its title (the subject), then ask whether it arrived."""
+    with tempfile.TemporaryDirectory(prefix="kindle-send-") as tmp:
+        book = Path(tmp) / f"{TEST_BOOK_TITLE}.epub"
+        try:
+            shutil.copyfile(test_epub_path(), book)
+        except OSError as error:
+            print(f"Couldn't find the test Book ({error}). Reinstall kindle-send.")
+            return
+        print("Sending…")
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):  # no JSON progress lines here
+                result = send_email(book)
+        except SendFailed as failure:
+            result = failure.result()
+        record_send(book, "email", result)
+    if result["result"] != "sent":
+        print(f"The test send failed: {result['reason']}")
+        print("Fix that and run `kindle-send setup` again.")
+        return
+    print("Gmail accepted it. Amazon never confirms delivery, so check your Kindle.")
+    if ask_yes_no(f"Did '{TEST_BOOK_TITLE}' appear on your Kindle within a few minutes?", True):
+        print("Send to Kindle is ready.")
+        return
+    print("The usual causes:")
+    print("  - The Gmail address isn't on Amazon's Approved Personal Document Email List")
+    print(f"    ({AMAZON_DEVICES_HELP} → Preferences → Personal Document Settings).")
+    print(f"  - The Kindle address is wrong: check {kindle} against the one under")
+    print("    Manage Your Content and Devices → Devices.")
+    print("  - The Kindle is offline. It downloads the Book next time it's on Wi-Fi.")
+    print("Fix it and run `kindle-send setup` again.")
+
+
+def run_setup():
+    if not sys.stdin.isatty():
+        print("kindle-send setup needs a terminal. Run `kindle-send setup` in one.", file=sys.stderr)
+        return 1
+    try:
+        wizard()
+    except SetupCancelled:
+        print("\nSetup cancelled.")
+        return 1
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="kindle-send")
     sub = parser.add_subparsers(dest="command", required=True)
     send = sub.add_parser("send", help="send one Book")
     send.add_argument("--route", choices=["email"], required=True)
     send.add_argument("file")
+    sub.add_parser("setup", help="interactive setup wizard (needs a terminal)")
     plan_parser = sub.add_parser("plan", help="classify Books for the Picker")
     plan_parser.add_argument("--folders", action="store_true", help="scan the Book folders")
     plan_parser.add_argument("files", nargs="*")
@@ -362,6 +570,8 @@ def main(argv=None):
     if args.command == "plan":
         plan(args.folders, args.files)
         return 0
+    if args.command == "setup":
+        return run_setup()
 
     if args.command == "send":
         book = Path(args.file)
