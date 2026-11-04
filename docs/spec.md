@@ -77,6 +77,7 @@ All subcommands that the Service calls print **one JSON object per line** on std
 | `kindle-send limit` | Send limit state from the Send history: `{"canSendIn": seconds, "sentLastHour": N}`. |
 | `kindle-send setup` | Interactive wizard (Section 9). Needs a TTY. |
 | `kindle-send history` | Prints the last 20 Sends, human-readable. |
+| `kindle-send formats` | The supported formats (Section 5), lowercase without the dot: `{"formats": ["azw", ...]}`. The one list; the Nautilus extension reads it instead of keeping its own. |
 
 The Service keeps the ordering: it decides which Book goes next, waits for `limit`, and calls `eject` once after the last USB Book of a Send.
 
@@ -109,6 +110,7 @@ The Service keeps the ordering: it decides which Book goes next, waits for `limi
 - It appears only when at least one selected item is a file with a supported extension. Folders never get it.
 - It runs `omarchy-shell shell summon sorydi3.kindle-send '{"files": [...]}'` with the supported files. The Picker opens listing **only those files, already marked**; Routes and `Tab` work as usual.
 - Unsupported files in a mixed selection are left out, and a notification lists them.
+- The extension asks `kindle-send formats` once per Nautilus process for the supported extensions, so the format list lives only in `kindle-send`. Without `kindle-send` on `PATH` there is no item. Commands are argv lists, never a shell, so names with spaces or non-ASCII characters pass through unchanged.
 
 ## 5. Routes ([#6](https://github.com/sorydi3/kindle-send/issues/6), [#7](https://github.com/sorydi3/kindle-send/issues/7))
 
@@ -209,7 +211,8 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 
 - `~/.local/state/kindle-send/history.jsonl`, one line per Book: `{"time","name","size","route","result","reason"?}`. Entries older than 90 days are dropped on write.
 - Same Book = same file name and size.
-- Used only for: the Picker's "sent N days ago" mark, the Send limit count, and `kindle-send history` (last 20, e.g. `Nov 4 23:17 · Dune.epub · Email · Sent to Amazon`).
+- Failed Sends are recorded too, but only successful ones (`sent` or `copied`) mark a Book as sent (`lastSent`) or count toward the Send limit (`sent` only).
+- Used only for: the Picker's "sent N days ago" mark, the Send limit count, and `kindle-send history` (last 20, newest first, local time, e.g. `Nov 4 23:17 · Dune.epub · Email · Sent to Amazon`; also `… · USB · Copied to Kindle` and `… · Email · Failed: <reason>`).
 - Re-sending needs no confirmation.
 
 ## 13. Failure reasons

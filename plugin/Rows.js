@@ -82,3 +82,27 @@ function foldersFromShellJson(text) {
 function emptyMessage(folders) {
   return "No Books found in " + folders.join(", ")
 }
+
+// --- Payload mode (spec §4): the Nautilus extension summons {"files": [...]} ---
+
+// The files a summon asked for; [] for a bind's "{}" or anything unreadable.
+function payloadFiles(payloadJson) {
+  try {
+    const p = JSON.parse(payloadJson || "{}")
+    if (p && Array.isArray(p.files))
+      return p.files.filter(function(f) { return typeof f === "string" && f !== "" })
+  } catch (e) {}
+  return []
+}
+
+// With files, plan just those; otherwise scan the Book folders.
+function planCommand(files) {
+  return files.length > 0 ? ["kindle-send", "plan"].concat(files) : ["kindle-send", "plan", "--folders"]
+}
+
+// Every Book of a payload starts marked.
+function allMarked(books) {
+  const marked = {}
+  for (let i = 0; i < books.length; i++) marked[books[i].path] = true
+  return marked
+}
