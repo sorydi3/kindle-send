@@ -27,6 +27,9 @@ Item {
   property string filterText: ""
   property int selectedIndex: 0
   property var bookFolders: Rows.DEFAULT_FOLDERS
+  // Files from a Nautilus summon ({"files": [...]}); empty means the Book folders.
+  property var payloadFiles: []
+  readonly property bool payloadMode: payloadFiles.length > 0
 
   readonly property int rowHeight: Style.space(54)
   readonly property string shellJson: {
@@ -50,6 +53,7 @@ Item {
     root.books = []
     root.failure = ""
     root.setupNeeded = false
+    root.payloadFiles = Rows.payloadFiles(payloadJson)
     root.list()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -66,6 +70,8 @@ Item {
     root.loading = true
     planner.lines = []
     planner.didStart = false
+    // close() stops the planner, so it is idle here and picks up the new command.
+    planner.command = Rows.planCommand(root.payloadFiles)
     if (!planner.running) planner.running = true
     responseTimer.restart()
   }
@@ -77,6 +83,7 @@ Item {
     const parsed = Rows.fromPlan(planner.lines)
     root.setupNeeded = parsed.setupNeeded
     root.books = parsed.books
+    if (root.payloadMode) root.marked = Rows.allMarked(parsed.books)
     if (exitCode !== 0 && parsed.books.length === 0 && !parsed.setupNeeded)
       root.failure = "kindle-send plan failed (exit " + exitCode + ")."
   }
@@ -85,7 +92,7 @@ Item {
     id: planner
     property var lines: []
     property bool didStart: false
-    command: ["kindle-send", "plan", "--folders"]
+    command: Rows.planCommand([])
     stdout: SplitParser {
       onRead: function(line) {
         try { planner.lines = planner.lines.concat([JSON.parse(line)]) } catch (e) {}
@@ -383,6 +390,7 @@ Item {
             textFormat: Text.PlainText
             text: root.setupNeeded ? "Set up Send to Kindle"
               : root.failure ? root.failure
+              : root.books.length === 0 && root.payloadMode ? "None of these files can be sent to a Kindle."
               : root.books.length === 0 ? Rows.emptyMessage(root.bookFolders)
               : "No matches for “" + root.filterText + "”"
             color: Color.menu.text
@@ -395,7 +403,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
-            visible: root.setupNeeded || (!root.failure && root.books.length === 0)
+            visible: root.setupNeeded || (!root.failure && !root.payloadMode && root.books.length === 0)
             text: root.setupNeeded ? "Enter  Start setup      Esc  Close"
               : "To search other folders, rerun setup: kindle-send setup"
             color: Color.menu.text

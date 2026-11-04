@@ -593,10 +593,15 @@ def main(argv=None):
     plan_parser.add_argument("--folders", action="store_true", help="scan the Book folders")
     plan_parser.add_argument("files", nargs="*")
     sub.add_parser("history", help="print the last 20 Sends")
+    sub.add_parser("formats", help="list the supported formats (read by the Nautilus extension)")
     args = parser.parse_args(argv)
 
     if args.command == "history":
         return show_history()
+
+    if args.command == "formats":
+        emit({"formats": sorted(set(EMAIL_MIME) | USB_FORMATS)})
+        return 0
 
     if args.command == "plan":
         plan(args.folders, args.files)
