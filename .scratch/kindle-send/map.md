@@ -19,6 +19,7 @@ A spec ready to build from for a native omarchy-shell plugin that sends local Bo
 
 - [What can an omarchy-shell menu and service plugin do?](issues/03-plugin-api-facts.md): menu is free-form QML opened with a JSON payload; service runs processes and notifies via `notify-send`; settings live in `shell.json`; outside callers use `omarchy-shell shell summon` or a service `IpcHandler`.
 - [How can a script send Gmail mail and keep the app password safe on this machine?](issues/04-smtp-and-secrets-facts.md): Python `smtplib` over `smtp.gmail.com`; raw attachment ceiling about 25 MiB; app password in the already-running gnome-keyring via `secret-tool`, read by the send script, not QML.
+- [What exactly does Amazon accept by email to a Kindle address?](issues/01-email-route-facts.md): EPUB/PDF/DOCX and more, 50 MB and 25 attachments per email (Gmail's ~25 MiB is the real ceiling); must rate-limit; no success email, failure-notice recipient unknown; email is the only scriptable route.
 
 ## Not yet specified
 
