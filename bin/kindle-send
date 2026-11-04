@@ -7,13 +7,14 @@ import argparse
 import contextlib
 import io
 import json
+import math
 import os
 import shutil
 import smtplib
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -582,6 +583,40 @@ def show_history():
     return 0
 
 
+def now():
+    return datetime.now(timezone.utc)
+
+
+def limit_settings():
+    """(minEmailGapSeconds, maxEmailsPerHour) from settings; defaults for absent or unusable values."""
+    settings = load_settings()
+
+    def number(name, lowest):
+        value = settings.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < lowest:
+            return DEFAULT_LIMITS[name]
+        return value
+
+    return number("minEmailGapSeconds", 0), int(number("maxEmailsPerHour", 1))
+
+
+def send_limit():
+    """`kindle-send limit`: when the next email may go (spec §11)."""
+    gap, per_hour = limit_settings()
+    current = now()
+    emails = [e for e in read_history() if e.get("route") == "email" and e.get("result") == "sent"]
+    times = sorted(t for t in map(entry_time, emails) if t is not None)
+    ages = [(current - t).total_seconds() for t in times]
+    last_hour = [a for a in ages if a < 3600]
+    waits = [0] + [gap - a for a in ages[-1:]]
+    if len(last_hour) >= per_hour:
+        # The next may go once enough of the hour's emails are over an hour old.
+        waits.append(3600 - last_hour[len(last_hour) - per_hour])
+    wait = max(waits)
+    emit({"canSendIn": math.ceil(wait), "sentLastHour": len(last_hour), "maxEmailsPerHour": per_hour})
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="kindle-send")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -593,10 +628,13 @@ def main(argv=None):
     plan_parser.add_argument("--folders", action="store_true", help="scan the Book folders")
     plan_parser.add_argument("files", nargs="*")
     sub.add_parser("history", help="print the last 20 Sends")
+    sub.add_parser("limit", help="when the next email may go")
     args = parser.parse_args(argv)
 
     if args.command == "history":
         return show_history()
+    if args.command == "limit":
+        return send_limit()
 
     if args.command == "plan":
         plan(args.folders, args.files)

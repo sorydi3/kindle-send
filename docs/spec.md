@@ -74,7 +74,7 @@ All subcommands that the Service calls print **one JSON object per line** on std
 | `kindle-send send --route email\|usb FILE` | Send **one** Book by the given Route. Progress lines `{"stage": "converting"\|"sending"\|"copying"}` then one result line `{"result": "sent"\|"copied"\|"failed", "reason"?: "...", "fixBySetup"?: true}`. Writes the Send history. |
 | `kindle-send kindle` | Kindle detection: `{"present": true, "mount": "...", "free": N}` or `{"present": false}`. |
 | `kindle-send eject` | Unmount and power off the Kindle: `{"ejected": true}` or `{"ejected": false, "reason": "..."}`. |
-| `kindle-send limit` | Send limit state from the Send history: `{"canSendIn": seconds, "sentLastHour": N}`. |
+| `kindle-send limit` | Send limit state from the Send history: `{"canSendIn": seconds, "sentLastHour": N, "maxEmailsPerHour": N}` (only `sent` email entries count; `maxEmailsPerHour` tells the Service whether a wait is the gap or the hourly cap). |
 | `kindle-send setup` | Interactive wizard (Section 9). Needs a TTY. |
 | `kindle-send history` | Prints the last 20 Sends, human-readable. |
 
