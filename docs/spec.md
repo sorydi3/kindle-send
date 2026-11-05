@@ -223,7 +223,7 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 
 ## 12. Send history ([#16](https://github.com/sorydi3/kindle-send/issues/16))
 
-- `~/.local/state/kindle-send/history.jsonl`, one line per Book: `{"time","name","size","route","result","reason"?}`. Entries older than 90 days are dropped on write.
+- `~/.local/state/kindle-send/history.jsonl`, one line per Book: `{"time","name","size","route","result","reason"?}`. Entries older than 90 days are dropped on write. A USB Book that finds no Kindle gets no line: it becomes a Pending Send and is recorded when it is copied or fails for another reason. A cancelled Pending Send leaves no line.
 - Same Book = same file name and size.
 - Failed Sends are recorded too, but only successful ones (`sent` or `copied`) mark a Book as sent (`lastSent`) or count toward the Send limit (`sent` only).
 - Used only for: the Picker's "sent N days ago" mark, the Send limit count, and `kindle-send history` (last 20, newest first, local time, e.g. `Nov 4 23:17 · Dune.epub · Email · Sent to Amazon`; also `… · USB · Copied to Kindle` and `… · Email · Failed: <reason>`).

@@ -67,13 +67,14 @@ def test_usb_send_creates_documents_if_missing(ks, usb, tmp_path, capsys):
     assert (kindle / "documents" / "notes.txt").read_bytes() == b"book"
 
 
-def test_usb_send_without_a_kindle_fails_before_copying(ks, usb, tmp_path, capsys):
+def test_usb_send_without_a_kindle_fails_before_copying_and_leaves_no_history(ks, usb, tmp_path, capsys):
     book = make_book(tmp_path, "Atlas.pdf")
 
     _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
 
     assert lines == [{"result": "failed", "reason": "Kindle not plugged in. Plug it in and send again."}]
-    assert ks.read_history()[-1]["result"] == "failed"
+    # The Service makes it a Pending Send; it is recorded once it is copied (or fails for another reason).
+    assert ks.read_history() == []
 
 
 def test_usb_send_refuses_formats_the_kindle_cant_read(ks, usb, tmp_path, capsys):

@@ -110,6 +110,14 @@ class SendFailed(Exception):
         return line
 
 
+class NoKindle(SendFailed):
+    """No Kindle plugged in. The Service holds the Book as a Pending Send, so it
+    isn't written to the Send history until it really goes."""
+
+    def __init__(self):
+        super().__init__("Kindle not plugged in. Plug it in and send again.")
+
+
 EMAIL_SETTINGS = ("kindleAddress", "senderAddress")
 
 
@@ -502,7 +510,7 @@ def send_usb(book):
     fmt = sendable(book, USB_FORMATS, "{FMT} can't be read over USB. Send it by email.")
     kindle = find_kindle()
     if kindle is None:
-        raise SendFailed("Kindle not plugged in. Plug it in and send again.")
+        raise NoKindle()
     with tempfile.TemporaryDirectory(prefix="kindle-send-") as workdir:
         source = convert_for_usb(book, Path(workdir)) if fmt == "epub" else book
         size = source.stat().st_size
@@ -841,6 +849,9 @@ def main(argv=None):
         book = Path(args.file)
         try:
             result = send_usb(book) if args.route == "usb" else send_email(book)
+        except NoKindle as failure:
+            emit(failure.result())
+            return 0
         except SendFailed as failure:
             result = failure.result()
         record_send(book, args.route, result)
