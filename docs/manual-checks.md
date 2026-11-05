@@ -73,7 +73,8 @@ Run from the menu: Send to Kindle → Setup. It should open a floating terminal.
 Uses real email to your own Kindle, so 20 deliveries. If you'd rather not, lower `maxEmailsPerHour` to 3 in `shell.json` for the test, and put it back after.
 
 - [ ] Mark 25 small Books and send them. Emails go out at least 10 s apart (check the times with `kindle-send history`).
-- [ ] After the 20th (or the cap you set), the rest are held, with "Holding N Books to stay under Amazon's limit. Next in M min."
+- [ ] After the 20th (or the cap you set), the rest are held, with "Holding N Books to stay under Amazon's limit. Next in M min." The notice stays on screen (critical), its count drops as held Books go, and it ends as the summary of the held Books.
+- [ ] While Books are held, send a Book by USB: it goes at once, its own notification shows progress, and the hold notice is left alone.
 - [ ] Known limit: held Books are lost if the shell restarts. Not a failure.
 
 ## 8. Wrong app password (§15.8)
@@ -106,6 +107,6 @@ These came up while building and aren't covered above.
 - [ ] **Real SMTP.** Gmail's advertised `SIZE` is cached in `~/.local/state/kindle-send/email-limit.json` after the first send, and `kindle-send plan` estimates the Email limit from it.
 - [ ] **Notifications.** Progress replaces itself in one card (not a new card per stage). Normal summaries go after about 5 s. Critical ones stay. Clicking a setup-fixable failure opens setup.
 - [ ] **Stage lines.** "Converting <Book>…" and "Copying to Kindle…" (with "i of n" for several Books) show during a USB Send.
-- [ ] **Mixed Send held by the limit.** A Send that mixes USB Books and held emails keeps the Kindle mounted until the held emails go (known limit; check that it ejects in the end).
+- [ ] **Mixed Send held by the limit.** A Send that mixes USB Books and held emails ejects the Kindle as soon as its USB Books are copied, and posts its summary for them; the held emails are reported when they go.
 - [ ] **Picker reload.** New settings from setup show the next time the Picker opens, without a shell restart.
 - [ ] **QML loads in the live shell.** The Picker and the Service load without errors in `journalctl --user -u omarchy-shell` (or wherever the shell logs), since qmllint can't check injected members.
