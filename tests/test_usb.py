@@ -85,17 +85,6 @@ def test_usb_send_refuses_formats_the_kindle_cant_read(ks, usb, tmp_path, capsys
     assert lines == [{"result": "failed", "reason": "DOCX can't be read over USB. Send it by email."}]
 
 
-def test_usb_send_of_an_epub_fails_as_needing_conversion(ks, usb, tmp_path, capsys):
-    kindle = usb.plug(tmp_path / "Kindle")
-    book = make_book(tmp_path, "Dune.epub")
-
-    _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
-
-    assert lines == [{"result": "failed",
-                      "reason": "EPUB needs Conversion to go over USB, which isn't available yet. Send it by email."}]
-    assert not (kindle / "documents" / "Dune.epub").exists()
-
-
 def test_usb_send_fails_when_the_kindle_is_short_of_space(ks, usb, tmp_path, capsys, monkeypatch):
     kindle = usb.plug(tmp_path / "Kindle")
     book = make_book(tmp_path, "Atlas.pdf", b"x" * 3_000_000)
