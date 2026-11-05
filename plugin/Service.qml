@@ -6,6 +6,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "Feedback.js" as Feedback
+import "Limit.js" as Limit
 
 Item {
   id: root
@@ -46,7 +47,51 @@ Item {
     root.sendBook()
   }
 
+  // Send limit (spec §11): each email first asks `kindle-send limit`, then
+  // goes, waits out the gap, or is held past the hourly cap. USB isn't limited.
   function sendBook() {
+    if (root.current.books[root.bookIndex].route !== "email") { root.startBook(); return }
+    limiter.lines = []
+    limiter.didStart = false
+    limiter.running = true
+  }
+
+  function limitKnown() {
+    const send = root.current
+    const d = Limit.decide(send.books, root.bookIndex, Limit.parse(limiter.lines))
+    if (d.action === "wait") {
+      if (d.held) {
+        const h = Limit.holding(send.books, root.bookIndex, root.queue, d.ms / 1000)
+        root.notify(send.id, h.headline, h.body, "normal", [])
+      }
+      limitTimer.interval = d.ms
+      limitTimer.restart()
+      return
+    }
+    if (d.books) send.books = d.books
+    root.startBook()
+  }
+
+  Process {
+    id: limiter
+    property var lines: []
+    property bool didStart: false
+    command: ["kindle-send", "limit"]
+    stdout: SplitParser {
+      onRead: function(line) {
+        try { limiter.lines = limiter.lines.concat([JSON.parse(line)]) } catch (e) {}
+      }
+    }
+    onStarted: didStart = true
+    // No answer (not installed, crashed) lets the email go rather than stall.
+    onRunningChanged: if (!running && !didStart && root.busy) Qt.callLater(root.limitKnown)
+    onExited: Qt.callLater(root.limitKnown)
+  }
+
+  // Asks again once the wait is over; the history may have changed meanwhile.
+  Timer { id: limitTimer; onTriggered: root.sendBook() }
+
+  function startBook() {
     const send = root.current
     const book = send.books[root.bookIndex]
     const p = Feedback.progressAt(send.books, root.bookIndex)

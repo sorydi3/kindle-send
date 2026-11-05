@@ -7,13 +7,14 @@ import argparse
 import contextlib
 import io
 import json
+import math
 import os
 import shutil
 import smtplib
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -450,9 +451,26 @@ def eject():
     return {"ejected": True}
 
 
+EBOOK_CONVERT = "ebook-convert"
+CONVERSION_TIMEOUT = 600
+
+
 def convert_for_usb(book, workdir):
-    """The AZW3 Conversion of an EPUB, written in `workdir` (spec §8). Not built yet (#23)."""
-    raise SendFailed("EPUB needs Conversion to go over USB, which isn't available yet. Send it by email.")
+    """The AZW3 Conversion of an EPUB, written in `workdir` (spec §8). The EPUB is only read."""
+    emit({"stage": "converting"})
+    target = workdir / f"{book.stem}.azw3"
+    try:
+        out = subprocess.run([EBOOK_CONVERT, str(book), str(target)],
+                             capture_output=True, text=True, timeout=CONVERSION_TIMEOUT)
+    except FileNotFoundError:
+        raise SendFailed("Install calibre to send EPUB over USB (sudo pacman -S calibre).") from None
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SendFailed(f"Couldn't convert: {error}.") from None
+    if out.returncode != 0 or not target.is_file():
+        first = next((l.strip() for l in out.stderr.splitlines() if l.strip()),
+                     f"ebook-convert exited with {out.returncode}")
+        raise SendFailed(f"Couldn't convert: {first.rstrip('.')}.")
+    return target
 
 
 def send_usb(book):
@@ -705,6 +723,40 @@ def show_history():
     return 0
 
 
+def now():
+    return datetime.now(timezone.utc)
+
+
+def limit_settings():
+    """(minEmailGapSeconds, maxEmailsPerHour) from settings; defaults for absent or unusable values."""
+    settings = load_settings()
+
+    def number(name, lowest):
+        value = settings.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < lowest:
+            return DEFAULT_LIMITS[name]
+        return value
+
+    return number("minEmailGapSeconds", 0), int(number("maxEmailsPerHour", 1))
+
+
+def send_limit():
+    """`kindle-send limit`: when the next email may go (spec §11)."""
+    gap, per_hour = limit_settings()
+    current = now()
+    emails = [e for e in read_history() if e.get("route") == "email" and e.get("result") == "sent"]
+    times = sorted(t for t in map(entry_time, emails) if t is not None)
+    ages = [(current - t).total_seconds() for t in times]
+    last_hour = [a for a in ages if a < 3600]
+    waits = [0] + [gap - a for a in ages[-1:]]
+    if len(last_hour) >= per_hour:
+        # The next may go once enough of the hour's emails are over an hour old.
+        waits.append(3600 - last_hour[len(last_hour) - per_hour])
+    wait = max(waits)
+    emit({"canSendIn": math.ceil(wait), "sentLastHour": len(last_hour), "maxEmailsPerHour": per_hour})
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="kindle-send")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -718,6 +770,7 @@ def main(argv=None):
     sub.add_parser("kindle", help="is the Kindle plugged in over USB?")
     sub.add_parser("eject", help="unmount and power off the Kindle")
     sub.add_parser("history", help="print the last 20 Sends")
+    sub.add_parser("limit", help="when the next email may go")
     sub.add_parser("formats", help="list the supported formats (read by the Nautilus extension)")
     args = parser.parse_args(argv)
 
@@ -730,6 +783,8 @@ def main(argv=None):
 
     if args.command == "history":
         return show_history()
+    if args.command == "limit":
+        return send_limit()
 
     if args.command == "formats":
         emit({"formats": sorted(set(EMAIL_MIME) | USB_FORMATS)})

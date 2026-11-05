@@ -74,7 +74,7 @@ All subcommands that the Service calls print **one JSON object per line** on std
 | `kindle-send send --route email\|usb FILE` | Send **one** Book by the given Route. Progress lines `{"stage": "converting"\|"sending"\|"copying"}` then one result line `{"result": "sent"\|"copied"\|"failed", "reason"?: "...", "fixBySetup"?: true}`. Writes the Send history. |
 | `kindle-send kindle` | Kindle detection: `{"present": true, "mount": "...", "free": N}` or `{"present": false}`. |
 | `kindle-send eject` | Unmount and power off the Kindle: `{"ejected": true}` or `{"ejected": false, "reason": "..."}`. |
-| `kindle-send limit` | Send limit state from the Send history: `{"canSendIn": seconds, "sentLastHour": N}`. |
+| `kindle-send limit` | Send limit state from the Send history: `{"canSendIn": seconds, "sentLastHour": N, "maxEmailsPerHour": N}` (only `sent` email entries count; `maxEmailsPerHour` tells the Service whether a wait is the gap or the hourly cap). |
 | `kindle-send setup` | Interactive wizard (Section 9). Needs a TTY. |
 | `kindle-send history` | Prints the last 20 Sends, human-readable. |
 | `kindle-send formats` | The supported formats (Section 5), lowercase without the dot: `{"formats": ["azw", ...]}`. The one list; the Nautilus extension reads it instead of keeping its own. |
@@ -223,7 +223,7 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 | App password missing or rejected | "Gmail rejected the app password." / "No app password stored." | yes |
 | Too big for email | "Too big for email (N MB). Switch it to USB." | no |
 | Format refused on USB | "<FORMAT> can't be read over USB. Send it by email." | no |
-| EPUB over USB, no Calibre | "Install calibre to send EPUB over USB." | no |
+| EPUB over USB, no Calibre | "Install calibre to send EPUB over USB (`sudo pacman -S calibre`)." | no |
 | Conversion failed | "Couldn't convert: <first line of error>." | no |
 | Not enough space on Kindle | "Not enough space on the Kindle (needs N MB)." | no |
 | Network or SMTP error | "Couldn't reach Gmail: <error>." | no |
