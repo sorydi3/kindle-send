@@ -1,32 +1,15 @@
 """plugin/Rows.js, run under node (skipped without node): the Picker's row text."""
 import json
-import shutil
-import subprocess
-from pathlib import Path
 
-import pytest
+from qmljs import evaluate, needs_node
 
-ROWS_JS = Path(__file__).resolve().parent.parent / "plugin" / "Rows.js"
-NODE = shutil.which("node")
-
-pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")
-
-# Loads Rows.js (minus the QML-only `.pragma library`) and evaluates one expression.
-HARNESS = """
-const fs = require("fs"), vm = require("vm")
-const src = fs.readFileSync(process.argv[1], "utf8").replace(/^\\.pragma library$/m, "")
-const ctx = vm.createContext({})
-vm.runInContext(src, ctx)
-console.log(JSON.stringify(vm.runInContext(process.argv[2], ctx)))
-"""
+pytestmark = needs_node
 
 NOW = "Date.parse('2026-11-05T12:00:00Z')"
 
 
 def rows(expr):
-    out = subprocess.run([NODE, "-e", HARNESS, str(ROWS_JS), expr],
-                         capture_output=True, text=True, check=True).stdout
-    return json.loads(out)
+    return evaluate("Rows.js", expr)
 
 
 def book(**fields):
@@ -77,3 +60,34 @@ def test_a_plan_without_setup_needed_lists_books():
 
     assert parsed["setupNeeded"] is False
     assert [b["path"] for b in parsed["books"]] == ["/b/Dune.epub"]
+
+
+LABELS = json.dumps({"email": "Email", "usb": "USB"})
+
+
+def test_plan_info_gives_the_book_folders_and_route_labels():
+    parsed = rows("fromPlan([{bookFolders: ['~/Library'], routeLabels: {email: 'Email', usb: 'USB'}},"
+                  f" {book(path='/b/Dune.epub')}])")
+
+    assert parsed["bookFolders"] == ["~/Library"]
+    assert parsed["routeLabels"] == {"email": "Email", "usb": "USB"}
+    assert [b["path"] for b in parsed["books"]] == ["/b/Dune.epub"]
+
+
+def test_without_plan_info_the_empty_state_names_no_folders():
+    assert rows("fromPlan([])")["bookFolders"] == []
+    assert rows("emptyMessage([])") == "No Books found in your Book folders"
+
+
+def test_route_labels_come_from_plan():
+    assert rows(f"routeLabel('usb', {LABELS})") == "USB"
+
+
+def test_a_route_the_book_cant_take_is_named_in_details():
+    text = rows(f"details({book(usbOk=False)}, 'usb', {NOW}, {LABELS})")
+
+    assert text == "EPUB · 1.2 MB · USB can't take this Book"
+
+
+def test_tab_switches_between_the_two_routes():
+    assert rows("[switchRoute('email'), switchRoute('usb')]") == ["usb", "email"]

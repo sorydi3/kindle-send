@@ -9,10 +9,15 @@ KINDLE = "reader@kindle.com"
 SENDER = "sender@gmail.com"
 
 
-def run(ks, capsys, *argv):
+def raw(ks, capsys, *argv):
     code = ks.main(list(argv))
-    lines = [json.loads(l) for l in capsys.readouterr().out.splitlines()]
-    return code, lines
+    return code, [json.loads(l) for l in capsys.readouterr().out.splitlines()]
+
+
+def run(ks, capsys, *argv):
+    """plan's lines without the Picker info line (tested on its own below)."""
+    code, lines = raw(ks, capsys, *argv)
+    return code, [l for l in lines if "bookFolders" not in l]
 
 
 def make_book(path, size=10, mtime=None):
@@ -264,3 +269,32 @@ def test_files_with_spaces_and_non_ascii_names_are_planned(ks, home, set_up, cap
     _, lines = run(ks, capsys, "plan", str(book))
 
     assert [(line["path"], line["name"]) for line in lines] == [(str(book), "L'Étranger — Camus.epub")]
+
+
+PICKER_INFO = {"bookFolders": ["~/Books", "~/Downloads"], "routeLabels": {"email": "Email", "usb": "USB"}}
+
+
+def test_plan_tells_the_picker_the_book_folders_and_route_labels_before_the_books(ks, home, set_up, capsys):
+    """The Picker names the folders in its empty state and labels Routes from
+    this line, so the defaults live only in kindle-send."""
+    make_book(home / "Books" / "Dune.epub")
+
+    _, lines = raw(ks, capsys, "plan", "--folders")
+
+    assert lines[0] == PICKER_INFO
+    assert [l["name"] for l in lines[1:]] == ["Dune.epub"]
+
+
+def test_the_info_line_shows_the_book_folders_setting_as_written(ks, home, keyring, capsys):
+    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Library"])
+    keyring.set_password("app-password")
+
+    _, lines = raw(ks, capsys, "plan", "--folders")
+
+    assert lines == [{**PICKER_INFO, "bookFolders": ["~/Library"]}]
+
+
+def test_setup_needed_still_comes_before_the_info_line(ks, home, capsys):
+    _, lines = raw(ks, capsys, "plan", "--folders")
+
+    assert lines == [{"setupNeeded": True, "missing": ["kindleAddress", "senderAddress"]}, PICKER_INFO]

@@ -1,30 +1,15 @@
 """plugin/Pending.js: Pending Sends (spec §7, §10), run under node (skipped without node)."""
 import json
-import shutil
-import subprocess
-from pathlib import Path
 
 import pytest
 
-PENDING_JS = Path(__file__).resolve().parent.parent / "plugin" / "Pending.js"
-NODE = shutil.which("node")
+from qmljs import evaluate, needs_node
 
-pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
-
-# Loads the QML JS library (minus `.pragma library`) and evaluates one expression.
-HARNESS = r"""
-const fs = require("fs"), vm = require("vm")
-const src = fs.readFileSync(process.argv[1], "utf8").replace(/^\.pragma library.*$/m, "")
-const ctx = vm.createContext({})
-vm.runInContext(src, ctx)
-process.stdout.write(JSON.stringify(vm.runInContext(process.argv[2], ctx)))
-"""
+pytestmark = needs_node
 
 
 def js(expr):
-    out = subprocess.run([NODE, "-e", HARNESS, str(PENDING_JS), expr],
-                         capture_output=True, text=True, check=True).stdout
-    return json.loads(out)
+    return evaluate("Pending.js", expr)
 
 
 def j(value):

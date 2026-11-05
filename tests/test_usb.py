@@ -85,6 +85,14 @@ def test_usb_send_refuses_formats_the_kindle_cant_read(ks, usb, tmp_path, capsys
     assert lines == [{"result": "failed", "reason": "DOCX can't be read over USB. Send it by email."}]
 
 
+def test_usb_send_of_a_missing_file_fails_before_looking_for_the_kindle(ks, usb, tmp_path, capsys):
+    usb.plug(tmp_path / "Kindle")
+
+    _, lines = run(ks, capsys, "send", "--route", "usb", str(tmp_path / "Gone.pdf"))
+
+    assert lines == [{"result": "failed", "reason": "File not found: Gone.pdf."}]
+
+
 def test_usb_send_fails_when_the_kindle_is_short_of_space(ks, usb, tmp_path, capsys, monkeypatch):
     kindle = usb.plug(tmp_path / "Kindle")
     book = make_book(tmp_path, "Atlas.pdf", b"x" * 3_000_000)

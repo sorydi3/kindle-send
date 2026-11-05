@@ -1,21 +1,17 @@
-"""plugin/Limit.js, run under node (skipped without node): how the Service keeps to the Send limit."""
+"""plugin/Limit.js, run under node (skipped without node): how the Service keeps to the Send limit.
+
+Emails the hourly cap holds back leave their Send and wait in the Service's
+held-email line, so USB Books and later Sends don't wait for them (spec §7, §11).
+"""
 import json
-import subprocess
-from pathlib import Path
 
-import pytest
+from qmljs import evaluate, needs_node
 
-from test_rows_js import HARNESS, NODE
-
-LIMIT_JS = Path(__file__).resolve().parent.parent / "plugin" / "Limit.js"
-
-pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")
+pytestmark = needs_node
 
 
 def js(expr):
-    out = subprocess.run([NODE, "-e", HARNESS, str(LIMIT_JS), expr],
-                         capture_output=True, text=True, check=True).stdout
-    return json.loads(out)
+    return evaluate("Limit.js", expr)
 
 
 def books(*routes):
@@ -23,51 +19,91 @@ def books(*routes):
                        for i, r in enumerate(routes)])
 
 
+def names(list_):
+    return [b["name"] for b in list_]
+
+
 def state(can_send_in, sent_last_hour=1, per_hour=20):
     return json.dumps({"canSendIn": can_send_in, "sentLastHour": sent_last_hour,
                        "maxEmailsPerHour": per_hour})
 
 
+CAPPED = state(600, 20)
+
+
 def test_a_usb_book_is_never_limited():
-    assert js(f"decide({books('usb')}, 0, {state(600, 20)})") == {"action": "send"}
+    assert js(f"decide({books('usb')}, 0, {CAPPED}, true)") == {"action": "send"}
 
 
 def test_an_email_goes_when_the_limit_allows():
-    assert js(f"decide({books('email')}, 0, {state(0)})") == {"action": "send"}
+    assert js(f"decide({books('email')}, 0, {state(0)}, false)") == {"action": "send"}
 
 
-def test_an_email_inside_the_gap_waits_without_being_held():
-    assert js(f"decide({books('email')}, 0, {state(6)})") == {"action": "wait", "ms": 6000, "held": False}
+def test_without_a_limit_answer_the_email_goes_anyway():
+    """If `kindle-send limit` gave nothing usable, sending beats stalling forever."""
+    assert js(f"decide({books('email')}, 0, null, false)") == {"action": "send"}
 
 
-def test_an_email_over_the_hourly_cap_is_held():
-    assert js(f"decide({books('email', 'email')}, 1, {state(600, 20)})") \
-        == {"action": "wait", "ms": 600000, "held": True}
+def test_an_email_inside_the_gap_waits_in_its_send():
+    """A gap wait is seconds: the Send waits it out, with no notice."""
+    assert js(f"decide({books('email')}, 0, {state(6)}, false)") == {"action": "wait", "ms": 6000}
 
 
-def test_a_usb_book_further_on_goes_ahead_of_a_waiting_email():
-    decision = js(f"decide({books('usb', 'email', 'email', 'usb', 'email')}, 1, {state(600, 20)})")
+def test_a_usb_book_further_on_goes_ahead_of_an_email_inside_the_gap():
+    decision = js(f"decide({books('usb', 'email', 'email', 'usb', 'email')}, 1, {state(6)}, false)")
 
     assert decision["action"] == "send"
-    assert [b["name"] for b in decision["books"]] == \
-        ["Book0.epub", "Book3.epub", "Book1.epub", "Book2.epub", "Book4.epub"]
+    assert names(decision["books"]) == ["Book0.epub", "Book3.epub", "Book1.epub", "Book2.epub", "Book4.epub"]
 
 
-def test_holding_counts_the_emails_left_in_this_send_and_the_queued_ones():
-    queue = json.dumps([{"id": 2, "books": json.loads(books("email", "usb"))}])
+def test_over_the_hourly_cap_the_rest_of_the_sends_emails_are_held_and_its_usb_books_stay():
+    decision = js(f"decide({books('usb', 'email', 'email', 'usb', 'email')}, 1, {CAPPED}, false)")
 
-    text = js(f"holding({books('email', 'email', 'email')}, 1, {queue}, 600)")
+    assert decision["action"] == "hold"
+    assert names(decision["books"]) == ["Book0.epub", "Book3.epub"]
+    assert names(decision["held"]) == ["Book1.epub", "Book2.epub", "Book4.epub"]
+    assert decision["notice"] is True
 
-    assert text == {"headline": "Holding 3 Books to stay under Amazon's limit.", "body": "Next in 10 min."}
+
+def test_while_emails_are_held_a_new_email_joins_them_without_asking_the_limit():
+    """One email at a time, in order: the held line goes first."""
+    decision = js(f"decide({books('email', 'usb')}, 0, null, true)")
+
+    assert decision["action"] == "hold"
+    assert names(decision["books"]) == ["Book1.epub"]
+    assert names(decision["held"]) == ["Book0.epub"]
+    assert decision["notice"] is False
+
+
+def test_the_held_line_sends_when_the_limit_allows():
+    assert js(f"heldStep({state(0)}, false)") == {"action": "send"}
+    assert js("heldStep(null, true)") == {"action": "send"}
+
+
+def test_the_held_line_waits_out_a_gap_without_a_notice():
+    assert js(f"heldStep({state(8)}, false)") == {"action": "wait", "ms": 8000, "notice": False}
+
+
+def test_the_held_line_keeps_its_notice_up_through_a_gap():
+    assert js(f"heldStep({state(8)}, true)") == {"action": "wait", "ms": 8000, "notice": True}
+
+
+def test_the_held_line_over_the_cap_shows_the_notice():
+    assert js(f"heldStep({CAPPED}, false)") == {"action": "wait", "ms": 600000, "notice": True}
+
+
+def test_the_hold_notice_stays_on_screen():
+    assert js("holding(3, 600)") == {"headline": "Holding 3 Books to stay under Amazon's limit.",
+                                     "body": "Next in 10 min.", "urgency": "critical"}
 
 
 def test_holding_one_book_rounds_the_minutes_up():
-    assert js(f"holding({books('email')}, 0, [], 61)") \
-        == {"headline": "Holding 1 Book to stay under Amazon's limit.", "body": "Next in 2 min."}
+    assert js("holding(1, 61)")["headline"] == "Holding 1 Book to stay under Amazon's limit."
+    assert js("holding(1, 61)")["body"] == "Next in 2 min."
 
 
 def test_holding_says_at_least_one_minute():
-    assert js(f"holding({books('email')}, 0, [], 5)")["body"] == "Next in 1 min."
+    assert js("holding(2, 5)")["body"] == "Next in 1 min."
 
 
 def test_parse_reads_the_limit_line():
@@ -77,8 +113,3 @@ def test_parse_reads_the_limit_line():
 
 def test_parse_without_a_limit_line_gives_null():
     assert js("parse([])") is None
-
-
-def test_without_a_limit_answer_the_email_goes_anyway():
-    """If `kindle-send limit` gave nothing usable, sending beats stalling forever."""
-    assert js(f"decide({books('email')}, 0, null)") == {"action": "send"}

@@ -4,24 +4,15 @@ The Nautilus extension summons the Picker with {"files": [...]}; the Picker then
 plans just those files and marks them all.
 """
 import json
-import shutil
-import subprocess
-from pathlib import Path
 
-import pytest
+from qmljs import evaluate, needs_node
 
-ROWS = Path(__file__).resolve().parent.parent / "plugin" / "Rows.js"
-NODE = shutil.which("node")
-
-pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")
+pytestmark = needs_node
 
 
 def rows(call):
     """Evaluate `call` (a JS expression using Rows.js functions) and return its JSON value."""
-    source = ROWS.read_text().replace(".pragma library", "")
-    script = source + f"\nprocess.stdout.write(JSON.stringify({call}))\n"
-    out = subprocess.run([NODE, "-e", script], capture_output=True, text=True, check=True).stdout
-    return json.loads(out)
+    return evaluate("Rows.js", call)
 
 
 def test_a_bind_opens_the_picker_on_the_book_folders():

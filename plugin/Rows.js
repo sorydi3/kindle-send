@@ -1,19 +1,23 @@
 // What the Picker shows and sends, from `kindle-send plan` lines. Pure functions, no QML.
 .pragma library
-
-const DEFAULT_FOLDERS = ["~/Books", "~/Downloads"]
+.import "Routes.js" as Routes
 
 // lines: parsed JSON lines of `kindle-send plan`, already newest first.
+// Besides Books, plan says which Book folders it scans and how Routes are
+// labelled, so those defaults live only in kindle-send.
 function fromPlan(lines) {
   let setupNeeded = false
+  let bookFolders = []
+  let routeLabels = {}
   const books = []
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]
     if (!l) continue
     if (l.setupNeeded) setupNeeded = true
+    else if (Array.isArray(l.bookFolders)) { bookFolders = l.bookFolders.map(String); routeLabels = l.routeLabels || {} }
     else if (l.path) books.push(l)
   }
-  return { setupNeeded: setupNeeded, books: books }
+  return { setupNeeded: setupNeeded, books: books, bookFolders: bookFolders, routeLabels: routeLabels }
 }
 
 // Typing filters by file name only.
@@ -28,9 +32,12 @@ function routeOf(book, overrides) {
   return (overrides && overrides[book.path]) || book.route
 }
 
-function routeLabel(route) { return route === "usb" ? "USB" : "Email" }
+// labels: plan's routeLabels; a Route without one shows its name.
+function routeLabel(route, labels) { return (labels && labels[route]) || route }
 
-function routeTakes(book, route) { return route === "usb" ? book.usbOk === true : book.emailOk === true }
+function switchRoute(route) { return Routes.other(route) }
+
+function routeTakes(book, route) { return route === Routes.USB ? book.usbOk === true : book.emailOk === true }
 
 // Marked Books in list order, or the highlighted one if none are marked.
 // The "waiting for Kindle" line is not a Book and is never sent.
@@ -59,29 +66,16 @@ function sentAgo(iso, now) {
 }
 
 // "EPUB · 1.2 MB · sent 3 days ago", plus why the chosen Route can't take it.
-function details(book, route, now) {
+function details(book, route, now, labels) {
   const parts = [String(book.format).toUpperCase(), size(book.size)]
   if (book.lastSent) parts.push(sentAgo(book.lastSent, now))
   if (route === book.route && book.routeReason) parts.push(book.routeReason)
-  else if (!routeTakes(book, route)) parts.push(routeLabel(route) + " can't take this Book")
+  else if (!routeTakes(book, route)) parts.push(routeLabel(route, labels) + " can't take this Book")
   return parts.filter(function(p) { return p }).join(" · ")
 }
 
-function foldersFromShellJson(text) {
-  try {
-    const cfg = JSON.parse(text || "{}")
-    const list = Array.isArray(cfg.plugins) ? cfg.plugins : []
-    for (let i = 0; i < list.length; i++) {
-      const e = list[i]
-      if (e && e.id === "sorydi3.kindle-send" && Array.isArray(e.bookFolders) && e.bookFolders.length > 0)
-        return e.bookFolders.map(String)
-    }
-  } catch (e) {}
-  return DEFAULT_FOLDERS
-}
-
 function emptyMessage(folders) {
-  return "No Books found in " + folders.join(", ")
+  return "No Books found in " + (folders.length > 0 ? folders.join(", ") : "your Book folders")
 }
 
 // --- Payload mode (spec §4): the Nautilus extension summons {"files": [...]} ---

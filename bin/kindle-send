@@ -182,12 +182,19 @@ def record_send(book, route, result):
     os.replace(tmp, path)
 
 
-def send_email(book):
+def sendable(book, formats, refusal):
+    """The Book's format, after checking the Route takes it and the file exists.
+    `refusal` names the format as {FMT} when the Route can't take it."""
     fmt = book_format(book)
-    if fmt not in EMAIL_MIME:
-        raise SendFailed(f"{fmt.upper()} can't be sent by email. Switch it to USB.")
+    if fmt not in formats:
+        raise SendFailed(refusal.format(FMT=fmt.upper()))
     if not book.is_file():
         raise SendFailed(f"File not found: {book.name}.")
+    return fmt
+
+
+def send_email(book):
+    sendable(book, EMAIL_MIME, "{FMT} can't be sent by email. Switch it to USB.")
     settings = load_settings()
     missing = missing_settings(settings)
     if missing:
@@ -251,11 +258,20 @@ def error_text(error):
 USB_FORMATS = {"epub", "pdf", "txt", "azw3", "azw", "mobi", "prc", "kfx"}
 
 
-def book_folders(settings):
+DEFAULT_BOOK_FOLDERS = ["~/Books", "~/Downloads"]
+ROUTE_LABELS = {"email": "Email", "usb": "USB"}
+
+
+def book_folder_setting(settings):
+    """The Book folders as written in settings (`~` unexpanded), else the defaults."""
     folders = settings.get("bookFolders")
     if not isinstance(folders, list) or not folders:
         folders = DEFAULT_BOOK_FOLDERS
-    return [Path(os.path.expanduser(str(f))) for f in folders]
+    return [str(f) for f in folders]
+
+
+def book_folders(settings):
+    return [Path(os.path.expanduser(f)) for f in book_folder_setting(settings)]
 
 
 SUBFOLDER_DEPTH = 3
@@ -287,7 +303,7 @@ def scan_folders(folders):
     return books
 
 
-DEFAULT_ADVERTISED = 35_882_577
+GMAIL_ADVERTISED_SIZE_DEFAULT = 35_882_577
 EMAIL_OVERHEAD = 64 * 1024
 BASE64_GROWTH = 1.37
 
@@ -297,7 +313,7 @@ def email_limit():
     try:
         advertised = int(json.loads((state_dir() / "email-limit.json").read_text())["advertised"])
     except (OSError, ValueError, KeyError, TypeError):
-        advertised = DEFAULT_ADVERTISED
+        advertised = GMAIL_ADVERTISED_SIZE_DEFAULT
     return int((advertised - EMAIL_OVERHEAD) / BASE64_GROWTH)
 
 
@@ -344,6 +360,8 @@ def plan(folders_wanted, files):
         missing = ["appPassword"]
     if missing:
         emit({"setupNeeded": True, "missing": missing})
+    # What the Picker shows besides Books, so these defaults live only here.
+    emit({"bookFolders": book_folder_setting(settings), "routeLabels": ROUTE_LABELS})
     books = scan_folders(book_folders(settings)) if folders_wanted else []
     books += [Path(f) for f in files if Path(f).is_file() and supported(Path(f))]
     unique = {}
@@ -474,11 +492,7 @@ def convert_for_usb(book, workdir):
 
 
 def send_usb(book):
-    fmt = book_format(book)
-    if fmt not in USB_FORMATS:
-        raise SendFailed(f"{fmt.upper()} can't be read over USB. Send it by email.")
-    if not book.is_file():
-        raise SendFailed(f"File not found: {book.name}.")
+    fmt = sendable(book, USB_FORMATS, "{FMT} can't be read over USB. Send it by email.")
     kindle = find_kindle()
     if kindle is None:
         raise SendFailed("Kindle not plugged in. Plug it in and send again.")
@@ -497,7 +511,6 @@ def send_usb(book):
 
 AMAZON_DEVICES_HELP = "https://www.amazon.com/mycd"
 APP_PASSWORDS_URL = "https://myaccount.google.com/apppasswords"
-DEFAULT_BOOK_FOLDERS = ["~/Books", "~/Downloads"]
 DEFAULT_LIMITS = {"minEmailGapSeconds": 10, "maxEmailsPerHour": 20}
 
 
@@ -622,14 +635,14 @@ def wizard():
         raise SetupCancelled from None
 
     print("\n5. Book folders the Picker lists, separated by commas.")
-    folders = current.get("bookFolders") or DEFAULT_BOOK_FOLDERS
+    folders = book_folder_setting(current)
     answer = ask("Book folders", ", ".join(folders))
     folders = [f.strip() for f in answer.split(",") if f.strip()]
 
     save_settings({"kindleAddress": kindle, "senderAddress": sender, "bookFolders": folders})
     print(f"Settings saved to {shell_json_path()}.")
 
-    books = Path.home() / "Books"
+    books = Path(os.path.expanduser(DEFAULT_BOOK_FOLDERS[0]))
     if not books.is_dir():
         books.mkdir(parents=True)
         print(f"Created {books}.")
@@ -697,7 +710,6 @@ def run_setup():
 
 
 HISTORY_SHOWN = 20
-ROUTE_LABELS = {"email": "Email", "usb": "USB"}
 RESULT_LABELS = {"sent": "Sent to Amazon", "copied": "Copied to Kindle"}
 
 

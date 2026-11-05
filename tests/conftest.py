@@ -6,6 +6,7 @@ boundaries (smtplib.SMTP_SSL, tools on PATH) can be faked.
 """
 import json
 import os
+import smtplib
 import stat
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
@@ -47,6 +48,31 @@ def no_real_keyring(tmp_path, monkeypatch):
     tool.write_text("#!/bin/sh\nexit 1\n")
     tool.chmod(tool.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{guard}{os.pathsep}{os.environ['PATH']}")
+
+
+class RealSmtpBlocked(AssertionError):
+    pass
+
+
+@pytest.fixture(autouse=True)
+def no_real_smtp(monkeypatch):
+    """Every test gets smtplib.SMTP_SSL and SMTP replaced by a refusal, so no
+    test can reach a mail server. The `smtp` fixture puts its fake in front.
+    kindle-send catches network errors and reports them, so an attempt is also
+    remembered and fails the test at teardown, even if something swallowed it."""
+    attempts = []
+
+    def refuse(name):
+        def connect(host="", port=0, *args, **kwargs):
+            attempts.append(f"{name}({host!r}, {port!r})")
+            raise RealSmtpBlocked(f"real SMTP connection {attempts[-1]} outside the `smtp` fixture")
+        return connect
+
+    monkeypatch.setattr(smtplib, "SMTP_SSL", refuse("SMTP_SSL"))
+    monkeypatch.setattr(smtplib, "SMTP", refuse("SMTP"))
+    yield
+    if attempts:
+        pytest.fail(f"real SMTP connection attempted outside the `smtp` fixture: {', '.join(attempts)}")
 
 
 @pytest.fixture
@@ -111,7 +137,7 @@ class FakeSMTP:
     """Stands in for smtplib.SMTP_SSL. Never touches the network."""
 
     instances = []
-    advertised_size = 35882577
+    advertised_size = None  # set by the `smtp` fixture to the script's default
     login_error = None
     connect_error = None
     send_error = None
@@ -154,7 +180,7 @@ class FakeSMTP:
 @pytest.fixture
 def smtp(ks, monkeypatch):
     FakeSMTP.instances = []
-    FakeSMTP.advertised_size = 35882577
+    FakeSMTP.advertised_size = ks.GMAIL_ADVERTISED_SIZE_DEFAULT
     FakeSMTP.login_error = None
     FakeSMTP.connect_error = None
     FakeSMTP.send_error = None

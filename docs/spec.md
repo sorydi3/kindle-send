@@ -70,7 +70,7 @@ All subcommands that the Service calls print **one JSON object per line** on std
 
 | Command | Purpose |
 |---|---|
-| `kindle-send plan [--folders] [FILE...]` | Classify Books for the Picker. With `--folders`, scan the Book folders; with files, classify just those. One line per Book: `{"path","name","format","size","mtime","route","routeReason","emailOk","usbOk","lastSent"}`. Unsupported files are left out. If any setting or the app password is missing, the first line is `{"setupNeeded": true, "missing": [...]}` (`"appPassword"` for the password; the password itself is never printed). |
+| `kindle-send plan [--folders] [FILE...]` | Classify Books for the Picker. With `--folders`, scan the Book folders; with files, classify just those. One line per Book: `{"path","name","format","size","mtime","route","routeReason","emailOk","usbOk","lastSent"}`. Unsupported files are left out. If any setting or the app password is missing, the first line is `{"setupNeeded": true, "missing": [...]}` (`"appPassword"` for the password; the password itself is never printed). Before the Books comes `{"bookFolders": [...], "routeLabels": {"email": "Email", "usb": "USB"}}`: the Book folders as set (`~` unexpanded, defaults if unset) and the Route labels, so the Picker keeps no defaults of its own. |
 | `kindle-send send --route email\|usb FILE` | Send **one** Book by the given Route. Progress lines `{"stage": "converting"\|"sending"\|"copying"}` then one result line `{"result": "sent"\|"copied"\|"failed", "reason"?: "...", "fixBySetup"?: true}`. Writes the Send history. |
 | `kindle-send kindle` | Kindle detection: `{"present": true, "mount": "...", "free": N}` or `{"present": false}`. |
 | `kindle-send eject` | Unmount and power off the Kindle: `{"ejected": true}` or `{"ejected": false, "reason": "..."}`. |
@@ -79,7 +79,7 @@ All subcommands that the Service calls print **one JSON object per line** on std
 | `kindle-send history` | Prints the last 20 Sends, human-readable. |
 | `kindle-send formats` | The supported formats (Section 5), lowercase without the dot: `{"formats": ["azw", ...]}`. The one list; the Nautilus extension reads it instead of keeping its own. |
 
-The Service keeps the ordering: it decides which Book goes next, waits for `limit`, and calls `eject` once after the last USB Book of a Send.
+The Service keeps the ordering: it decides which Book goes next, waits for `limit`, and calls `eject` once a Send has no USB Book left.
 
 ## 4. Choosing a Book
 
@@ -97,6 +97,8 @@ The Service keeps the ordering: it decides which Book goes next, waits for `limi
   | `Tab` | switch the highlighted Book between Email and USB |
   | `Enter` | send the marked Books, or the highlighted one if none are marked; the picker closes at once |
   | `Delete` | on the "N Books waiting for Kindle" line: cancel those Pending Sends |
+  | `Up` / `Down` | move the highlight one row |
+  | `PageUp` / `PageDown` | move the highlight six rows |
   | `Esc` | close |
 
 - **Empty:** "No Books found in ~/Books, ~/Downloads", with a hint that folders can be changed in settings (rerun setup).
@@ -149,7 +151,7 @@ Route rules, per Book:
   1. Convert if it's an EPUB (Section 8).
   2. Check free space; fail if there isn't enough.
   3. Copy to `documents/.<name>.part`, rename to `documents/<name>` (replacing a same-name file), then `fsync`.
-- **Eject** once after the last USB Book of a Send: `udisksctl unmount -b <partition>` then `udisksctl power-off -b <device>`. If it fails (e.g. Nautilus has the drive open), the Books stay copied and the notification asks the user to eject.
+- **Eject** once per Send, as soon as it has no USB Book left (emails still to go, e.g. held by the Send limit, don't keep the Kindle mounted): `udisksctl unmount -b <partition>` then `udisksctl power-off -b <device>`. If it fails (e.g. Nautilus has the drive open), the Books stay copied and the notification asks the user to eject.
 - After an eject, a later USB Send needs the Kindle plugged back in, so it becomes a Pending Send.
 
 ## 8. Conversion ([#7](https://github.com/sorydi3/kindle-send/issues/7))
@@ -199,13 +201,15 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 - **All fine:** normal urgency, disappears after a few seconds.
 - **Any failure:** critical, stays until dismissed, names each failed Book with its reason. If the reason is a missing setting or a rejected password, clicking runs setup.
 - **Pending Send:** a lasting (critical) notification "Waiting for Kindle: <Book>. Plug it in to send. Click to manage." Omarchy's notification server draws no buttons, so clicking it opens the Picker, where `Delete` on the waiting line cancels.
-- **Send limit hold:** "Holding N Books to stay under Amazon's limit. Next in M min."
+- **Pending Send cancelled:** `Delete` in the Picker replaces the lasting notification with a passing (normal) "Cancelled N Books waiting for Kindle".
+- **Send limit hold:** "Holding N Books to stay under Amazon's limit. Next in M min." A lasting (critical) notification of its own, so it never replaces another Send's progress. It stays while Books are held, is updated as the count changes, and turns into the summary of the held emails once the last has gone. The Send they came from has already shown its summary for its other Books. Short gap waits (seconds, `minEmailGapSeconds`) show no notice.
 
 ## 11. Send limit ([#15](https://github.com/sorydi3/kindle-send/issues/15), [#16](https://github.com/sorydi3/kindle-send/issues/16))
 
 - At least `minEmailGapSeconds` (10) between emails, at most `maxEmailsPerHour` (20) emails per rolling hour. Both live in settings.
 - The count comes from the Send history, so it survives shell restarts. Books held back wait in the Service's memory and are lost on a shell restart, like Pending Sends.
 - The USB Route is not limited.
+- Inside the gap, an email waits in its Send (a USB Book of the same Send goes first). Emails the hourly cap holds leave their Send and wait in a line of their own, sent one at a time in order. Their Send goes on with its USB Books, ejects and posts its summary; later Sends (USB-only ones, Books released by Pending Sends) start at once. A later email joins the held ones rather than overtaking them.
 
 ## 12. Send history ([#16](https://github.com/sorydi3/kindle-send/issues/16))
 
@@ -226,6 +230,7 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 | EPUB over USB, no Calibre | "Install calibre to send EPUB over USB (`sudo pacman -S calibre`)." | no |
 | Conversion failed | "Couldn't convert: <first line of error>." | no |
 | Not enough space on Kindle | "Not enough space on the Kindle (needs N MB)." | no |
+| Copy to the Kindle failed | "Couldn't copy to the Kindle: <error>." | no |
 | Network or SMTP error | "Couldn't reach Gmail: <error>." | no |
 | Eject failed | Books copied; "Please eject the Kindle." | no |
 
