@@ -237,7 +237,7 @@ Modelled on `~/Projects/omarchy-window-restore/scripts/install.sh`.
 
 1. **Check dependencies:** `python3`, `nautilus-python`, `secret-tool`, `udisksctl`. If one is missing, stop with a clear message. For Calibre, only print "Optional: `sudo pacman -S calibre` to send EPUB over USB". Never run `sudo`.
 2. **Copy files:**
-   - `bin/kindle-send` → `~/.local/bin/kindle-send`, plus `assets/` beside it in `~/.local/share/kindle-send/`
+   - `bin/kindle-send` → `~/.local/share/kindle-send/bin/kindle-send`, linked from `~/.local/bin/kindle-send`, plus `assets/` beside it in `~/.local/share/kindle-send/` (so `<realpath>/../assets/test.epub` resolves)
    - `plugin/` → `~/.local/share/kindle-send/omarchy-plugin`, symlinked as `~/.config/omarchy/plugins/sorydi3.kindle-send`
    - `nautilus/kindle-send.py` → `~/.local/share/nautilus-python/extensions/`
 3. **Edit config, after asking for each edit, each backed up first and wrapped in `>>> kindle-send … >>>` / `<<< kindle-send <<<` markers:**
@@ -246,9 +246,9 @@ Modelled on `~/Projects/omarchy-window-restore/scripts/install.sh`.
 4. **Enable and reload:** `omarchy plugin enable sorydi3.kindle-send` (it has no bar widget, so nothing else enables it), `omarchy-shell -q shell rescanPlugins`, `nautilus -q`.
 5. **Finish:** offer to run `kindle-send setup`.
 
-Rerun install to update.
+Rerun install to update. Asking needs a terminal: without one, install makes no config edits and says so. `--yes` makes them without asking, `--no-config` skips them. Each block goes in only once. The menu block goes before the final `}`. After the edit, install checks the file with the shell's own parsing rules and restores the backup if that fails. A menu file that already fails to parse is left alone. Backups: `<file>.before-kindle-send`.
 
-`scripts/uninstall.sh` removes everything install added: files, the symlink and the marker blocks. It keeps the settings in `shell.json`, the keyring password and the Send history, unless `--purge` is given.
+`scripts/uninstall.sh` removes everything install added: files, the symlink and the marker blocks. It keeps the settings in `shell.json`, the keyring password and the Send history, unless `--purge` is given. It removes the link and rescans instead of running `omarchy plugin remove`, because disabling a plugin deletes its `shell.json` entry, settings included.
 
 ## 15. Acceptance checks
 
