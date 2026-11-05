@@ -1,32 +1,15 @@
 """plugin/Feedback.js: what the Send notification says (spec §10). Run with node."""
 import json
-import shutil
-import subprocess
-from pathlib import Path
 
 import pytest
 
-FEEDBACK = Path(__file__).resolve().parent.parent / "plugin" / "Feedback.js"
-NODE = shutil.which("node")
+from qmljs import evaluate, needs_node
 
-pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
-
-# Loads the QML JS library (minus `.pragma library`) and calls one function with JSON args.
-RUNNER = r"""
-const fs = require("fs"), vm = require("vm")
-const src = fs.readFileSync(process.argv[1], "utf8").replace(/^\.pragma library.*$/m, "")
-const ctx = {}
-vm.createContext(ctx)
-vm.runInContext(src + "\nthis.__lib = { summary, progressAt, stageAt, resultFor, needsEject, notifyArgv }", ctx)
-const [name, args] = JSON.parse(process.argv[2])
-process.stdout.write(JSON.stringify(ctx.__lib[name](...args)))
-"""
+pytestmark = needs_node
 
 
 def call(name, *args):
-    out = subprocess.run([NODE, "-e", RUNNER, str(FEEDBACK), json.dumps([name, list(args)])],
-                         capture_output=True, text=True, check=True)
-    return json.loads(out.stdout)
+    return evaluate("Feedback.js", f"{name}(...{json.dumps(list(args))})")
 
 
 EJECTED = {"ejected": True}

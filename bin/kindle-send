@@ -258,11 +258,20 @@ def error_text(error):
 USB_FORMATS = {"epub", "pdf", "txt", "azw3", "azw", "mobi", "prc", "kfx"}
 
 
-def book_folders(settings):
+DEFAULT_BOOK_FOLDERS = ["~/Books", "~/Downloads"]
+ROUTE_LABELS = {"email": "Email", "usb": "USB"}
+
+
+def book_folder_setting(settings):
+    """The Book folders as written in settings (`~` unexpanded), else the defaults."""
     folders = settings.get("bookFolders")
     if not isinstance(folders, list) or not folders:
         folders = DEFAULT_BOOK_FOLDERS
-    return [Path(os.path.expanduser(str(f))) for f in folders]
+    return [str(f) for f in folders]
+
+
+def book_folders(settings):
+    return [Path(os.path.expanduser(f)) for f in book_folder_setting(settings)]
 
 
 SUBFOLDER_DEPTH = 3
@@ -351,6 +360,8 @@ def plan(folders_wanted, files):
         missing = ["appPassword"]
     if missing:
         emit({"setupNeeded": True, "missing": missing})
+    # What the Picker shows besides Books, so these defaults live only here.
+    emit({"bookFolders": book_folder_setting(settings), "routeLabels": ROUTE_LABELS})
     books = scan_folders(book_folders(settings)) if folders_wanted else []
     books += [Path(f) for f in files if Path(f).is_file() and supported(Path(f))]
     unique = {}
@@ -500,7 +511,6 @@ def send_usb(book):
 
 AMAZON_DEVICES_HELP = "https://www.amazon.com/mycd"
 APP_PASSWORDS_URL = "https://myaccount.google.com/apppasswords"
-DEFAULT_BOOK_FOLDERS = ["~/Books", "~/Downloads"]
 DEFAULT_LIMITS = {"minEmailGapSeconds": 10, "maxEmailsPerHour": 20}
 
 
@@ -625,14 +635,14 @@ def wizard():
         raise SetupCancelled from None
 
     print("\n5. Book folders the Picker lists, separated by commas.")
-    folders = current.get("bookFolders") or DEFAULT_BOOK_FOLDERS
+    folders = book_folder_setting(current)
     answer = ask("Book folders", ", ".join(folders))
     folders = [f.strip() for f in answer.split(",") if f.strip()]
 
     save_settings({"kindleAddress": kindle, "senderAddress": sender, "bookFolders": folders})
     print(f"Settings saved to {shell_json_path()}.")
 
-    books = Path.home() / "Books"
+    books = Path(os.path.expanduser(DEFAULT_BOOK_FOLDERS[0]))
     if not books.is_dir():
         books.mkdir(parents=True)
         print(f"Created {books}.")
@@ -700,7 +710,6 @@ def run_setup():
 
 
 HISTORY_SHOWN = 20
-ROUTE_LABELS = {"email": "Email", "usb": "USB"}
 RESULT_LABELS = {"sent": "Sent to Amazon", "copied": "Copied to Kindle"}
 
 

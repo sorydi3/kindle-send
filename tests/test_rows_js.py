@@ -1,32 +1,15 @@
 """plugin/Rows.js, run under node (skipped without node): the Picker's row text."""
 import json
-import shutil
-import subprocess
-from pathlib import Path
 
-import pytest
+from qmljs import evaluate, needs_node
 
-ROWS_JS = Path(__file__).resolve().parent.parent / "plugin" / "Rows.js"
-NODE = shutil.which("node")
-
-pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")
-
-# Loads Rows.js (minus the QML-only `.pragma library`) and evaluates one expression.
-HARNESS = """
-const fs = require("fs"), vm = require("vm")
-const src = fs.readFileSync(process.argv[1], "utf8").replace(/^\\.pragma library$/m, "")
-const ctx = vm.createContext({})
-vm.runInContext(src, ctx)
-console.log(JSON.stringify(vm.runInContext(process.argv[2], ctx)))
-"""
+pytestmark = needs_node
 
 NOW = "Date.parse('2026-11-05T12:00:00Z')"
 
 
 def rows(expr):
-    out = subprocess.run([NODE, "-e", HARNESS, str(ROWS_JS), expr],
-                         capture_output=True, text=True, check=True).stdout
-    return json.loads(out)
+    return evaluate("Rows.js", expr)
 
 
 def book(**fields):

@@ -1,21 +1,13 @@
 """plugin/Limit.js, run under node (skipped without node): how the Service keeps to the Send limit."""
 import json
-import subprocess
-from pathlib import Path
 
-import pytest
+from qmljs import evaluate, needs_node
 
-from test_rows_js import HARNESS, NODE
-
-LIMIT_JS = Path(__file__).resolve().parent.parent / "plugin" / "Limit.js"
-
-pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")
+pytestmark = needs_node
 
 
 def js(expr):
-    out = subprocess.run([NODE, "-e", HARNESS, str(LIMIT_JS), expr],
-                         capture_output=True, text=True, check=True).stdout
-    return json.loads(out)
+    return evaluate("Limit.js", expr)
 
 
 def books(*routes):
