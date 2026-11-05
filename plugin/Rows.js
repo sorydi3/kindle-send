@@ -33,9 +33,10 @@ function routeLabel(route) { return route === "usb" ? "USB" : "Email" }
 function routeTakes(book, route) { return route === "usb" ? book.usbOk === true : book.emailOk === true }
 
 // Marked Books in list order, or the highlighted one if none are marked.
+// The "waiting for Kindle" line is not a Book and is never sent.
 function toSend(books, marked, overrides, highlighted) {
   let chosen = books.filter(function(b) { return marked && marked[b.path] === true })
-  if (chosen.length === 0 && highlighted) chosen = [highlighted]
+  if (chosen.length === 0 && highlighted && !highlighted.waiting) chosen = [highlighted]
   return chosen.map(function(b) { return { path: b.path, name: b.name, route: routeOf(b, overrides) } })
 }
 
