@@ -56,3 +56,18 @@ def test_an_already_sent_book_is_sent_again_like_any_other():
                   " {'/b/Dune.epub': true}, {}, 0)")
 
     assert chosen == [{"path": "/b/Dune.epub", "name": "Dune.epub", "route": "email"}]
+
+
+def test_a_plan_that_needs_setup_switches_the_picker_to_setup():
+    """The Picker then shows only "Set up Send to Kindle" (spec §4, §9)."""
+    parsed = rows("fromPlan([{setupNeeded: true, missing: ['appPassword']},"
+                  f" {book(path='/b/Dune.epub')}])")
+
+    assert parsed["setupNeeded"] is True
+
+
+def test_a_plan_without_setup_needed_lists_books():
+    parsed = rows(f"fromPlan([{book(path='/b/Dune.epub')}])")
+
+    assert parsed["setupNeeded"] is False
+    assert [b["path"] for b in parsed["books"]] == ["/b/Dune.epub"]

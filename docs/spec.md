@@ -70,7 +70,7 @@ All subcommands that the Service calls print **one JSON object per line** on std
 
 | Command | Purpose |
 |---|---|
-| `kindle-send plan [--folders] [FILE...]` | Classify Books for the Picker. With `--folders`, scan the Book folders; with files, classify just those. One line per Book: `{"path","name","format","size","mtime","route","routeReason","emailOk","usbOk","lastSent"}`. Unsupported files are left out. If any setting is missing, the first line is `{"setupNeeded": true, "missing": [...]}`. |
+| `kindle-send plan [--folders] [FILE...]` | Classify Books for the Picker. With `--folders`, scan the Book folders; with files, classify just those. One line per Book: `{"path","name","format","size","mtime","route","routeReason","emailOk","usbOk","lastSent"}`. Unsupported files are left out. If any setting or the app password is missing, the first line is `{"setupNeeded": true, "missing": [...]}` (`"appPassword"` for the password; the password itself is never printed). |
 | `kindle-send send --route email\|usb FILE` | Send **one** Book by the given Route. Progress lines `{"stage": "converting"\|"sending"\|"copying"}` then one result line `{"result": "sent"\|"copied"\|"failed", "reason"?: "...", "fixBySetup"?: true}`. Writes the Send history. |
 | `kindle-send kindle` | Kindle detection: `{"present": true, "mount": "...", "free": N}` or `{"present": false}`. |
 | `kindle-send eject` | Unmount and power off the Kindle: `{"ejected": true}` or `{"ejected": false, "reason": "..."}`. |

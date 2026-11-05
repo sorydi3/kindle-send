@@ -72,7 +72,9 @@ Item {
   function finishSend(eject) {
     const send = root.current
     const s = Feedback.summary(root.results, eject)
-    root.notify(send.id, s.headline, s.body, s.urgency, s.setup ? root.setupCommand : [])
+    // A fully successful summary times out; any failure stays (critical) and,
+    // when setup is the fix, a click opens setup (spec §10).
+    root.notify(send.id, s.headline, s.body, s.urgency, s.setup ? root.setupCommand : [], s.timeout || 0)
     root.startNext()
   }
 
@@ -145,8 +147,9 @@ Item {
   property var notifyQueue: []
   property int notifyFor: 0
 
-  function notify(sendId, headline, body, urgency, execArgv) {
-    const item = { sendId: sendId, headline: headline, body: body, urgency: urgency, exec: execArgv }
+  // timeout (ms, optional): how long a normal notification stays; 0 = server default.
+  function notify(sendId, headline, body, urgency, execArgv, timeout) {
+    const item = { sendId: sendId, headline: headline, body: body, urgency: urgency, exec: execArgv, timeout: timeout || 0 }
     root.notifyQueue = root.notifyQueue.filter(function(q) { return q.sendId !== sendId }).concat([item])
     if (!notifier.running) root.postNext()
   }
@@ -155,13 +158,9 @@ Item {
     if (root.notifyQueue.length === 0) return
     const item = root.notifyQueue[0]
     root.notifyQueue = root.notifyQueue.slice(1)
-    let argv = ["omarchy-notification-send", "--app-name", "Send to Kindle", "-g", "\u{F02D}", "-u", item.urgency]
     const id = root.notifyIds[item.sendId] || 0
-    argv = id > 0 ? argv.concat(["-r", String(id)]) : argv.concat(["-p"])
-    argv = argv.concat([item.headline, item.body || ""])
-    if (item.exec && item.exec.length) argv = argv.concat(["--exec"]).concat(item.exec)
     root.notifyFor = id > 0 ? 0 : item.sendId
-    notifier.command = argv
+    notifier.command = Feedback.notifyArgv(item, id)
     notifier.running = true
   }
 

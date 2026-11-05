@@ -54,6 +54,8 @@ Item {
     root.failure = ""
     root.setupNeeded = false
     root.payloadFiles = Rows.payloadFiles(payloadJson)
+    // Setup may have rewritten (or first created) shell.json since the last open.
+    shellConfig.reload()
     root.list()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -119,6 +121,7 @@ Item {
 
   // The Book folders, only to name them in the empty state.
   FileView {
+    id: shellConfig
     path: root.shellJson
     watchChanges: true
     printErrors: false

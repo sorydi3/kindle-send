@@ -37,10 +37,21 @@ function stageAt(books, index, stage) {
   return { headline: "Copying to Kindle…", body: body }
 }
 
+// How long an all-fine summary stays up (ms). The server keeps a normal
+// popup at least 8 s anyway; a critical one stays until dismissed (spec §10).
+const DONE_TIMEOUT = 5000
+
 // results: [{ name, result: "sent"|"copied"|"failed", reason?, fixBySetup? }]
 // eject: the `kindle-send eject` line after the last USB Book, or null if there was none.
-// Returns { headline, body, urgency, setup } where setup means a click should open setup.
+// Returns { headline, body, urgency, setup, timeout? } where setup means a click
+// should open setup, and timeout (ms) is set only when the summary should go away.
 function summary(results, eject) {
+  const s = summaryText(results, eject)
+  if (s.urgency === "normal") s.timeout = DONE_TIMEOUT
+  return s
+}
+
+function summaryText(results, eject) {
   const failed = results.filter(function(r) { return r.result === "failed" })
   const setup = failed.some(function(r) { return r.fixBySetup === true })
   const ejectLine = eject ? (eject.ejected === true ? EJECTED : EJECT_PLEASE) : ""
@@ -80,4 +91,17 @@ function resultFor(book, lines, exitCode, started) {
   const reason = !started ? "kindle-send is not installed. Run scripts/install.sh."
     : "kindle-send stopped without a result (exit " + exitCode + ")."
   return { name: book.name, result: "failed", reason: reason }
+}
+
+// The omarchy-notification-send argv for one post. replaceId 0 posts a new
+// notification and prints its id (-p); otherwise it replaces that one (-r).
+// item: { headline, body, urgency, timeout?, exec? }; exec (argv) runs on click
+// and has to come last.
+function notifyArgv(item, replaceId) {
+  let argv = ["omarchy-notification-send", "--app-name", "Send to Kindle", "-g", "\u{F02D}", "-u", item.urgency]
+  if (item.timeout > 0) argv = argv.concat(["-t", String(item.timeout)])
+  argv = replaceId > 0 ? argv.concat(["-r", String(replaceId)]) : argv.concat(["-p"])
+  argv = argv.concat([item.headline, item.body || ""])
+  if (item.exec && item.exec.length) argv = argv.concat(["--exec"]).concat(item.exec)
+  return argv
 }
