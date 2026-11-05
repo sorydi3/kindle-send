@@ -1,6 +1,7 @@
 // Pending Sends (spec §7, §10): USB Books waiting for the Kindle to be plugged in.
 // Held by the Service in memory only. Pure functions, no QML.
 .pragma library
+.import "Routes.js" as Routes
 
 const NO_KINDLE = "Kindle not plugged in"
 const PLUG_IN = "Plug it in to send. Click to manage."
@@ -15,7 +16,7 @@ function names(books) {
 
 // A USB Book that failed only because no Kindle was found waits instead.
 function isPending(book, result) {
-  return book.route === "usb" && result.result === "failed"
+  return book.route === Routes.USB && result.result === "failed"
     && String(result.reason || "").indexOf(NO_KINDLE) === 0
 }
 

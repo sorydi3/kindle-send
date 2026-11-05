@@ -86,6 +86,28 @@ def test_eject_once_a_send_copied_anything(results, wanted):
     assert call("needsEject", results) is wanted
 
 
+def send_of(*routes):
+    return [{"path": f"/b/{i}", "name": f"Book{i}", "route": r} for i, r in enumerate(routes)]
+
+
+COPIED = [{"name": "Book0", "result": "copied"}]
+
+
+@pytest.mark.parametrize("books, index, results, ejected, step", [
+    (send_of("usb", "usb"), 1, COPIED, False, "book"),
+    # Eject as soon as no USB Book is left, before the Send's remaining emails.
+    (send_of("usb", "email"), 1, COPIED, False, "eject"),
+    (send_of("usb", "email"), 1, COPIED, True, "book"),
+    (send_of("usb"), 1, COPIED, False, "eject"),
+    (send_of("usb"), 1, COPIED, True, "finish"),
+    (send_of("email"), 1, [{"name": "Book0", "result": "sent"}], False, "finish"),
+    # Nothing copied (no Kindle, a failure): nothing to eject.
+    (send_of("usb"), 1, [], False, "finish"),
+])
+def test_after_a_book_the_send_goes_on_ejects_or_finishes(books, index, results, ejected, step):
+    assert call("nextStep", books, index, results, ejected) == step
+
+
 # --- Failures (spec §10, §13) ------------------------------------------------
 
 PASSWORD = {"name": "Dune.epub", "result": "failed", "reason": "Gmail rejected the app password.",

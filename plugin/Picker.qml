@@ -27,18 +27,14 @@ Item {
   property var routes: ({})
   property string filterText: ""
   property int selectedIndex: 0
-  property var bookFolders: Rows.DEFAULT_FOLDERS
+  // From `kindle-send plan`: the Book folders it scans and the Route labels.
+  property var bookFolders: []
+  property var routeLabels: ({})
   // Files from a Nautilus summon ({"files": [...]}); empty means the Book folders.
   property var payloadFiles: []
   readonly property bool payloadMode: payloadFiles.length > 0
 
   readonly property int rowHeight: Style.space(54)
-  readonly property string shellJson: {
-    const override = Quickshell.env("KINDLE_SEND_SHELL_JSON")
-    if (override) return override
-    const config = Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
-    return config + "/omarchy/shell.json"
-  }
 
   readonly property var rows: Rows.filter(books, filterText)
   // Pending Sends held by the Service, shown as one "N Books waiting for Kindle" line on top.
@@ -58,8 +54,7 @@ Item {
     root.failure = ""
     root.setupNeeded = false
     root.payloadFiles = Rows.payloadFiles(payloadJson)
-    // Setup may have rewritten (or first created) shell.json since the last open.
-    shellConfig.reload()
+    // plan reruns on every open, so settings rewritten by setup show at once.
     root.list()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -89,6 +84,8 @@ Item {
     const parsed = Rows.fromPlan(planner.lines)
     root.setupNeeded = parsed.setupNeeded
     root.books = parsed.books
+    root.bookFolders = parsed.bookFolders
+    root.routeLabels = parsed.routeLabels
     if (root.payloadMode) root.marked = Rows.allMarked(parsed.books)
     if (exitCode !== 0 && parsed.books.length === 0 && !parsed.setupNeeded)
       root.failure = "kindle-send plan failed (exit " + exitCode + ")."
@@ -123,16 +120,6 @@ Item {
     }
   }
 
-  // The Book folders, only to name them in the empty state.
-  FileView {
-    id: shellConfig
-    path: root.shellJson
-    watchChanges: true
-    printErrors: false
-    onLoaded: root.bookFolders = Rows.foldersFromShellJson(text())
-    onFileChanged: reload()
-  }
-
   // --- Actions ------------------------------------------------------------
 
   function routeOf(book) { return Rows.routeOf(book, root.routes) }
@@ -148,7 +135,7 @@ Item {
   function switchRoute(book) {
     if (!book || book.waiting) return
     const next = Object.assign({}, root.routes)
-    next[book.path] = root.routeOf(book) === "email" ? "usb" : "email"
+    next[book.path] = Rows.switchRoute(root.routeOf(book))
     root.routes = next
   }
 
@@ -337,7 +324,7 @@ Item {
               Text {
                 id: badgeText
                 anchors.centerIn: parent
-                text: Rows.routeLabel(row.route)
+                text: Rows.routeLabel(row.route, root.routeLabels)
                 color: row.ink
                 font.family: Style.font.menuFamily
                 font.pixelSize: Style.font.caption
@@ -366,7 +353,7 @@ Item {
               Text {
                 width: parent.width
                 textFormat: Text.PlainText
-                text: row.waiting ? row.modelData.details : Rows.details(row.modelData, row.route, Date.now())
+                text: row.waiting ? row.modelData.details : Rows.details(row.modelData, row.route, Date.now(), root.routeLabels)
                 color: row.ink
                 opacity: 0.6
                 font.family: Style.font.menuFamily

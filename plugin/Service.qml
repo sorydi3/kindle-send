@@ -1,13 +1,17 @@
 // Runs Sends in the background (spec §2, §10). The Picker hands it Books and
 // closes; this sends them one at a time with `kindle-send send` and keeps one
 // notification per Send, updated in place, ending in a summary.
+// Emails held by the Send limit leave their Send for a line of their own, so
+// they never hold up USB Books, an eject or later Sends (spec §7, §11).
 // It never sees the password: kindle-send reads the keyring itself.
+// The decisions live in the pure JS libraries; this file only wires them up.
 import QtQuick
 import Quickshell
 import Quickshell.Io
 import "Feedback.js" as Feedback
 import "Pending.js" as Pending
 import "Limit.js" as Limit
+import "Routes.js" as Routes
 
 Item {
   id: root
@@ -21,21 +25,29 @@ Item {
   property var current: null
   property var results: []
   property int bookIndex: 0
+  // The current Send's {"ejected": ...} line once it has ejected, else null.
+  property var ejectResult: null
   property int nextSendId: 1
   readonly property bool busy: current !== null
 
   readonly property var setupCommand: ["omarchy-launch-floating-terminal-with-presentation", "kindle-send", "setup"]
+
+  // A fresh notification key (Send ids and notice keys share one counter).
+  function newKey() {
+    const key = root.nextSendId
+    root.nextSendId += 1
+    return key
+  }
 
   // books: [{ path, name, route }], route "email" or "usb".
   function enqueue(books) {
     const clean = []
     for (let i = 0; i < (books ? books.length : 0); i++) {
       const b = books[i]
-      if (b && b.path) clean.push({ path: String(b.path), name: String(b.name || b.path), route: b.route === "usb" ? "usb" : "email" })
+      if (b && b.path) clean.push({ path: String(b.path), name: String(b.name || b.path), route: Routes.normalize(b.route) })
     }
     if (clean.length === 0) return
-    root.queue = root.queue.concat([{ id: root.nextSendId, books: clean }])
-    root.nextSendId += 1
+    root.queue = root.queue.concat([{ id: root.newKey(), books: clean }])
     if (!root.busy) root.startNext()
   }
 
@@ -46,84 +58,69 @@ Item {
     root.results = []
     root.waitingNow = []
     root.bookIndex = 0
-    root.sendBook()
+    root.ejectResult = null
+    root.advance()
   }
 
-  // Send limit (spec §11): each email first asks `kindle-send limit`, then
-  // goes, waits out the gap, or is held past the hourly cap. USB isn't limited.
+  // Next Book, the eject (as soon as no USB Book is left, spec §7), or the end.
+  function advance() {
+    const step = Feedback.nextStep(root.current.books, root.bookIndex, root.results, root.ejectResult !== null)
+    if (step === "eject") root.startEject()
+    else if (step === "book") root.sendBook()
+    else root.finishSend()
+  }
+
+  // Send limit (spec §11): an email first asks `kindle-send limit`, unless
+  // emails are already held, in which case it joins them. USB isn't limited.
   function sendBook() {
-    if (root.current.books[root.bookIndex].route !== "email") { root.startBook(); return }
-    limiter.lines = []
-    limiter.didStart = false
-    limiter.running = true
+    if (root.current.books[root.bookIndex].route !== Routes.EMAIL) root.startBook()
+    else if (root.held.length > 0) root.limitKnown(null)
+    else limiter.ask()
   }
 
-  function limitKnown() {
+  function limitKnown(limit) {
     const send = root.current
-    const d = Limit.decide(send.books, root.bookIndex, Limit.parse(limiter.lines))
+    const d = Limit.decide(send.books, root.bookIndex, limit, root.held.length > 0)
     if (d.action === "wait") {
-      if (d.held) {
-        const h = Limit.holding(send.books, root.bookIndex, root.queue, d.ms / 1000)
-        root.notify(send.id, h.headline, h.body, "normal", [])
-      }
       limitTimer.interval = d.ms
       limitTimer.restart()
+      return
+    }
+    if (d.action === "hold") {
+      send.books = d.books
+      root.holdEmails(d.held, d.notice, limit)
+      root.advance()
       return
     }
     if (d.books) send.books = d.books
     root.startBook()
   }
 
-  Process {
-    id: limiter
-    property var lines: []
-    property bool didStart: false
-    command: ["kindle-send", "limit"]
-    stdout: SplitParser {
-      onRead: function(line) {
-        try { limiter.lines = limiter.lines.concat([JSON.parse(line)]) } catch (e) {}
-      }
-    }
-    onStarted: didStart = true
-    // No answer (not installed, crashed) lets the email go rather than stall.
-    onRunningChanged: if (!running && !didStart && root.busy) Qt.callLater(root.limitKnown)
-    onExited: Qt.callLater(root.limitKnown)
-  }
-
-  // Asks again once the wait is over; the history may have changed meanwhile.
+  // Asks again once a gap wait is over; the history may have changed meanwhile.
   Timer { id: limitTimer; onTriggered: root.sendBook() }
 
   function startBook() {
     const send = root.current
-    const book = send.books[root.bookIndex]
     const p = Feedback.progressAt(send.books, root.bookIndex)
     root.notify(send.id, p.headline, p.body, "normal", [])
-    sender.lines = []
-    sender.didStart = false
-    // Paths go as argv words, never through a shell.
-    sender.command = ["kindle-send", "send", "--route", book.route, book.path]
-    sender.running = true
+    sender.runBook(send.books[root.bookIndex])
   }
 
   function bookDone(exitCode) {
-    const send = root.current
-    const book = send.books[root.bookIndex]
+    const book = root.current.books[root.bookIndex]
     const result = Feedback.resultFor(book, sender.lines, exitCode, sender.didStart)
     // A USB Book with no Kindle waits for it instead of failing (spec §7).
     if (Pending.isPending(book, result)) root.waitingNow = root.waitingNow.concat([book])
     else root.results = root.results.concat([result])
     root.bookIndex += 1
-    if (root.bookIndex < send.books.length) { root.sendBook(); return }
-    // One eject after the last USB Book of the Send (spec §7).
-    if (Feedback.needsEject(root.results)) { root.startEject(); return }
-    root.finishSend(null)
+    root.advance()
   }
 
-  function finishSend(eject) {
+  function finishSend() {
     const send = root.current
     if (root.waitingNow.length > 0) root.holdPending(send.id, root.results.length)
     if (root.results.length > 0) {
-      const s = Feedback.summary(root.results, eject)
+      const s = Feedback.summary(root.results, root.ejectResult)
       // A fully successful summary times out; any failure stays (critical) and,
       // when setup is the fix, a click opens setup (spec §10).
       root.notify(send.id, s.headline, s.body, s.urgency, s.setup ? root.setupCommand : [], s.timeout || 0)
@@ -138,24 +135,119 @@ Item {
     if (p) root.notify(send.id, p.headline, p.body, "normal", [])
   }
 
-  Process {
-    id: sender
+  // `kindle-send limit`, answered with the parsed state (null without one:
+  // not installed or crashed, and then the email goes rather than stall).
+  component LimitCheck: Process {
+    id: check
     property var lines: []
     property bool didStart: false
+    signal answered(var limit)
+    function ask() { lines = []; didStart = false; running = true }
+    command: ["kindle-send", "limit"]
+    stdout: SplitParser {
+      onRead: function(line) {
+        try { check.lines = check.lines.concat([JSON.parse(line)]) } catch (e) {}
+      }
+    }
+    onStarted: didStart = true
+    onRunningChanged: if (!running && !didStart) Qt.callLater(function() { check.answered(null) })
+    onExited: Qt.callLater(function() { check.answered(Limit.parse(check.lines)) })
+  }
+
+  // One `kindle-send send` run; paths go as argv words, never through a shell.
+  component BookRun: Process {
+    id: bookRun
+    property var lines: []
+    property bool didStart: false
+    signal stage(var line)
+    signal done(int exitCode)
+    function runBook(book) {
+      lines = []
+      didStart = false
+      command = ["kindle-send", "send", "--route", book.route, book.path]
+      running = true
+    }
     stdout: SplitParser {
       onRead: function(line) {
         let v = null
         try { v = JSON.parse(line) } catch (e) { return }
-        sender.lines = sender.lines.concat([v])
-        root.showStage(v)
+        bookRun.lines = bookRun.lines.concat([v])
+        bookRun.stage(v)
       }
     }
     onStarted: didStart = true
     // A program that cannot be found never starts and never exits.
-    onRunningChanged: if (!running && !didStart && root.busy) root.bookDone(-1)
+    onRunningChanged: if (!running && !didStart) Qt.callLater(function() { bookRun.done(-1) })
     // Deferred, so the next Book starts after this run has fully stopped.
-    onExited: function(exitCode) { Qt.callLater(function() { root.bookDone(exitCode) }) }
+    onExited: function(exitCode) { Qt.callLater(function() { bookRun.done(exitCode) }) }
   }
+
+  LimitCheck { id: limiter; onAnswered: function(limit) { root.limitKnown(limit) } }
+  BookRun {
+    id: sender
+    onStage: function(line) { root.showStage(line) }
+    onDone: function(exitCode) { root.bookDone(exitCode) }
+  }
+
+  // --- Emails held by the Send limit (spec §10, §11) ----------------------
+  // In memory only, lost on a shell restart. They go one at a time, oldest
+  // first, each after asking `kindle-send limit`. While the hourly cap holds
+  // them, a critical notice of their own (never a Send's notification) says
+  // how many and when; once the last has gone it turns into their summary.
+
+  property var held: []
+  property var heldResults: []
+  // The notification key of the hold notice; 0 while it isn't up.
+  property int holdKey: 0
+  // When the next held email may go (ms since the epoch), for the notice.
+  property real heldUntil: 0
+
+  function holdEmails(books, notice, limit) {
+    const idle = root.held.length === 0
+    root.held = root.held.concat(books)
+    if (limit && limit.canSendIn > 0) root.heldUntil = Date.now() + limit.canSendIn * 1000
+    if (notice || root.holdKey > 0) root.showHold()
+    if (idle) root.heldNext()
+  }
+
+  function showHold() {
+    if (root.holdKey === 0) root.holdKey = root.newKey()
+    const h = Limit.holding(root.held.length, Math.max(0, (root.heldUntil - Date.now()) / 1000))
+    root.notify(root.holdKey, h.headline, h.body, h.urgency, [])
+  }
+
+  function heldNext() {
+    if (root.held.length > 0) { heldLimiter.ask(); return }
+    if (root.heldResults.length > 0) {
+      const s = Feedback.summary(root.heldResults, null)
+      root.notify(root.holdKey || root.newKey(), s.headline, s.body, s.urgency,
+                  s.setup ? root.setupCommand : [], s.timeout || 0)
+    }
+    root.holdKey = 0
+    root.heldResults = []
+  }
+
+  function heldLimitKnown(limit) {
+    const d = Limit.heldStep(limit, root.holdKey > 0)
+    if (d.action === "send") { heldSender.runBook(root.held[0]); return }
+    root.heldUntil = Date.now() + d.ms
+    if (d.notice) root.showHold()
+    heldTimer.interval = d.ms
+    heldTimer.restart()
+  }
+
+  // The email being sent stays first in `held` until it is done.
+  function heldBookDone(exitCode) {
+    const book = root.held[0]
+    root.heldResults = root.heldResults.concat([Feedback.resultFor(book, heldSender.lines, exitCode, heldSender.didStart)])
+    root.held = root.held.slice(1)
+    if (root.holdKey > 0 && root.held.length > 0) root.showHold()
+    root.heldNext()
+  }
+
+  Timer { id: heldTimer; onTriggered: root.heldNext() }
+  LimitCheck { id: heldLimiter; onAnswered: function(limit) { root.heldLimitKnown(limit) } }
+  BookRun { id: heldSender; onDone: function(exitCode) { root.heldBookDone(exitCode) } }
 
   // --- Pending Sends (spec §7, §10) ---------------------------------------
   // USB Books that found no Kindle wait here, in memory only, while
@@ -176,7 +268,7 @@ Item {
     root.pending = Pending.add(root.pending, root.waitingNow)
     root.waitingNow = []
     let key = Pending.noticeKey(root.pendingKey, sendId, resultCount)
-    if (key === 0) { key = root.nextSendId; root.nextSendId += 1 }
+    if (key === 0) key = root.newKey()
     root.pendingKey = key
     const n = Pending.notice(root.pending)
     root.notify(key, n.headline, n.body, n.urgency, root.pickerCommand)
@@ -186,8 +278,7 @@ Item {
   // waiting notice, so it turns into progress and then the summary.
   function releasePending() {
     if (root.pending.length === 0) return
-    let id = root.pendingKey
-    if (id === 0) { id = root.nextSendId; root.nextSendId += 1 }
+    const id = root.pendingKey || root.newKey()
     root.queue = root.queue.concat([{ id: id, books: root.pending }])
     root.pending = []
     root.pendingKey = 0
@@ -237,7 +328,8 @@ Item {
         if (v && v.ejected !== undefined) result = v
       } catch (e) {}
     }
-    root.finishSend(result)
+    root.ejectResult = result
+    root.advance()
   }
 
   Process {

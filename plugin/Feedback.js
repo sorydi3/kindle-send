@@ -1,5 +1,6 @@
 // What the Send notification says (spec §10). Pure functions, no QML.
 .pragma library
+.import "Routes.js" as Routes
 
 const SENT = "Sent to Amazon."
 const ARRIVES = "Should appear on your Kindle within a few minutes."
@@ -28,6 +29,15 @@ const EJECT_PLEASE = "Please eject the Kindle."
 // Eject once after the last USB Book of a Send, if any Book was copied.
 function needsEject(results) {
   return results.some(function(r) { return r.result === "copied" })
+}
+
+// What a Send does once Book `index - 1` is done: "eject" as soon as no USB
+// Book is left and something was copied (its emails needn't keep the Kindle
+// mounted), else "book" for the next one, or "finish".
+function nextStep(books, index, results, ejected) {
+  const usbLeft = books.slice(index).some(function(b) { return b.route === Routes.USB })
+  if (!usbLeft && !ejected && needsEject(results)) return "eject"
+  return index < books.length ? "book" : "finish"
 }
 
 // A progress stage line ("converting", "copying") of the Book at `index`, or null if it changes nothing.
