@@ -56,3 +56,9 @@ def test_an_already_sent_book_is_sent_again_like_any_other():
                   " {'/b/Dune.epub': true}, {}, 0)")
 
     assert chosen == [{"path": "/b/Dune.epub", "name": "Dune.epub", "route": "email"}]
+
+
+def test_enter_on_the_waiting_line_sends_nothing():
+    waiting = json.dumps({"waiting": True, "path": "", "name": "1 Book waiting for Kindle"})
+
+    assert rows(f"toSend([{book(path='/b/Dune.epub')}], {{}}, {{}}, {waiting})") == []

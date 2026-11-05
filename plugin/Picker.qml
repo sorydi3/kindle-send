@@ -9,6 +9,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "Rows.js" as Rows
+import "Pending.js" as Pending
 
 Item {
   id: root
@@ -40,9 +41,12 @@ Item {
   }
 
   readonly property var rows: Rows.filter(books, filterText)
-  readonly property var current: rows.length > 0 ? rows[Math.min(selectedIndex, rows.length - 1)] : null
+  // Pending Sends held by the Service, shown as one "N Books waiting for Kindle" line on top.
+  readonly property var pending: service && service.pending ? service.pending : []
+  readonly property var listRows: Pending.withWaiting(rows, pending)
+  readonly property var current: listRows.length > 0 ? listRows[Math.min(selectedIndex, listRows.length - 1)] : null
   readonly property int markedCount: Object.keys(marked).length
-  onRowsChanged: selectedIndex = Math.max(0, Math.min(selectedIndex, rows.length - 1))
+  onListRowsChanged: selectedIndex = Math.max(0, Math.min(selectedIndex, listRows.length - 1))
 
   function open(payloadJson) {
     root.opened = true
@@ -131,7 +135,7 @@ Item {
   function routeOf(book) { return Rows.routeOf(book, root.routes) }
 
   function toggleMark(book) {
-    if (!book) return
+    if (!book || book.waiting) return
     const next = Object.assign({}, root.marked)
     if (next[book.path]) delete next[book.path]
     else next[book.path] = true
@@ -139,7 +143,7 @@ Item {
   }
 
   function switchRoute(book) {
-    if (!book) return
+    if (!book || book.waiting) return
     const next = Object.assign({}, root.routes)
     next[book.path] = root.routeOf(book) === "email" ? "usb" : "email"
     root.routes = next
@@ -157,9 +161,14 @@ Item {
     root.close()
   }
 
+  // Delete on the waiting line cancels every Pending Send.
+  function cancelWaiting(row) {
+    if (row && row.waiting && root.service) root.service.cancelPending()
+  }
+
   function select(delta) {
-    if (root.rows.length === 0) return
-    root.selectedIndex = Math.max(0, Math.min(root.rows.length - 1, root.selectedIndex + delta))
+    if (root.listRows.length === 0) return
+    root.selectedIndex = Math.max(0, Math.min(root.listRows.length - 1, root.selectedIndex + delta))
   }
 
   // --- Drawing ------------------------------------------------------------
@@ -212,6 +221,7 @@ Item {
           } else if (event.key === Qt.Key_Space) root.toggleMark(root.current)
           else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) root.switchRoute(root.current)
           else if (enter) root.send()
+          else if (event.key === Qt.Key_Delete) root.cancelWaiting(root.current)
           else if (Util.editsFilter(event, root.filterText)) {
             root.filterText = Util.editedFilter(event, root.filterText)
             root.selectedIndex = 0
@@ -273,7 +283,7 @@ Item {
           anchors.bottomMargin: Style.spacing.lg
           anchors.left: parent.left
           anchors.right: parent.right
-          model: root.rows
+          model: root.listRows
           currentIndex: root.selectedIndex
           clip: true
           spacing: Style.space(4)
@@ -284,8 +294,9 @@ Item {
             required property int index
             required property var modelData
             readonly property bool hasCursor: index === root.selectedIndex
-            readonly property bool isMarked: root.marked[modelData.path] === true
-            readonly property string route: root.routeOf(modelData)
+            readonly property bool waiting: modelData.waiting === true
+            readonly property bool isMarked: !waiting && root.marked[modelData.path] === true
+            readonly property string route: waiting ? "" : root.routeOf(modelData)
             readonly property color ink: hasCursor ? Color.menu.selectedText : Color.menu.text
 
             width: ListView.view.width
@@ -299,15 +310,17 @@ Item {
               anchors.leftMargin: Style.space(12)
               anchors.verticalCenter: parent.verticalCenter
               width: Style.space(24)
-              text: row.isMarked ? "\u{F0132}" : "\u{F0131}"
+              // A clock on the waiting line, a checkbox on Books.
+              text: row.waiting ? "\u{F0954}" : row.isMarked ? "\u{F0132}" : "\u{F0131}"
               color: row.ink
-              opacity: row.isMarked ? 1 : 0.4
+              opacity: row.isMarked || row.waiting ? 1 : 0.4
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.title
             }
 
             Rectangle {
               id: badge
+              visible: !row.waiting
               anchors.right: parent.right
               anchors.rightMargin: Style.space(12)
               anchors.verticalCenter: parent.verticalCenter
@@ -330,7 +343,7 @@ Item {
 
             Column {
               // Dimmed when the chosen Route can't take this Book.
-              opacity: Rows.routeTakes(row.modelData, row.route) ? 1 : 0.4
+              opacity: row.waiting || Rows.routeTakes(row.modelData, row.route) ? 1 : 0.4
               anchors.left: mark.right
               anchors.leftMargin: Style.space(8)
               anchors.right: badge.left
@@ -350,7 +363,7 @@ Item {
               Text {
                 width: parent.width
                 textFormat: Text.PlainText
-                text: Rows.details(row.modelData, row.route, Date.now())
+                text: row.waiting ? row.modelData.details : Rows.details(row.modelData, row.route, Date.now())
                 color: row.ink
                 opacity: 0.6
                 font.family: Style.font.menuFamily

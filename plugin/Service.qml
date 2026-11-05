@@ -6,6 +6,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "Feedback.js" as Feedback
+import "Pending.js" as Pending
 
 Item {
   id: root
@@ -42,6 +43,7 @@ Item {
     root.current = root.queue[0]
     root.queue = root.queue.slice(1)
     root.results = []
+    root.waitingNow = []
     root.bookIndex = 0
     root.sendBook()
   }
@@ -61,7 +63,10 @@ Item {
   function bookDone(exitCode) {
     const send = root.current
     const book = send.books[root.bookIndex]
-    root.results = root.results.concat([Feedback.resultFor(book, sender.lines, exitCode, sender.didStart)])
+    const result = Feedback.resultFor(book, sender.lines, exitCode, sender.didStart)
+    // A USB Book with no Kindle waits for it instead of failing (spec §7).
+    if (Pending.isPending(book, result)) root.waitingNow = root.waitingNow.concat([book])
+    else root.results = root.results.concat([result])
     root.bookIndex += 1
     if (root.bookIndex < send.books.length) { root.sendBook(); return }
     // One eject after the last USB Book of the Send (spec §7).
@@ -71,8 +76,11 @@ Item {
 
   function finishSend(eject) {
     const send = root.current
-    const s = Feedback.summary(root.results, eject)
-    root.notify(send.id, s.headline, s.body, s.urgency, s.setup ? root.setupCommand : [])
+    if (root.waitingNow.length > 0) root.holdPending(send.id, root.results.length)
+    if (root.results.length > 0) {
+      const s = Feedback.summary(root.results, eject)
+      root.notify(send.id, s.headline, s.body, s.urgency, s.setup ? root.setupCommand : [])
+    }
     root.startNext()
   }
 
@@ -100,6 +108,66 @@ Item {
     onRunningChanged: if (!running && !didStart && root.busy) root.bookDone(-1)
     // Deferred, so the next Book starts after this run has fully stopped.
     onExited: function(exitCode) { Qt.callLater(function() { root.bookDone(exitCode) }) }
+  }
+
+  // --- Pending Sends (spec §7, §10) ---------------------------------------
+  // USB Books that found no Kindle wait here, in memory only, while
+  // `kindle-send kindle` is polled every 3 s. Once a Kindle shows up they all
+  // go out as one Send (so one eject). One lasting notification covers them;
+  // clicking it opens the Picker, where Delete on the waiting line cancels.
+
+  // Books waiting for the Kindle: [{ path, name, route }]. The Picker reads it.
+  property var pending: []
+  // USB Books of the current Send that found no Kindle.
+  property var waitingNow: []
+  // The notification key (a Send id) showing the waiting notice; 0 when none.
+  property int pendingKey: 0
+  readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "sorydi3.kindle-send"
+  readonly property var pickerCommand: ["omarchy-shell", "shell", "summon", root.pluginId]
+
+  function holdPending(sendId, resultCount) {
+    root.pending = Pending.add(root.pending, root.waitingNow)
+    root.waitingNow = []
+    let key = Pending.noticeKey(root.pendingKey, sendId, resultCount)
+    if (key === 0) { key = root.nextSendId; root.nextSendId += 1 }
+    root.pendingKey = key
+    const n = Pending.notice(root.pending)
+    root.notify(key, n.headline, n.body, n.urgency, root.pickerCommand)
+  }
+
+  // The Kindle is here: send every waiting Book. The new Send takes over the
+  // waiting notice, so it turns into progress and then the summary.
+  function releasePending() {
+    if (root.pending.length === 0) return
+    let id = root.pendingKey
+    if (id === 0) { id = root.nextSendId; root.nextSendId += 1 }
+    root.queue = root.queue.concat([{ id: id, books: root.pending }])
+    root.pending = []
+    root.pendingKey = 0
+    if (!root.busy) root.startNext()
+  }
+
+  function cancelPending() {
+    if (root.pending.length === 0) return
+    const c = Pending.cancelledNotice(root.pending)
+    if (root.pendingKey > 0) root.notify(root.pendingKey, c.headline, c.body, c.urgency, [])
+    root.pending = []
+    root.pendingKey = 0
+  }
+
+  Timer {
+    id: kindlePoll
+    interval: 3000
+    repeat: true
+    running: root.pending.length > 0
+    onTriggered: if (!kindleCheck.running) kindleCheck.running = true
+  }
+
+  Process {
+    id: kindleCheck
+    command: ["kindle-send", "kindle"]
+    stdout: StdioCollector { id: kindleOut }
+    onExited: Qt.callLater(function() { if (Pending.kindleFound(kindleOut.text)) root.releasePending() })
   }
 
   // --- Eject ----------------------------------------------------------------
