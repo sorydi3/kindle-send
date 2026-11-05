@@ -24,8 +24,9 @@ def make_book(path, size=10, mtime=None):
 
 
 @pytest.fixture
-def set_up(home):
+def set_up(home, keyring):
     write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+    keyring.set_password("app-password")
 
 
 def test_folders_lists_a_book_in_books_with_its_details(ks, home, set_up, capsys):
@@ -83,7 +84,8 @@ def test_folders_lists_newest_first_across_folders(ks, home, set_up, capsys):
     assert [line["name"] for line in lines] == ["New.pdf", "Middle.txt", "Old.epub"]
 
 
-def test_folders_uses_the_book_folders_setting(ks, home, capsys, tmp_path):
+def test_folders_uses_the_book_folders_setting(ks, home, keyring, capsys, tmp_path):
+    keyring.set_password("app-password")
     write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER,
                      bookFolders=["~/Library", str(tmp_path / "elsewhere")])
     make_book(home / "Books" / "NotSearched.epub")
@@ -95,7 +97,8 @@ def test_folders_uses_the_book_folders_setting(ks, home, capsys, tmp_path):
     assert names(lines) == ["Elsewhere.pdf", "InLibrary.epub"]
 
 
-def test_a_book_in_overlapping_folders_is_listed_once(ks, home, capsys):
+def test_a_book_in_overlapping_folders_is_listed_once(ks, home, keyring, capsys):
+    keyring.set_password("app-password")
     write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER,
                      bookFolders=["~/Books", "~/Books/sub"])
     make_book(home / "Books" / "sub" / "Dune.epub")
@@ -213,6 +216,36 @@ def test_setup_needed_without_any_settings(ks, home, capsys):
     _, lines = run(ks, capsys, "plan", "--folders")
 
     assert lines == [{"setupNeeded": True, "missing": ["kindleAddress", "senderAddress"]}]
+
+
+def test_a_missing_app_password_also_needs_setup(ks, home, keyring, capsys):
+    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+    make_book(home / "Books" / "Dune.epub")
+
+    _, lines = run(ks, capsys, "plan", "--folders")
+
+    assert lines[0] == {"setupNeeded": True, "missing": ["appPassword"]}
+    assert names(lines[1:]) == ["Dune.epub"]
+
+
+def test_a_stored_app_password_is_never_printed(ks, home, set_up, capsys):
+    make_book(home / "Books" / "Dune.epub")
+
+    ks.main(["plan", "--folders"])
+
+    assert "app-password" not in capsys.readouterr().out
+
+
+def test_settings_written_by_setup_are_seen_by_the_next_plan(ks, home, keyring, capsys):
+    make_book(home / "Books" / "Dune.epub")
+    _, before = run(ks, capsys, "plan", "--folders")
+
+    ks.save_settings({"kindleAddress": KINDLE, "senderAddress": SENDER})
+    keyring.set_password("app-password")
+    _, after = run(ks, capsys, "plan", "--folders")
+
+    assert before[0]["setupNeeded"] is True
+    assert names(after) == ["Dune.epub"]
 
 
 def test_files_are_classified_and_unsupported_or_missing_ones_left_out(ks, home, set_up, capsys, tmp_path):

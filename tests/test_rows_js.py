@@ -62,3 +62,18 @@ def test_enter_on_the_waiting_line_sends_nothing():
     waiting = json.dumps({"waiting": True, "path": "", "name": "1 Book waiting for Kindle"})
 
     assert rows(f"toSend([{book(path='/b/Dune.epub')}], {{}}, {{}}, {waiting})") == []
+
+
+def test_a_plan_that_needs_setup_switches_the_picker_to_setup():
+    """The Picker then shows only "Set up Send to Kindle" (spec §4, §9)."""
+    parsed = rows("fromPlan([{setupNeeded: true, missing: ['appPassword']},"
+                  f" {book(path='/b/Dune.epub')}])")
+
+    assert parsed["setupNeeded"] is True
+
+
+def test_a_plan_without_setup_needed_lists_books():
+    parsed = rows(f"fromPlan([{book(path='/b/Dune.epub')}])")
+
+    assert parsed["setupNeeded"] is False
+    assert [b["path"] for b in parsed["books"]] == ["/b/Dune.epub"]
