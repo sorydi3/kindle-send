@@ -195,6 +195,15 @@ else
   echo "    Nautilus not found; the right-click item shows once it is installed."
 fi
 
+echo "==> Strata"
+if command -v strata >/dev/null; then
+  # Strata reads its actions folder each time a menu opens.
+  python3 -I "$repo/scripts/strata_action.py" "$config_dir/strata/actions" "$("$program" formats)" ||
+    echo "    Warning: the Strata action was not added." >&2
+else
+  echo "    Strata not found; no action added."
+fi
+
 case ":$PATH:" in
   *":$bin_dir:"*) ;;
   *) echo "Note: $bin_dir is not on your PATH in this shell." ;;

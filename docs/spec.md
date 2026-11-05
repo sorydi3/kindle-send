@@ -13,7 +13,7 @@ An omarchy-shell plugin that sends ebooks on this machine to the user's Kindle, 
 - Local Books only: files already on disk.
 - One Kindle address.
 - Two Routes: Email (Gmail SMTP with an app password) and USB (drive-style Kindles).
-- Three ways in: a picker opened by `SUPER + SHIFT + K` or the Omarchy menu; a Nautilus right-click entry; the `kindle-send` command.
+- Three ways in: a picker opened by `SUPER + SHIFT + K` or the Omarchy menu; a right-click entry in Nautilus or Strata; the `kindle-send` command.
 - Built for one user (the author). No personal details or secrets in the code.
 
 **Out of scope**
@@ -36,6 +36,7 @@ plugin/            omarchy-shell plugin  sorydi3.kindle-send  (kinds: menu + ser
   Service.qml      background: runs Sends, queues, notifications, Kindle detection
 bin/kindle-send    Python 3, standard library only: does the actual work
 nautilus/kindle-send.py   nautilus-python extension: right-click "Send to Kindle"
+scripts/strata_action.py  writes Strata's right-click "Send to Kindle" action
 assets/test.epub   tiny EPUB for the setup test send
 scripts/install.sh, scripts/uninstall.sh
 ```
@@ -47,7 +48,7 @@ Who does what:
 | **Picker** (QML) | Show Books, marks and Routes; keys; closes on send and hands the Send to the Service. Never sees the password. |
 | **Service** (QML) | Owns everything held in memory: the Send queue, Pending Sends, Books held by the Send limit. Runs `kindle-send` per Book, polls for the Kindle while something is pending, posts and updates notifications. |
 | **`kindle-send`** (Python) | Reads settings and the keyring itself. Classifies Books, picks Routes, converts, emails, copies, ejects, writes the Send history, runs setup and prints history. Testable without the shell. |
-| **Nautilus extension** | Adds the right-click item for supported files; summons the Picker with those files. |
+| **Nautilus extension**, **Strata action** | Add the right-click item for supported files; summon the Picker with those files. |
 
 Plugin manifest (shape per [#4](https://github.com/sorydi3/kindle-send/issues/4)):
 
@@ -77,7 +78,8 @@ All subcommands that the Service calls print **one JSON object per line** on std
 | `kindle-send limit` | Send limit state from the Send history: `{"canSendIn": seconds, "sentLastHour": N, "maxEmailsPerHour": N}` (only `sent` email entries count; `maxEmailsPerHour` tells the Service whether a wait is the gap or the hourly cap). |
 | `kindle-send setup` | Interactive wizard (Section 9). Needs a TTY. |
 | `kindle-send history` | Prints the last 20 Sends, human-readable. |
-| `kindle-send formats` | The supported formats (Section 5), lowercase without the dot: `{"formats": ["azw", ...]}`. The one list; the Nautilus extension reads it instead of keeping its own. |
+| `kindle-send formats` | The supported formats (Section 5), lowercase without the dot: `{"formats": ["azw", ...]}`. The one list; the Nautilus extension and the Strata action read it instead of keeping their own. |
+| `kindle-send pick FILE...` | Summon the Picker with just the supported files among FILE, already marked; names the others on stderr. Exit 1 if none is supported. Run by the Strata action. |
 
 The Service keeps the ordering: it decides which Book goes next, waits for `limit`, and calls `eject` once a Send has no USB Book left.
 
@@ -113,6 +115,14 @@ The Service keeps the ordering: it decides which Book goes next, waits for `limi
 - It runs `omarchy-shell shell summon sorydi3.kindle-send '{"files": [...]}'` with the supported files. The Picker opens listing **only those files, already marked**; Routes and `Tab` work as usual.
 - Unsupported files in a mixed selection are left out, and a notification lists them.
 - The extension asks `kindle-send formats` once per Nautilus process for the supported extensions, so the format list lives only in `kindle-send`. Without `kindle-send` on `PATH` there is no item. Commands are argv lists, never a shell, so names with spaces or non-ASCII characters pass through unchanged.
+
+### Strata right-click
+
+[Strata](https://github.com/lgse/strata) has its own custom actions instead of extensions.
+
+- If `strata` is installed, install writes `~/.config/strata/actions/kindle-send/action.toml` (folder `0700`, file `0600`, as Strata requires): a top-level **"Send to Kindle"** command action that runs `kindle-send pick {paths}` for files whose extension is in `kindle-send formats`.
+- It starts **turned off**, as Strata recommends for actions written by tools; the user turns it on in Strata's Settings → Actions. Reinstalling updates it and keeps that choice. Uninstall removes it.
+- Strata shows an action only when **every** selected item matches, so a mixed selection (a PDF and a CBZ) or a folder gets no item, and there is no "left out" notification.
 
 ## 5. Routes ([#6](https://github.com/sorydi3/kindle-send/issues/6), [#7](https://github.com/sorydi3/kindle-send/issues/7))
 
@@ -245,6 +255,7 @@ Modelled on `~/Projects/omarchy-window-restore/scripts/install.sh`.
    - `bin/kindle-send` → `~/.local/share/kindle-send/bin/kindle-send`, linked from `~/.local/bin/kindle-send`, plus `assets/` beside it in `~/.local/share/kindle-send/` (so `<realpath>/../assets/test.epub` resolves)
    - `plugin/` → `~/.local/share/kindle-send/omarchy-plugin`, symlinked as `~/.config/omarchy/plugins/sorydi3.kindle-send`
    - `nautilus/kindle-send.py` → `~/.local/share/nautilus-python/extensions/`
+   - if Strata is installed, its action → `~/.config/strata/actions/kindle-send/` (Section 4)
 3. **Edit config, after asking for each edit, each backed up first and wrapped in `>>> kindle-send … >>>` / `<<< kindle-send <<<` markers:**
    - `~/.config/hypr/bindings.lua`: `SUPER + SHIFT + K` → `omarchy-shell shell toggle sorydi3.kindle-send`
    - `~/.config/omarchy/extensions/omarchy-menu.jsonc`: "Send to Kindle" (toggle the picker) and "Send to Kindle → Setup" (floating terminal running `kindle-send setup`)
@@ -253,7 +264,7 @@ Modelled on `~/Projects/omarchy-window-restore/scripts/install.sh`.
 
 Rerun install to update. Asking needs a terminal: without one, install makes no config edits and says so. `--yes` makes them without asking, `--no-config` skips them. Each block goes in only once. The menu block goes before the final `}`. After the edit, install checks the file with the shell's own parsing rules and restores the backup if that fails. A menu file that already fails to parse is left alone. Backups: `<file>.before-kindle-send`.
 
-`scripts/uninstall.sh` removes everything install added: files, the symlink and the marker blocks. It keeps the settings in `shell.json`, the keyring password and the Send history, unless `--purge` is given. It removes the link and rescans instead of running `omarchy plugin remove`, because disabling a plugin deletes its `shell.json` entry, settings included.
+`scripts/uninstall.sh` removes everything install added: files, the symlink, the Strata action and the marker blocks. It keeps the settings in `shell.json`, the keyring password and the Send history, unless `--purge` is given. It removes the link and rescans instead of running `omarchy plugin remove`, because disabling a plugin deletes its `shell.json` entry, settings included.
 
 ## 15. Acceptance checks
 

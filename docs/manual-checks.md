@@ -68,6 +68,15 @@ Run from the menu: Send to Kindle → Setup. It should open a floating terminal.
 - [ ] Choosing it opens the Picker with only the PDF listed and marked. A notification says "Left out 1 file(s)", naming the CBZ.
 - [ ] Right-click a folder. There is no "Send to Kindle" item.
 
+## 6b. Strata (if it's your file manager)
+
+- [ ] Install printed `Added …/strata/actions/kindle-send/action.toml, turned off.` In Strata, Settings → Actions lists **Send to Kindle**, with nothing under Problems. Turn it on.
+- [ ] Select one or more PDFs/EPUBs and right-click. **Send to Kindle** sits in the menu body (not under Actions).
+- [ ] Choosing it opens the Picker with just those files, marked. Strata's Jobs panel shows the job as finished.
+- [ ] A selection with a CBZ in it, or a folder, has no **Send to Kindle** item.
+- [ ] A file named with spaces and accents (e.g. `Mon livre été.pdf`) opens in the Picker.
+- [ ] Rerun install: the action stays turned on.
+
 ## 7. Send limit (§15.7)
 
 Uses real email to your own Kindle, so 20 deliveries. If you'd rather not, lower `maxEmailsPerHour` to 3 in `shell.json` for the test, and put it back after.
@@ -91,6 +100,7 @@ Uses real email to your own Kindle, so 20 deliveries. If you'd rather not, lower
   - [ ] The binding block is gone from `bindings.lua`, and the rest of the file is as before (compare with `bindings.lua.before-kindle-send`).
   - [ ] The menu entries are gone, and your other menu items still show.
   - [ ] After Nautilus restarts, right-click has no "Send to Kindle".
+  - [ ] `~/.config/strata/actions/kindle-send` is gone, and Strata's right-click has no "Send to Kindle".
   - [ ] Kept: the plugin's entry in `shell.json` (addresses, folders), the keyring password and `~/.local/state/kindle-send/history.jsonl`.
 - [ ] Run `./scripts/install.sh` again. Your settings are still there (the Picker shows no setup line), and no block is added twice.
 - [ ] (Optional) `./scripts/uninstall.sh --purge` also removes the `shell.json` entry, the keyring password and the history folder.

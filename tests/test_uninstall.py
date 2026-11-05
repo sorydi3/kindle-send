@@ -135,3 +135,16 @@ def test_install_after_uninstall_adds_the_blocks_again_once(env):
     assert b.read_text().count("kindle-send keybinding") == 1
     assert m.read_text().count("kindle-send menu") == 1
     assert "kindle-send.pick" in shell_parse(m.read_text())
+
+
+def test_uninstall_removes_the_strata_action(env):
+    stub(env["bin"], "strata", "exit 0\n")
+    installed(env)
+    action = env["home"] / ".config" / "strata" / "actions" / "kindle-send"
+    assert action.exists()
+
+    result = uninstall(env)
+
+    assert result.returncode == 0, result.stderr
+    assert not action.exists()
+    assert action.parent.exists()

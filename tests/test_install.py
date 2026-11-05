@@ -402,3 +402,27 @@ def test_without_a_terminal_install_tells_how_to_run_setup(env):
 
     assert "Run setup when ready: kindle-send setup" in result.stdout
     assert "Run setup now" not in result.stdout
+
+
+# ---- Strata
+
+def strata_action(env):
+    return env["home"] / ".config" / "strata" / "actions" / "kindle-send" / "action.toml"
+
+
+def test_with_strata_installed_its_action_is_added_disabled(env):
+    stub(env["bin"], "strata", "exit 0\n")
+
+    result = install(env)
+
+    assert result.returncode == 0, result.stderr
+    text = strata_action(env).read_text()
+    assert 'program = "kindle-send"' in text and "enabled = false" in text
+    assert "Settings → Actions" in result.stdout
+
+
+def test_without_strata_no_action_is_added(env):
+    result = install(env)
+
+    assert result.returncode == 0, result.stderr
+    assert not strata_action(env).exists()

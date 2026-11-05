@@ -3,7 +3,7 @@
 #
 #   ./scripts/uninstall.sh [--purge]
 #
-# Removes the command, the plugin and its link, the Nautilus item, and the
+# Removes the command, the plugin and its link, the Nautilus and Strata items, and the
 # keybinding and menu blocks between the installer's markers. Keeps your
 # settings in shell.json, the app password in the keyring and the Send
 # history, so a later install picks up where you left off.
@@ -92,6 +92,12 @@ if [[ -f $nautilus_ext ]]; then
   if command -v nautilus >/dev/null; then
     nautilus -q 2>/dev/null || true
   fi
+fi
+
+strata_action="$config_dir/strata/actions/kindle-send"
+if [[ -f $strata_action/action.toml ]] && grep -qF 'args = ["pick", "{paths}"]' "$strata_action/action.toml"; then
+  rm -rf "$strata_action"
+  echo "    $strata_action"
 fi
 
 echo "==> Keybinding"
