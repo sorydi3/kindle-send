@@ -209,7 +209,7 @@ def send_email(book):
     try:
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
             server.ehlo()
-            server.login(sender, password)
+            sign_in(server, sender, password)
             advertised = advertised_size(server)
             if advertised:
                 save_email_limit(advertised)
@@ -225,6 +225,13 @@ def send_email(book):
     except (smtplib.SMTPException, OSError) as error:
         raise unreachable(error, password) from None
     return {"result": "sent"}
+
+
+def sign_in(server, user, password):
+    """AUTH PLAIN only. On a wrong password Gmail answers 535 and hangs up, and
+    smtplib's login() would then retry with AUTH LOGIN and report the hang-up instead."""
+    server.user, server.password = user, password
+    server.auth("PLAIN", server.auth_plain)
 
 
 def megabytes(size):

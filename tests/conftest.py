@@ -162,10 +162,13 @@ class FakeSMTP:
             self.esmtp_features["size"] = str(FakeSMTP.advertised_size)
         return (250, b"ok")
 
-    def login(self, user, password):
+    def auth_plain(self, challenge=None):
+        return f"\0{self.user}\0{self.password}"
+
+    def auth(self, mechanism, authobject, **kwargs):
         if FakeSMTP.login_error:
             raise FakeSMTP.login_error
-        self.logins.append((user, password))
+        self.logins.append((self.user, self.password))
 
     def send_message(self, msg, *args, **kwargs):
         if FakeSMTP.send_error:
