@@ -14,7 +14,7 @@ An omarchy-shell plugin that sends ebooks on this machine to the user's Kindle, 
 - One Kindle address.
 - Two Routes: Email (Gmail SMTP with an app password) and USB (drive-style Kindles).
 - Three ways in: a picker opened by `SUPER + SHIFT + K` or the Omarchy menu; a right-click entry in Nautilus or Strata; the `kindle-send` command.
-- Built for one user (the author). No personal details or secrets in the code.
+- Built and tested on the author's machine, but designed for any Omarchy user: first-run, setup and failure messages must make sense to a stranger, and nothing may assume the author's machine, Kindle model or folders. No personal details or secrets in the code.
 
 **Out of scope**
 
@@ -22,7 +22,7 @@ An omarchy-shell plugin that sends ebooks on this machine to the user's Kindle, 
 - More than one Kindle address.
 - Formats neither Route accepts: CBZ/CBR, FB2, DjVu, LIT ([#7](https://github.com/sorydi3/kindle-send/issues/7)).
 - MTP Kindles (2024+ models, Scribe) ([#13](https://github.com/sorydi3/kindle-send/issues/13)).
-- Publishing for other Omarchy users (kept possible, not done).
+- Publishing for other Omarchy users (packaging, announcing, supporting them). The design keeps it possible.
 - Amazon's "Send to Kindle for Web" (no API) and USB over MTP.
 
 **Target machine** (verified 2026-11-04): Omarchy with omarchy-shell plugins, Nautilus 51 with `nautilus-python` 4.2, `udiskie --automount` running, GNOME Keyring running as the Secret Service, `python3`. The Kindle is a Paperwhite 5 (2021), firmware 5.19.2, USB id `1949:0324`, mass storage ([#12](https://github.com/sorydi3/kindle-send/issues/12)).
