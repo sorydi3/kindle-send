@@ -12,7 +12,7 @@ A native Linux desktop plugin, not web, iOS or Android: Quickshell/QML panels in
 
 Omarchy users who keep ebooks on their disk and own a Kindle. They are keyboard-first desktop users who want a Book on the Kindle without opening a browser, Amazon's apps or Calibre's UI.
 
-Design work serves other Omarchy users, not only the author (decided 2026-11-09). This goes further than `docs/spec.md` §1, which still says "built for one user" and lists publishing as out of scope. Until the spec is updated, treat that as an open decision: first-run, setup and failure messages should make sense to a stranger, and nothing should assume the author's machine, Kindle model or folders.
+Design work serves other Omarchy users, not only the author (decided 2026-11-09; `docs/spec.md` §1 agrees). Publishing the plugin stays out of scope, but first-run, setup and failure messages must make sense to a stranger, and nothing may assume the author's machine, Kindle model or folders.
 
 ## Product Purpose
 
