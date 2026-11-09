@@ -19,7 +19,10 @@ Item {
 
   property bool opened: false
   property bool loading: false
+  // Set a moment after loading starts, so a quick plan shows no flash of "Looking…".
+  property bool loadingShown: false
   property bool setupNeeded: false
+  // Why listing failed: "" | "missing" (no kindle-send) | "failed" | "slow".
   property string failure: ""
   property var books: []
   // path -> true for marked Books; path -> "email"|"usb" for Tab overrides.
@@ -35,13 +38,24 @@ Item {
   readonly property bool payloadMode: payloadFiles.length > 0
 
   readonly property int rowHeight: Style.space(54)
+  // Three text strengths, never multiplied together. Secondary stays readable
+  // (4.5:1 or better in most Omarchy themes); dim is only for a Book its Route can't take.
+  readonly property real secondaryOpacity: 0.72
+  readonly property real hintOpacity: 0.5
+  readonly property real dimOpacity: 0.4
 
   readonly property var rows: Rows.filter(books, filterText)
   // Pending Sends held by the Service, shown as one "N Books waiting for Kindle" line on top.
   readonly property var pending: service && service.pending ? service.pending : []
   readonly property var listRows: Pending.withWaiting(rows, pending)
   readonly property var current: listRows.length > 0 ? listRows[Math.min(selectedIndex, listRows.length - 1)] : null
-  readonly property int markedCount: Object.keys(marked).length
+  // Footer text: what Enter sends, and which marked Books their Route can't take.
+  readonly property var sendSummary: Rows.footer(books, marked, routes, current, routeLabels)
+  // Setup, a failure, loading, or an empty list: what shows instead of the list (null: the list).
+  readonly property var screen: Rows.screen({
+    loading: loading, setupNeeded: setupNeeded, failure: failure, payloadCount: payloadFiles.length,
+    books: books.length, rows: rows.length, waiting: pending.length, filterText: filterText,
+    bookFolders: bookFolders })
   onListRowsChanged: selectedIndex = Math.max(0, Math.min(selectedIndex, listRows.length - 1))
 
   function open(payloadJson) {
@@ -63,12 +77,16 @@ Item {
     root.opened = false
     planner.running = false
     responseTimer.stop()
+    loadingDelay.stop()
   }
 
   // --- Asking kindle-send -------------------------------------------------
 
   function list() {
+    root.failure = ""
     root.loading = true
+    root.loadingShown = false
+    loadingDelay.restart()
     planner.lines = []
     planner.didStart = false
     // close() stops the planner, so it is idle here and picks up the new command.
@@ -88,7 +106,7 @@ Item {
     root.routeLabels = parsed.routeLabels
     if (root.payloadMode) root.marked = Rows.allMarked(parsed.books)
     if (exitCode !== 0 && parsed.books.length === 0 && !parsed.setupNeeded)
-      root.failure = "kindle-send plan failed (exit " + exitCode + ")."
+      root.failure = "failed"
   }
 
   Process {
@@ -105,7 +123,7 @@ Item {
     // A program that cannot be found never starts and never exits.
     onRunningChanged: if (!running && !didStart && root.loading) {
       root.loading = false
-      root.failure = "kindle-send is not installed. Run scripts/install.sh."
+      root.failure = "missing"
     }
     onExited: function(exitCode) { root.listed(exitCode) }
   }
@@ -116,8 +134,14 @@ Item {
     onTriggered: if (planner.running) {
       planner.running = false
       root.loading = false
-      root.failure = "kindle-send plan did not answer."
+      root.failure = "slow"
     }
+  }
+
+  Timer {
+    id: loadingDelay
+    interval: 400
+    onTriggered: root.loadingShown = root.loading
   }
 
   // --- Actions ------------------------------------------------------------
@@ -132,15 +156,19 @@ Item {
     root.marked = next
   }
 
+  // Tab on a marked Book switches every marked Book.
   function switchRoute(book) {
-    if (!book || book.waiting) return
-    const next = Object.assign({}, root.routes)
-    next[book.path] = Rows.switchRoute(root.routeOf(book))
-    root.routes = next
+    root.routes = Rows.switchRoutes(root.books, root.marked, root.routes, book)
   }
 
-  function send() {
-    const chosen = Rows.toSend(root.books, root.marked, root.routes, root.current)
+  // Enter: the marked Books, or the highlighted one if none are marked.
+  function send() { root.hand(Rows.toSend(root.books, root.marked, root.routes, root.current)) }
+
+  // Double-click: just this Book, whatever else is marked.
+  function sendOne(book) { root.hand(Rows.toSend(root.books, {}, root.routes, book)) }
+
+  // Hands the Books to the Service and closes at once.
+  function hand(chosen) {
     if (chosen.length === 0) return
     if (root.service) root.service.enqueue(chosen)
     root.close()
@@ -190,7 +218,7 @@ Item {
       borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
       padding: Style.spacing.panelPadding
 
-      MouseArea { anchors.fill: parent; onClicked: if (root.setupNeeded) root.runSetup() }
+      MouseArea { anchors.fill: parent; onClicked: if (root.screen && root.screen.enter === "setup") root.runSetup() }
 
       Item {
         id: keyCatcher
@@ -201,16 +229,20 @@ Item {
         Keys.onPressed: function(event) {
           event.accepted = true
           const enter = event.key === Qt.Key_Return || event.key === Qt.Key_Enter
-          if (root.setupNeeded || root.failure) {
-            if (event.key === Qt.Key_Escape) root.close()
-            else if (enter && root.setupNeeded) root.runSetup()
-            else if (enter) root.close()
-          } else if (event.key === Qt.Key_Escape) {
+          const screen = root.screen
+          if (event.key === Qt.Key_Escape) {
             if (root.filterText) root.filterText = ""
             else root.close()
+          } else if (enter) {
+            const action = screen ? screen.enter : "send"
+            if (action === "send") root.send()
+            else if (action === "setup") root.runSetup()
+            else if (action === "retry") root.list()
+            else if (action === "close") root.close()
+          } else if (screen && !screen.typing) {
+            // Setup, failures and empty folders take only Enter and Esc.
           } else if (event.key === Qt.Key_Space) root.toggleMark(root.current)
           else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) root.switchRoute(root.current)
-          else if (enter) root.send()
           else if (event.key === Qt.Key_Delete) root.cancelWaiting(root.current)
           else if (Util.editsFilter(event, root.filterText)) {
             root.filterText = Util.editedFilter(event, root.filterText)
@@ -235,38 +267,53 @@ Item {
 
         Text {
           id: search
-          visible: !root.setupNeeded && !root.failure
+          visible: !root.screen || root.screen.typing
           width: parent.width
           height: Style.space(34)
           textFormat: Text.PlainText
           text: root.filterText || "Send to Kindle…"
           color: Color.menu.text
-          opacity: root.filterText ? 1 : 0.58
+          opacity: root.filterText ? 1 : 0.58  // the shell's own placeholder strength
           font.family: Style.font.menuFamily
           font.pixelSize: Style.font.heading
           elide: Text.ElideRight
           verticalAlignment: Text.AlignVCenter
         }
 
-        Text {
+        // What Enter will send, then the keys that work here.
+        Column {
           id: footer
-          visible: !root.setupNeeded && !root.failure
           anchors.bottom: parent.bottom
-          anchors.horizontalCenter: parent.horizontalCenter
-          width: Math.min(implicitWidth, parent.width)
-          textFormat: Text.PlainText
-          text: (root.markedCount > 0 ? root.markedCount + " marked      " : "")
-            + "Space  Mark      Tab  Route      Enter  Send      Esc  Close"
-          color: Color.menu.text
-          opacity: 0.5
-          font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.bodySmall
-          elide: Text.ElideRight
+          width: parent.width
+          spacing: Style.space(6)
+
+          Text {
+            visible: !root.screen && text !== ""
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            textFormat: Text.PlainText
+            text: root.sendSummary.status
+            color: Color.menu.text
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+            elide: Text.ElideRight
+          }
+          Text {
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            textFormat: Text.PlainText
+            text: root.screen ? root.screen.keys : Rows.hints(root.current, root.sendSummary.enter, root.filterText)
+            color: Color.menu.text
+            opacity: root.hintOpacity
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.bodySmall
+            elide: Text.ElideRight
+          }
         }
 
         ListView {
           id: list
-          visible: !root.setupNeeded && !root.failure
+          visible: !root.screen
           anchors.top: search.bottom
           anchors.topMargin: Style.spacing.md
           anchors.bottom: footer.top
@@ -302,8 +349,9 @@ Item {
               width: Style.space(24)
               // A clock on the waiting line, a checkbox on Books.
               text: row.waiting ? "\u{F0954}" : row.isMarked ? "\u{F0132}" : "\u{F0131}"
-              color: row.ink
-              opacity: row.isMarked || row.waiting ? 1 : 0.4
+              // An empty box stays plain text, readable on the highlighted row too.
+              color: row.isMarked || row.waiting ? row.ink : Color.menu.text
+              opacity: row.isMarked || row.waiting ? 1 : root.secondaryOpacity
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.title
             }
@@ -332,8 +380,6 @@ Item {
             }
 
             Column {
-              // Dimmed when the chosen Route can't take this Book.
-              opacity: row.waiting || Rows.routeTakes(row.modelData, row.route) ? 1 : 0.4
               anchors.left: mark.right
               anchors.leftMargin: Style.space(8)
               anchors.right: badge.left
@@ -346,6 +392,8 @@ Item {
                 textFormat: Text.PlainText
                 text: row.modelData.name
                 color: row.ink
+                // Dimmed when the chosen Route can't take this Book; the details line says why.
+                opacity: row.waiting || Rows.routeTakes(row.modelData, row.route) ? 1 : root.dimOpacity
                 font.family: Style.font.menuFamily
                 font.pixelSize: Style.font.title
                 elide: Text.ElideMiddle
@@ -354,8 +402,9 @@ Item {
                 width: parent.width
                 textFormat: Text.PlainText
                 text: row.waiting ? row.modelData.details : Rows.details(row.modelData, row.route, Date.now(), root.routeLabels)
-                color: row.ink
-                opacity: 0.6
+                // Plain text color even on the highlighted row, as the shell's own menu does.
+                color: Color.menu.text
+                opacity: root.secondaryOpacity
                 font.family: Style.font.menuFamily
                 font.pixelSize: Style.font.bodySmall
                 elide: Text.ElideRight
@@ -367,22 +416,25 @@ Item {
               hoverEnabled: true
               onPositionChanged: root.selectedIndex = row.index
               onClicked: root.toggleMark(row.modelData)
+              // The two clicks before it mark and unmark, leaving the marks as they were.
+              onDoubleClicked: root.sendOne(row.modelData)
             }
           }
         }
 
-        // Setup needed, a failure, no Books, or no matches. Nothing while loading.
+        // Setup, a failure, loading, no Books or no matches. Loading shows after a short delay.
         Column {
           anchors.centerIn: parent
           width: parent.width
           spacing: Style.space(8)
-          visible: root.setupNeeded || root.failure !== "" || (!root.loading && root.rows.length === 0)
+          visible: root.screen !== null && (!root.loading || root.loadingShown)
 
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: root.setupNeeded ? "\u{F0493}" : "\u{F02D}"
+            // A cog for setup, a warning for failures, a book otherwise.
+            text: root.setupNeeded ? "\u{F0493}" : root.failure ? "\u{F0026}" : "\u{F02D}"
             color: Color.menu.selectedText
-            opacity: 0.8
+            opacity: root.secondaryOpacity
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.displayLarge
           }
@@ -391,28 +443,22 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
-            text: root.setupNeeded ? "Set up Send to Kindle"
-              : root.failure ? root.failure
-              : root.books.length === 0 && root.payloadMode ? "None of these files can be sent to a Kindle."
-              : root.books.length === 0 ? Rows.emptyMessage(root.bookFolders)
-              : "No matches for “" + root.filterText + "”"
+            text: root.screen ? root.screen.message : ""
             color: Color.menu.text
-            opacity: 0.8
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.title
           }
           Text {
+            visible: text !== ""
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
-            visible: root.setupNeeded || (!root.failure && !root.payloadMode && root.books.length === 0)
-            text: root.setupNeeded ? "Enter  Start setup      Esc  Close"
-              : "To search other folders, rerun setup: kindle-send setup"
+            text: root.screen ? root.screen.detail : ""
             color: Color.menu.text
-            opacity: 0.5
+            opacity: root.secondaryOpacity
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.bodySmall
+            font.pixelSize: Style.font.body
           }
         }
       }

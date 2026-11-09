@@ -96,15 +96,18 @@ The Service keeps the ordering: it decides which Book goes next, waits for `limi
   | Key | Action |
   |---|---|
   | `Space` | mark / unmark the highlighted Book |
-  | `Tab` | switch the highlighted Book between Email and USB |
+  | `Tab` | switch the highlighted Book between Email and USB; on a marked Book, switch every marked Book to that same Route. A switched Book's details say "switched to <Route>" |
   | `Enter` | send the marked Books, or the highlighted one if none are marked; the picker closes at once |
   | `Delete` | on the "N Books waiting for Kindle" line: cancel those Pending Sends |
   | `Up` / `Down` | move the highlight one row |
   | `PageUp` / `PageDown` | move the highlight six rows |
-  | `Esc` | close |
+  | `Esc` | clear the search, or close |
 
-- **Empty:** "No Books found in ~/Books, ~/Downloads", with a hint that folders can be changed in settings (rerun setup).
-- **Setup needed:** if a setting is missing, the picker shows only "Set up Send to Kindle"; `Enter` launches the setup wizard ([#14](https://github.com/sorydi3/kindle-send/issues/14)).
+- **Footer:** the keys that work on the highlighted row, with `Enter` saying what it sends ("Send this Book", "Send 3 Books"). With Books marked, a status line above gives the count and any Route that can't take some of them ("3 Books marked · USB can't take 1").
+- **Mouse:** click a row to mark or unmark it; double-click to send just that Book.
+- **Empty:** "No Books found in ~/Books, ~/Downloads"; `Enter` opens the setup wizard to change the Book folders.
+- **Setup needed:** if a setting is missing, the picker shows only "Set up Send to Kindle" and what setup will ask for; `Enter` launches the setup wizard ([#14](https://github.com/sorydi3/kindle-send/issues/14)).
+- **Loading and failures:** after a short wait, "Looking for Books…". If listing fails or takes over 10 seconds, the picker says how to see why (`kindle-send plan --folders` in a terminal) and `Enter` tries again.
 - **Pending Sends:** if any exist, a "N Books waiting for Kindle" line sits at the top ([#15](https://github.com/sorydi3/kindle-send/issues/15)).
 - No "browse elsewhere" option.
 

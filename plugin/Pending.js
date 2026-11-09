@@ -65,6 +65,6 @@ function noticeKey(pendingKey, sendId, resultCount) {
 function withWaiting(rows, pending) {
   if (!pending || pending.length === 0) return rows
   const line = { waiting: true, path: "", name: plural(pending.length, "Book") + " waiting for Kindle",
-                 details: names(pending) + " · Delete  Cancel" }
+                 details: names(pending) }
   return [line].concat(rows)
 }

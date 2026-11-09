@@ -79,7 +79,7 @@ def test_the_waiting_line_goes_above_the_books_only_while_something_waits():
     assert listed[1:] == rows
     assert listed[0]["waiting"] is True
     assert listed[0]["name"] == "2 Books waiting for Kindle"
-    assert listed[0]["details"] == "Atlas.pdf, Dune.epub · Delete  Cancel"
+    assert listed[0]["details"] == "Atlas.pdf, Dune.epub"
     assert js(f"withWaiting([], [{j(ATLAS)}])")[0]["name"] == "1 Book waiting for Kindle"
 
 
