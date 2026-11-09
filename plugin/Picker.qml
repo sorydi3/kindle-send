@@ -156,15 +156,19 @@ Item {
     root.marked = next
   }
 
+  // Tab on a marked Book switches every marked Book.
   function switchRoute(book) {
-    if (!book || book.waiting) return
-    const next = Object.assign({}, root.routes)
-    next[book.path] = Rows.switchRoute(root.routeOf(book))
-    root.routes = next
+    root.routes = Rows.switchRoutes(root.books, root.marked, root.routes, book)
   }
 
-  function send() {
-    const chosen = Rows.toSend(root.books, root.marked, root.routes, root.current)
+  // Enter: the marked Books, or the highlighted one if none are marked.
+  function send() { root.hand(Rows.toSend(root.books, root.marked, root.routes, root.current)) }
+
+  // Double-click: just this Book, whatever else is marked.
+  function sendOne(book) { root.hand(Rows.toSend(root.books, {}, root.routes, book)) }
+
+  // Hands the Books to the Service and closes at once.
+  function hand(chosen) {
     if (chosen.length === 0) return
     if (root.service) root.service.enqueue(chosen)
     root.close()
@@ -412,6 +416,8 @@ Item {
               hoverEnabled: true
               onPositionChanged: root.selectedIndex = row.index
               onClicked: root.toggleMark(row.modelData)
+              // The two clicks before it mark and unmark, leaving the marks as they were.
+              onDoubleClicked: root.sendOne(row.modelData)
             }
           }
         }

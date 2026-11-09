@@ -37,6 +37,18 @@ function routeLabel(route, labels) { return (labels && labels[route]) || route }
 
 function switchRoute(route) { return Routes.other(route) }
 
+// Tab: the overrides after switching the highlighted Book. On a marked Book,
+// every marked Book moves to the Route the highlighted one switches to.
+function switchRoutes(books, marked, overrides, highlighted) {
+  const next = Object.assign({}, overrides)
+  if (!highlighted || highlighted.waiting) return next
+  const target = switchRoute(routeOf(highlighted, overrides))
+  const together = marked && marked[highlighted.path] === true
+  const moving = together ? books.filter(function(b) { return marked[b.path] === true }) : [highlighted]
+  for (let i = 0; i < moving.length; i++) next[moving[i].path] = target
+  return next
+}
+
 function routeTakes(book, route) { return route === Routes.USB ? book.usbOk === true : book.emailOk === true }
 
 // Marked Books in list order, or the highlighted one if none are marked.
@@ -144,6 +156,7 @@ function details(book, route, now, labels) {
   if (book.lastSent) parts.push(sentAgo(book.lastSent, now))
   if (route === book.route && book.routeReason) parts.push(book.routeReason)
   else if (!routeTakes(book, route)) parts.push(routeLabel(route, labels) + " can't take this Book")
+  else if (route !== book.route) parts.push("switched to " + routeLabel(route, labels))
   return parts.filter(function(p) { return p }).join(" · ")
 }
 

@@ -259,3 +259,41 @@ def test_a_waiting_book_keeps_the_list_even_with_no_other_books():
     """The waiting line is where Delete cancels it, so it must stay visible."""
     assert screen(books=0, rows=0, waiting=1) is None
     assert screen(rows=0, filterText="zzz", waiting=1) is None
+
+
+# --- Tab overrides --------------------------------------------------------
+
+def test_a_route_switched_by_hand_says_so():
+    """The automatic reason no longer applies, so the details line says it was switched."""
+    text = rows(f"details({book(route='usb', routeReason='Too big for email (76 MB).')}, 'usb', {NOW}, {LABELS})")
+    switched = rows(f"details({book()}, 'usb', {NOW}, {LABELS})")
+
+    assert text == "EPUB · 1.2 MB · Too big for email (76 MB)."
+    assert switched == "EPUB · 1.2 MB · switched to USB"
+
+
+def test_tab_on_an_unmarked_book_switches_only_it():
+    dune, atlas = book(path="/b/Dune.epub"), book(path="/b/Atlas.pdf", name="Atlas.pdf")
+
+    assert rows(f"switchRoutes([{dune}, {atlas}], {{'/b/Atlas.pdf': true}}, {{}}, {dune})") \
+        == {"/b/Dune.epub": "usb"}
+
+
+def test_tab_on_a_marked_book_switches_every_marked_book_to_the_same_route():
+    """They converge on the Route the highlighted Book switches to, rather than each flipping."""
+    dune = book(path="/b/Dune.epub")
+    atlas = book(path="/b/Atlas.pdf", name="Atlas.pdf")
+    big = book(path="/b/Big.pdf", name="Big.pdf", route="usb")
+    other = book(path="/b/Other.pdf", name="Other.pdf")
+
+    result = rows(f"switchRoutes([{dune}, {atlas}, {big}, {other}],"
+                  " {'/b/Dune.epub': true, '/b/Atlas.pdf': true, '/b/Big.pdf': true}, {}, " + dune + ")")
+
+    assert result == {"/b/Dune.epub": "usb", "/b/Atlas.pdf": "usb", "/b/Big.pdf": "usb"}
+
+
+def test_tab_on_the_waiting_line_changes_nothing():
+    waiting = json.dumps({"waiting": True, "path": "", "name": "1 Book waiting for Kindle"})
+
+    assert rows(f"switchRoutes([{book(path='/b/Dune.epub')}], {{}}, {{'/b/Dune.epub': 'usb'}}, {waiting})") \
+        == {"/b/Dune.epub": "usb"}
