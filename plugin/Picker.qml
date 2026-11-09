@@ -218,7 +218,8 @@ Item {
       borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
       padding: Style.spacing.panelPadding
 
-      MouseArea { anchors.fill: parent; onClicked: if (root.screen && root.screen.enter === "setup") root.runSetup() }
+      // Swallows clicks on the card so they don't reach the scrim, which closes the Picker.
+      MouseArea { anchors.fill: parent }
 
       Item {
         id: keyCatcher
@@ -424,6 +425,7 @@ Item {
 
         // Setup, a failure, loading, no Books or no matches. Loading shows after a short delay.
         Column {
+          id: stateView
           anchors.centerIn: parent
           width: parent.width
           spacing: Style.space(8)
@@ -460,6 +462,14 @@ Item {
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.body
           }
+        }
+
+        // Where Enter opens setup, clicking the message does too; the rest of the card doesn't.
+        MouseArea {
+          anchors.fill: stateView
+          visible: stateView.visible && root.screen !== null && root.screen.enter === "setup"
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.runSetup()
         }
       }
     }
