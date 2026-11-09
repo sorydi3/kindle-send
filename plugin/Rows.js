@@ -47,6 +47,79 @@ function toSend(books, marked, overrides, highlighted) {
   return chosen.map(function(b) { return { path: b.path, name: b.name, route: routeOf(b, overrides) } })
 }
 
+function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s") }
+
+// The footer's answer to "what does Enter send?". status: the marked count and,
+// before Enter, which Routes can't take some of them (they still go and fail,
+// spec §5). enter: the Enter hint, "" when Enter sends nothing.
+function footer(books, marked, overrides, highlighted, labels) {
+  const chosen = books.filter(function(b) { return marked && marked[b.path] === true })
+  if (chosen.length === 0) {
+    const sendsOne = highlighted && !highlighted.waiting
+    return { status: "", enter: sendsOne ? "Send this Book" : "" }
+  }
+  const parts = [plural(chosen.length, "Book") + " marked"]
+  const routes = [Routes.EMAIL, Routes.USB]
+  for (let i = 0; i < routes.length; i++) {
+    const refused = chosen.filter(function(b) {
+      return routeOf(b, overrides) === routes[i] && !routeTakes(b, routes[i])
+    }).length
+    if (refused > 0) parts.push(routeLabel(routes[i], labels) + " can't take " + refused)
+  }
+  return { status: parts.join(" · "), enter: "Send " + plural(chosen.length, "Book") }
+}
+
+// Esc clears a search before it closes the Picker.
+function escHint(filterText) { return filterText ? "Esc  Clear search" : "Esc  Close" }
+
+// The key hints for the highlighted row. enter: footer().enter.
+function hints(current, enter, filterText) {
+  const keys = []
+  if (current && current.waiting) keys.push("Delete  Cancel waiting")
+  else if (current) keys.push("Space  Mark", "Tab  Route")
+  if (enter) keys.push("Enter  " + enter)
+  keys.push(escHint(filterText))
+  return keys.join("      ")
+}
+
+const PLAN_HINT = "kindle-send plan --folders"
+
+// What the Picker shows instead of the list, or null when it shows the list.
+// state: {loading, setupNeeded, failure: ""|"missing"|"failed"|"slow",
+//         payloadCount, books, rows, waiting, filterText, bookFolders}.
+// A waiting line keeps the list up: it is where Delete cancels it.
+// enter: what Enter does here: "setup", "retry", "close" or "none".
+// typing: whether typing still edits the search.
+function screen(state) {
+  function make(message, detail, enter, enterLabel, typing) {
+    const keys = (enterLabel ? "Enter  " + enterLabel + "      " : "") + escHint(state.filterText)
+    return { message: message, detail: detail, enter: enter, keys: keys, typing: typing === true }
+  }
+  if (state.loading) {
+    const what = state.payloadCount > 0 ? "Checking " + plural(state.payloadCount, "file") + "…" : "Looking for Books…"
+    return make(what, "", "none", "", true)
+  }
+  if (state.setupNeeded)
+    return make("Set up Send to Kindle", "You'll need your Kindle's email address and a Gmail app password.",
+                "setup", "Start setup")
+  if (state.failure === "missing")
+    return make("kindle-send isn't installed.", "Run scripts/install.sh from the kindle-send folder.", "close", "")
+  if (state.failure === "failed")
+    return make("Couldn't list your Books.", "To see the error, run " + PLAN_HINT + " in a terminal.",
+                "retry", "Try again")
+  if (state.failure === "slow")
+    return make("Listing your Books took more than 10 seconds.",
+                "To see what's slow, run " + PLAN_HINT + " in a terminal.", "retry", "Try again")
+  if (state.waiting > 0) return null
+  if (state.books === 0 && state.payloadCount > 0)
+    return make("None of these files can be sent to a Kindle.", "", "close", "")
+  if (state.books === 0)
+    return make(emptyMessage(state.bookFolders || []), "", "setup", "Change Book folders")
+  if (state.rows === 0)
+    return make("No matches for “" + state.filterText + "”", "", "none", "", true)
+  return null
+}
+
 function size(bytes) {
   if (bytes < 1000) return bytes + " B"
   if (bytes < 1000000) return Math.round(bytes / 1000) + " KB"
