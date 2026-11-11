@@ -18,6 +18,8 @@ Item {
   property var service: null
 
   property bool opened: false
+  // PROTOTYPE (ticket #30): F2 opens the Settings layouts in SettingsPrototype.qml.
+  property bool settingsOpen: false
   property bool loading: false
   // Set a moment after loading starts, so a quick plan shows no flash of "Looking…".
   property bool loadingShown: false
@@ -73,8 +75,19 @@ Item {
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
+  function openSettings() {
+    root.settingsOpen = true
+    settingsProto.reset()
+  }
+
+  function closeSettings() {
+    root.settingsOpen = false
+    keyCatcher.forceActiveFocus()
+  }
+
   function close() {
     root.opened = false
+    root.settingsOpen = false
     planner.running = false
     responseTimer.stop()
     loadingDelay.stop()
@@ -208,6 +221,65 @@ Item {
 
     MouseArea { anchors.fill: parent; onClicked: root.close() }
 
+    // PROTOTYPE switcher: not part of the design being judged.
+    Rectangle {
+      visible: root.settingsOpen
+      z: 100
+      anchors.top: card.bottom
+      anchors.topMargin: Style.space(16)
+      anchors.horizontalCenter: parent.horizontalCenter
+      width: pillColumn.implicitWidth + Style.space(32)
+      height: pillColumn.implicitHeight + Style.space(16)
+      radius: Style.space(18)
+      color: Color.menu.selectedText
+
+      MouseArea { anchors.fill: parent }
+
+      Column {
+        id: pillColumn
+        anchors.centerIn: parent
+        spacing: Style.space(4)
+
+        Row {
+          anchors.horizontalCenter: parent.horizontalCenter
+          spacing: Style.space(16)
+          Text {
+            text: "◀"
+            color: Color.menu.background
+            font.pixelSize: Style.font.title
+            MouseArea { anchors.fill: parent; onClicked: { settingsProto.variant = (settingsProto.variant + 2) % 3; settingsProto.reset() } }
+          }
+          Text {
+            text: "PROTOTYPE  " + settingsProto.variantNames[settingsProto.variant]
+            color: Color.menu.background
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.title
+          }
+          Text {
+            text: "▶"
+            color: Color.menu.background
+            font.pixelSize: Style.font.title
+            MouseArea { anchors.fill: parent; onClicked: { settingsProto.variant = (settingsProto.variant + 1) % 3; settingsProto.reset() } }
+          }
+        }
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          text: "Alt+←/→  variant      Alt+M  " + (settingsProto.firstRun ? "first run" : "configured") + " (switch)      Esc  back"
+          color: Color.menu.background
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          text: "kindle: " + settingsProto.shown("kindle") + "   gmail: " + settingsProto.shown("gmail")
+            + "   password: " + settingsProto.shown("password") + "   folders: " + settingsProto.shown("folders")
+          color: Color.menu.background
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.caption
+        }
+      }
+    }
+
     BorderSurface {
       id: card
       anchors.centerIn: parent
@@ -229,6 +301,9 @@ Item {
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           event.accepted = true
+          // PROTOTYPE: while Settings are open the Book list ignores keys, so Enter can't send.
+          if (root.settingsOpen) { if (event.key === Qt.Key_Escape) root.closeSettings(); return }
+          if (event.key === Qt.Key_F2) { root.openSettings(); return }
           const enter = event.key === Qt.Key_Return || event.key === Qt.Key_Enter
           const screen = root.screen
           if (event.key === Qt.Key_Escape) {
@@ -470,6 +545,14 @@ Item {
           visible: stateView.visible && root.screen !== null && root.screen.enter === "setup"
           cursorShape: Qt.PointingHandCursor
           onClicked: root.runSetup()
+        }
+
+        SettingsPrototype {
+          id: settingsProto
+          anchors.fill: parent
+          z: 10
+          visible: root.settingsOpen
+          onBack: root.closeSettings()
         }
       }
     }
