@@ -23,3 +23,7 @@
 **Send limit**: the plugin's own cap on how often it emails the Kindle address, kept below Amazon's unpublished throttle. Books over the limit wait their turn.
 
 **Send history**: the record of Books already sent, with when, by which Route, and the result. Two files with the same name and size count as the same Book.
+
+**Settings**: the values setup asks for: the Kindle address, the Approved sender, its app password and the Book folders. Changed any time in the Picker. The Send limit is not one of them.
+
+**Setup**: the first pass through Settings, when one of them is missing. Nothing can be sent until it is done.
