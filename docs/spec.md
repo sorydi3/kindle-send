@@ -2,8 +2,8 @@
 
 An omarchy-shell plugin that sends ebooks on this machine to the user's Kindle, by email (through Gmail) or over USB.
 
-- Status: ready to build. Every decision below comes from the wayfinder map, [issue #1](https://github.com/sorydi3/kindle-send/issues/1). Each section links the ticket that holds the full reasoning.
-- Vocabulary (Book, Route, Send, Pending Send, Email limit, Conversion, Book folders, Send limit, Send history): see [`GLOSSARY.md`](../GLOSSARY.md).
+- Status: ready to build. Every decision below comes from the wayfinder map, [issue #1](https://github.com/sorydi3/kindle-send/issues/1), and, for Settings in the Picker, the map [issue #29](https://github.com/sorydi3/kindle-send/issues/29). Each section links the ticket that holds the full reasoning.
+- Vocabulary (Book, Route, Send, Pending Send, Email limit, Conversion, Book folders, Send limit, Send history, Settings, Setup): see [`GLOSSARY.md`](../GLOSSARY.md).
 - Sections marked **Proposed** were not decided in a ticket. They fill gaps between decisions and may change during the build without reopening the map.
 
 ## 1. Scope
@@ -32,12 +32,12 @@ An omarchy-shell plugin that sends ebooks on this machine to the user's Kindle, 
 ```
 plugin/            omarchy-shell plugin  sorydi3.kindle-send  (kinds: menu + service)
   manifest.json
-  Picker.qml       the menu: lists Books, marks, Route override, opens setup
+  Picker.qml       the menu: lists Books, marks, Route override, Settings
   Service.qml      background: runs Sends, queues, notifications, Kindle detection
 bin/kindle-send    Python 3, standard library only: does the actual work
 nautilus/kindle-send.py   nautilus-python extension: right-click "Send to Kindle"
 scripts/strata_action.py  writes Strata's right-click "Send to Kindle" action
-assets/test.epub   tiny EPUB for the setup test send
+assets/test.epub   tiny EPUB for the test send
 scripts/install.sh, scripts/uninstall.sh
 ```
 
@@ -45,9 +45,9 @@ Who does what:
 
 | Piece | Responsibilities |
 |---|---|
-| **Picker** (QML) | Show Books, marks and Routes; keys; closes on send and hands the Send to the Service. Never sees the password. |
+| **Picker** (QML) | Show Books, marks and Routes; keys; closes on send and hands the Send to the Service. Shows the Settings form (Section 9). Sees the app password only while it is typed into Settings' masked field, hands it to `kindle-send save` on stdin and forgets it ([ADR 0001](adr/0001-picker-takes-the-app-password.md)). |
 | **Service** (QML) | Owns everything held in memory: the Send queue, Pending Sends, Books held by the Send limit. Runs `kindle-send` per Book, polls for the Kindle while something is pending, posts and updates notifications. |
-| **`kindle-send`** (Python) | Reads settings and the keyring itself. Classifies Books, picks Routes, converts, emails, copies, ejects, writes the Send history, runs setup and prints history. Testable without the shell. |
+| **`kindle-send`** (Python) | Reads settings and the keyring itself. Classifies Books, picks Routes, converts, emails, copies, ejects, writes the Send history, validates and saves Settings (the only writer of `shell.json` and the keyring entry), runs the terminal setup and prints history. Testable without the shell. |
 | **Nautilus extension**, **Strata action** | Add the right-click item for supported files; summon the Picker with those files. |
 
 Plugin manifest (shape per [#4](https://github.com/sorydi3/kindle-send/issues/4)):
@@ -72,11 +72,13 @@ All subcommands that the Service calls print **one JSON object per line** on std
 | Command | Purpose |
 |---|---|
 | `kindle-send plan [--folders] [FILE...]` | Classify Books for the Picker. With `--folders`, scan the Book folders; with files, classify just those. One line per Book: `{"path","name","format","size","mtime","route","routeReason","emailOk","usbOk","lastSent"}`. Unsupported files are left out. If any setting or the app password is missing, the first line is `{"setupNeeded": true, "missing": [...]}` (`"appPassword"` for the password; the password itself is never printed). Before the Books comes `{"bookFolders": [...], "routeLabels": {"email": "Email", "usb": "USB"}}`: the Book folders as set (`~` unexpanded, defaults if unset) and the Route labels, so the Picker keeps no defaults of its own. |
-| `kindle-send send --route email\|usb FILE` | Send **one** Book by the given Route. Progress lines `{"stage": "converting"\|"sending"\|"copying"}` then one result line `{"result": "sent"\|"copied"\|"failed", "reason"?: "...", "fixBySetup"?: true}`. Writes the Send history. |
+| `kindle-send send --route email\|usb FILE` | Send **one** Book by the given Route. Progress lines `{"stage": "converting"\|"sending"\|"copying"}` then one result line `{"result": "sent"\|"copied"\|"failed", "reason"?: "...", "fixBySetup"?: true, "field"?: "..."}`; `fixBySetup` means the fix is in Settings, `field` names which one (`kindleAddress`, `senderAddress`, `appPassword`). With `--test` instead of FILE: emails `assets/test.epub` as "Kindle Send Test" (Section 9). Writes the Send history. |
 | `kindle-send kindle` | Kindle detection: `{"present": true, "mount": "...", "free": N}` or `{"present": false}`. |
 | `kindle-send eject` | Unmount and power off the Kindle: `{"ejected": true}` or `{"ejected": false, "reason": "..."}`. |
 | `kindle-send limit` | Send limit state from the Send history: `{"canSendIn": seconds, "sentLastHour": N, "maxEmailsPerHour": N}` (only `sent` email entries count; `maxEmailsPerHour` tells the Service whether a wait is the gap or the hourly cap). |
-| `kindle-send setup` | Interactive wizard (Section 9). Needs a TTY. |
+| `kindle-send settings` | The Settings for the form: `{"kindleAddress","senderAddress","bookFolders","appPasswordStored"}` (`bookFolders` as written, `~` unexpanded, defaults if unset). The password itself is never printed. |
+| `kindle-send save` | Reads one JSON object on stdin: `{"kindleAddress","senderAddress","bookFolders","appPassword"?}` (`appPassword` only when one was typed). Checks the values and, when the Gmail address or app password changed, signs in to Gmail without sending (Section 9). Saves only if nothing blocks: writes `shell.json`, stores the password in the keyring, creates `~/Books` on the first save. Prints `{"saved": bool, "problems": [{"field", "message", "blocking": bool}]}`. The password never appears on a command line. |
+| `kindle-send setup` | Interactive terminal wizard (Section 9), the fallback to Settings in the Picker. Needs a TTY. |
 | `kindle-send history` | Prints the last 20 Sends, human-readable. |
 | `kindle-send formats` | The supported formats (Section 5), lowercase without the dot: `{"formats": ["azw", ...]}`. The one list; the Nautilus extension and the Strata action read it instead of keeping their own. |
 | `kindle-send pick FILE...` | Summon the Picker with just the supported files among FILE, already marked; names the others on stderr. Exit 1 if none is supported. Run by the Strata action. |
@@ -87,7 +89,7 @@ The Service keeps the ordering: it decides which Book goes next, waits for `limi
 
 ### Picker ([#8](https://github.com/sorydi3/kindle-send/issues/8))
 
-- **Opened by** `SUPER + SHIFT + K` (`omarchy-shell shell toggle sorydi3.kindle-send`) or the Omarchy menu entry "Send to Kindle".
+- **Opened by** `SUPER + SHIFT + K` (`omarchy-shell shell toggle sorydi3.kindle-send`) or the Omarchy menu entry "Send to Kindle". While setup is needed it opens straight into Settings (Section 9).
 - **Lists** supported Books from the Book folders (default `~/Books`, `~/Downloads`; editable), up to 3 levels deep, skipping hidden folders. Newest file first.
 - **Typing** filters by file name.
 - **Each row** shows name, format, size and Route (Email or USB), plus "sent N days ago" if the Send history has the same name and size ([#16](https://github.com/sorydi3/kindle-send/issues/16)). A Book the chosen Route can't take is dimmed.
@@ -101,12 +103,13 @@ The Service keeps the ordering: it decides which Book goes next, waits for `limi
   | `Delete` | on the "N Books waiting for Kindle" line: cancel those Pending Sends |
   | `Up` / `Down` | move the highlight one row |
   | `PageUp` / `PageDown` | move the highlight six rows |
+  | `Ctrl+,` | open Settings (Section 9). A plain comma still filters |
   | `Esc` | clear the search, or close |
 
-- **Footer:** the keys that work on the highlighted row, with `Enter` saying what it sends ("Send this Book", "Send 3 Books"). With Books marked, a status line above gives the count and any Route that can't take some of them ("3 Books marked · USB can't take 1").
-- **Mouse:** click a row to mark or unmark it; double-click to send just that Book.
-- **Empty:** "No Books found in ~/Books, ~/Downloads"; `Enter` opens the setup wizard to change the Book folders.
-- **Setup needed:** if a setting is missing, the picker shows only "Set up Send to Kindle" and what setup will ask for; `Enter` launches the setup wizard ([#14](https://github.com/sorydi3/kindle-send/issues/14)).
+- **Footer:** the keys that work on the highlighted row, with `Enter` saying what it sends ("Send this Book", "Send 3 Books"), always ending "Ctrl+,  Settings      Esc  Close". With Books marked, a status line above gives the count and any Route that can't take some of them ("3 Books marked · USB can't take 1").
+- **Mouse:** click a row to mark or unmark it; double-click to send just that Book. A small cog at the right end of the search line opens Settings.
+- **Empty:** "No Books found in ~/Books, ~/Downloads"; `Enter` opens Settings on the Book folders field.
+- **Setup needed:** if a setting or the app password is missing, the Picker opens straight into Settings, titled "Set up Send to Kindle" ([#14](https://github.com/sorydi3/kindle-send/issues/14), [#32](https://github.com/sorydi3/kindle-send/issues/32)). The Book list is reachable once setup is saved.
 - **Loading and failures:** after a short wait, "Looking for Books…". If listing fails or takes over 10 seconds, the picker says how to see why (`kindle-send plan --folders` in a terminal) and `Enter` tries again.
 - **Pending Sends:** if any exist, a "N Books waiting for Kindle" line sits at the top ([#15](https://github.com/sorydi3/kindle-send/issues/15)).
 - No "browse elsewhere" option.
@@ -174,7 +177,7 @@ Route rules, per Book:
 - The AZW3 lives in a temp folder and is deleted after copying. The original is never changed.
 - A failed Conversion is reported like any other failure.
 
-## 9. Settings, secrets and setup ([#9](https://github.com/sorydi3/kindle-send/issues/9), [#14](https://github.com/sorydi3/kindle-send/issues/14))
+## 9. Settings, secrets and setup ([#9](https://github.com/sorydi3/kindle-send/issues/9), [#14](https://github.com/sorydi3/kindle-send/issues/14), map [#29](https://github.com/sorydi3/kindle-send/issues/29))
 
 **Settings** live inline on the plugin's entry in `~/.config/omarchy/shell.json` (mode 600):
 
@@ -187,11 +190,49 @@ Route rules, per Book:
   "maxEmailsPerHour": 20 }
 ```
 
-**App password:** GNOME Keyring, attributes `service=kindle-send user=<senderAddress>`. Read by `kindle-send` with `secret-tool lookup`. It never passes through QML or a command line. An empty stored value counts as missing.
+The two Send limit numbers are not in the Settings form; they are changed in this file only.
 
-**Missing setting or password:** the Send fails before anything is sent. The notification names what's missing, and clicking it opens setup.
+**App password:** GNOME Keyring, attributes `service=kindle-send user=<senderAddress>`. Read by `kindle-send` with `secret-tool lookup`. It is typed only into the Settings form's masked field and handed to `kindle-send save` on stdin: never on a command line, in `shell.json`, a log or a file the Picker writes, and the field is cleared once it is stored ([ADR 0001](adr/0001-picker-takes-the-app-password.md)). The terminal wizard keeps `secret-tool store`'s own prompt. An empty stored value counts as missing.
 
-**`kindle-send setup`**, run in a floating terminal (`omarchy-launch-floating-terminal-with-presentation kindle-send setup`), from the Picker or "Send to Kindle → Setup" in the Omarchy menu:
+**Missing setting or password:** the Send fails before anything is sent. The notification names what's missing, and clicking it opens the Picker in Settings on that field.
+
+**One writer:** `kindle-send` is the only program that writes Settings (`kindle-send save` for the form, the wizard in a terminal). It merges into `shell.json` keeping all other keys intact. **Proposed:** the Service picks the change up through its `FileView`.
+
+### Settings in the Picker ([#30](https://github.com/sorydi3/kindle-send/issues/30) to [#35](https://github.com/sorydi3/kindle-send/issues/35))
+
+Settings replace the Book list inside the Picker card. They open with `Ctrl+,` or the cog, and on their own while setup is needed. One form serves both setup and later changes: titled "Set up Send to Kindle" while something is missing, "Settings" otherwise. Its values come from `kindle-send settings`.
+
+| Field | Help line under it | `Ctrl+O` opens |
+|---|---|---|
+| Kindle address | "Find it at amazon.com → Manage Your Content and Devices → Devices." | Amazon's Manage Your Content and Devices |
+| Gmail address | "Amazon must list it as an approved sender, or it drops every Book." | Amazon's Personal Document Settings (approved list) |
+| Gmail app password (masked; "Stored. Type to replace it." when one is stored) | "Create one at myaccount.google.com/apppasswords. It needs 2-Step Verification." | Google's app passwords page |
+| Book folders (comma-separated) | "The folders the Picker lists, separated by commas." | — (`Ctrl+B` / "Browse…" instead) |
+
+A missing value is flagged next to its label ("· needed", accent color). There is no confirmation step for Amazon's approved list: nothing can check it, and the test send is the real check.
+
+| Key | Action |
+|---|---|
+| `Tab` / `Shift+Tab` | next / previous field |
+| `Enter` | save (from any field) |
+| `Ctrl+O` | open the focused field's link (the footer shows it only on such a field) |
+| `Ctrl+B` | on Book folders: browse for a folder |
+| `Ctrl+T` | send a test Book (only once everything is saved) |
+| `Esc` | back to the Book list, discarding unsaved edits; the footer says "Esc  Back (discard changes)" once something changed. While setup is needed: close the Picker |
+
+- **The Book list takes no keys while Settings are open**, so `Enter` can never send a Book from behind the form.
+- **Links** (also by clicking the link text) open with `omarchy-launch-browser`. The Picker closes so the browser shows; unsaved values are kept, and reopening the Picker returns to Settings with them.
+- **Book folders:** `~` is kept as typed. A folder whose name contains a comma can't be listed. An emptied field saves as the defaults and then shows them. **Browse** (`Ctrl+B`, or the "Browse…" button beside the field) opens the system folder chooser: Qt's `FolderDialog`, which in omarchy-shell is the native GTK chooser. The Picker steps aside while it is open, then returns to Settings with unsaved values kept and the chosen folder appended to the field (as `~/…` inside home).
+- **Saving** (`Enter`) checks values then, never on leaving a field; a field's flag clears as soon as it is edited. A problem replaces that field's help line in the accent color, focus jumps to the first problem, and the status line above the footer sums up ("2 values need fixing").
+  - **Blocks saving:** an empty required field ("N still needed before Books can be sent."), or something that isn't an email address.
+  - **Saves with a warning:** a Kindle address not ending in `@kindle.com` ("Kindle addresses usually end in @kindle.com"), a sender not on `@gmail.com` ("Make sure this is a Google account"; Google Workspace addresses send through Gmail too), a Book folder that doesn't exist ("~/Bokos doesn't exist, so the Picker skips it"; it is never created).
+  - **App password check:** when the Gmail address or app password changed, saving first signs in to Gmail without sending ("Checking the app password with Gmail…"). Rejected: nothing is saved, "Gmail rejected this app password" under the field. Gmail unreachable: saved anyway, "Couldn't reach Gmail to check the password. Saved anyway."
+  - The first save creates `~/Books` if missing, then suggests the test: "Saved. Ctrl+T sends a test Book to check it all works."
+- **Test send** (`Ctrl+T`): the Service sends `assets/test.epub` as "Kindle Send Test" by email like any Send (`kindle-send send --route email --test`; same notifications, a Send history entry). The Picker stays in Settings with one status line: "Sending a test Book…", then "Gmail accepted the test Book at <time>. Check your Kindle in a few minutes.", or the failure next to its field. Its success notification carries the usual causes instead of a question: "Sent to Amazon. Not on your Kindle in a few minutes? Check that <Gmail> is on Amazon's approved list and the Kindle address is right." Clicking it opens Settings.
+
+### `kindle-send setup` (terminal fallback)
+
+For terminal users and when the shell isn't running: `kindle-send setup` in a terminal.
 
 1. Kindle address, with where to find it (amazon.com → Manage Your Content and Devices → Devices).
 2. Gmail address.
@@ -201,7 +242,7 @@ Route rules, per Book:
 6. Create `~/Books` if missing.
 7. Optional test send of `assets/test.epub`, then: "Did 'Kindle Send Test' appear on your Kindle within a few minutes?" On no: list the usual causes (sender not approved, wrong Kindle address).
 
-On a rerun, current values are filled in, and `Enter` keeps each one (including the stored password). Settings are written to `shell.json` keeping all other keys intact. **Proposed:** the wizard writes the file itself, and the Service picks the change up through its `FileView`.
+On a rerun, current values are filled in, and `Enter` keeps each one (including the stored password).
 
 ## 10. Feedback ([#15](https://github.com/sorydi3/kindle-send/issues/15))
 
@@ -212,7 +253,8 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
   - Email: "Sent to Amazon. Should appear on your Kindle within a few minutes."
   - USB: "Copied to Kindle." plus "Kindle ejected, safe to unplug" or "Please eject the Kindle."
 - **All fine:** normal urgency, disappears after a few seconds.
-- **Any failure:** critical, stays until dismissed, names each failed Book with its reason. If the reason is a missing setting or a rejected password, clicking runs setup.
+- **Any failure:** critical, stays until dismissed, names each failed Book with its reason. If the reason is a missing setting or a rejected password, clicking opens the Picker in Settings, on the field at fault with its problem shown.
+- **Test send** (Section 9): its success summary reads "Sent to Amazon. Not on your Kindle in a few minutes? Check that <Gmail> is on Amazon's approved list and the Kindle address is right." Clicking it opens Settings.
 - **Pending Send:** a lasting (critical) notification "Waiting for Kindle: <Book>. Plug it in to send. Click to manage." Omarchy's notification server draws no buttons, so clicking it opens the Picker, where `Delete` on the waiting line cancels.
 - **Pending Send cancelled:** `Delete` in the Picker replaces the lasting notification with a passing (normal) "Cancelled N Books waiting for Kindle".
 - **Send limit hold:** "Holding N Books to stay under Amazon's limit. Next in M min." A lasting (critical) notification of its own, so it never replaces another Send's progress. It stays while Books are held, is updated as the count changes, and turns into the summary of the held emails once the last has gone. The Send they came from has already shown its summary for its other Books. Short gap waits (seconds, `minEmailGapSeconds`) show no notice.
@@ -234,10 +276,10 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 
 ## 13. Failure reasons
 
-| Situation | Reason shown | Click opens setup |
+| Situation | Reason shown | Click opens Settings (on the field) |
 |---|---|---|
-| Setting missing | "Not set up: <setting> missing." | yes |
-| App password missing or rejected | "Gmail rejected the app password." / "No app password stored." | yes |
+| Setting missing | "Not set up: <setting> missing." | yes, on that setting |
+| App password missing or rejected | "Gmail rejected the app password." / "No app password stored." | yes, on the app password |
 | Too big for email | "Too big for email (N MB). Switch it to USB." | no |
 | Format refused on USB | "<FORMAT> can't be read over USB. Send it by email." | no |
 | EPUB over USB, no Calibre | "Install calibre to send EPUB over USB (`sudo pacman -S calibre`)." | no |
@@ -261,9 +303,9 @@ Modelled on `~/Projects/omarchy-window-restore/scripts/install.sh`.
    - if Strata is installed, its action → `~/.config/strata/actions/kindle-send/` (Section 4)
 3. **Edit config, after asking for each edit, each backed up first and wrapped in `>>> kindle-send … >>>` / `<<< kindle-send <<<` markers:**
    - `~/.config/hypr/bindings.lua`: `SUPER + SHIFT + K` → `omarchy-shell shell toggle sorydi3.kindle-send`
-   - `~/.config/omarchy/extensions/omarchy-menu.jsonc`: "Send to Kindle" (toggle the picker) and "Send to Kindle → Setup" (floating terminal running `kindle-send setup`)
+   - `~/.config/omarchy/extensions/omarchy-menu.jsonc`: "Send to Kindle" (toggle the picker) and "Send to Kindle → Settings" (**Proposed:** opens the Picker in Settings; it was a floating terminal running `kindle-send setup`)
 4. **Enable and reload:** `omarchy plugin enable sorydi3.kindle-send` (it has no bar widget, so nothing else enables it), `omarchy-shell -q shell rescanPlugins`, `nautilus -q`.
-5. **Finish:** offer to run `kindle-send setup`.
+5. **Finish:** **Proposed:** say that `SUPER + SHIFT + K` opens setup in the Picker, and offer `kindle-send setup` in the terminal instead.
 
 Rerun install to update. Asking needs a terminal: without one, install makes no config edits and says so. `--yes` makes them without asking, `--no-config` skips them. Each block goes in only once. The menu block goes before the final `}`. After the edit, install checks the file with the shell's own parsing rules and restores the backup if that fails. A menu file that already fails to parse is left alone. Backups: `<file>.before-kindle-send`.
 
@@ -271,15 +313,16 @@ Rerun install to update. Asking needs a terminal: without one, install makes no 
 
 ## 15. Acceptance checks
 
-1. Fresh install on this machine: dependency check passes, config edits are asked about, the keybinding opens the Picker, and the Picker shows "Set up Send to Kindle".
-2. Setup stores settings in `shell.json` and the password in the keyring (non-empty), creates `~/Books`, and the test EPUB arrives on the Kindle.
+1. Fresh install on this machine: dependency check passes, config edits are asked about, the keybinding opens the Picker, and the Picker opens straight into Settings titled "Set up Send to Kindle".
+2. Setup in the Picker's Settings stores settings in `shell.json` and the password in the keyring (non-empty; never on a command line), creates `~/Books`, and `Ctrl+T` sends the test EPUB, which arrives on the Kindle. A wrong app password is refused on save with "Gmail rejected this app password"; a Book folder that doesn't exist is saved and flagged.
 3. A small EPUB in `~/Downloads` shows Route Email. Sending it gives "Sent to Amazon…", it appears on the Kindle, and the Picker then marks it "sent just now".
 4. A PDF over the Email limit shows Route USB. With the Kindle unplugged, it becomes a Pending Send; clicking its notification opens the Picker, where `Delete` cancels. Plugging in copies it into `documents/`, ejects the Kindle, and it shows in the Kindle library.
 5. An EPUB switched to USB with `Tab` fails with the Calibre message when Calibre isn't installed, and converts and copies when it is.
 6. Nautilus: selecting a PDF and a CBZ and right-clicking shows "Send to Kindle". The Picker opens with just the PDF marked, and a notification lists the CBZ as unsupported. Right-clicking a folder shows no item.
 7. Sending 25 small Books by email: the first 20 go out at least 10 s apart, and the rest are held with a "Next in M min" notification.
-8. A wrong app password fails with a critical notification, and clicking it opens setup.
-9. `kindle-send history` lists the Sends above. `uninstall.sh` removes the plugin, binding, menu entries and Nautilus item, and keeps the settings and history.
+8. A wrong app password fails with a critical notification, and clicking it opens Settings on the app password field.
+9. In Settings, `Ctrl+B` opens the folder chooser and the picked folder is appended to Book folders; `Esc` after an edit discards it; `Enter` in the Book list behind Settings sends nothing.
+10. `kindle-send history` lists the Sends above. `uninstall.sh` removes the plugin, binding, menu entries and Nautilus item, and keeps the settings and history.
 
 ## 16. Known facts and caveats
 
@@ -287,4 +330,5 @@ Rerun install to update. Asking needs a terminal: without one, install makes no 
 - DOCX by email was not tested live.
 - Amazon's throttle numbers are unpublished. 10 s and 20 per hour are cautious guesses.
 - Gmail app passwords need 2-Step Verification and are revoked when the Google account password changes ([#5](https://github.com/sorydi3/kindle-send/issues/5)).
+- In the folder chooser Browse opens, `Ctrl+L` (type a location) does nothing, so picking a folder there takes the mouse; typing paths into the Book folders field is the keyboard way ([#35](https://github.com/sorydi3/kindle-send/issues/35)).
 - Research notes live on unmerged branches: `research/email-route`, `research/usb-route`, `research/plugin-api`, `research/smtp-secrets`.

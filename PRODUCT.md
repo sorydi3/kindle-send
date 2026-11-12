@@ -27,7 +27,7 @@ It lives in the desktop shell itself. The Picker, notifications and right-click 
 - **Main path:** `SUPER + SHIFT + K` opens the Picker; type to filter, `Space` marks, `Tab` switches Route, `Enter` sends and closes at once. Keyboard speed matters most (confirmed as the user's daily path).
 - **Other ways in:** Nautilus or Strata right-click "Send to Kindle" opens the Picker with those files marked; the `kindle-send` command; the Omarchy menu.
 - **Feedback** happens after the Picker closes, entirely through Omarchy notifications updated in place (spec §10). The notification server draws no buttons; clicking is the only action.
-- **Setup** runs as a terminal wizard in a floating terminal (spec §9), not a GUI.
+- **Settings and setup** happen inside the Picker: one form opened with `Ctrl+,`, and on its own while setup is needed (spec §9). `kindle-send setup` in a terminal stays as the fallback.
 - Vocabulary is fixed in `GLOSSARY.md` (Book, Route, Send, Pending Send, Email limit, Send limit, Send history, Book folders, Conversion). UI copy uses these terms.
 
 ## Capabilities and Constraints
