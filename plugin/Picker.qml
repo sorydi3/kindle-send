@@ -3,6 +3,7 @@
 // Books to the Service and closes at once, Esc closes. It never handles the
 // password: kindle-send reads the keyring itself.
 import QtQuick
+import QtQuick.Dialogs
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -71,6 +72,25 @@ Item {
     // plan reruns on every open, so settings rewritten by setup show at once.
     root.list()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  // PROTOTYPE (ticket #35): the Picker steps aside, the chooser opens, the result comes back.
+  function browse() {
+    root.close()
+    folderDialog.open()
+  }
+
+  function reportFolder(text) {
+    Util.execArgv(["omarchy-notification-send", "-u", "normal", "Folder chooser (prototype)", text])
+    root.open("{}")
+  }
+
+  FolderDialog {
+    id: folderDialog
+    title: "Add a Book folder"
+    currentFolder: "file://" + Quickshell.env("HOME")
+    onAccepted: root.reportFolder("Chosen: " + decodeURIComponent(String(selectedFolder).replace("file://", "")))
+    onRejected: root.reportFolder("Cancelled")
   }
 
   function close() {
@@ -229,6 +249,8 @@ Item {
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           event.accepted = true
+          // PROTOTYPE (ticket #35): Ctrl+B tries the system folder chooser.
+          if (event.key === Qt.Key_B && (event.modifiers & Qt.ControlModifier)) { root.browse(); return }
           const enter = event.key === Qt.Key_Return || event.key === Qt.Key_Enter
           const screen = root.screen
           if (event.key === Qt.Key_Escape) {
