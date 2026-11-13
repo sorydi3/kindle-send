@@ -26,6 +26,7 @@ const LINKS = {
 function link(key) { return Object.prototype.hasOwnProperty.call(LINKS, key) ? LINKS[key] : "" }
 
 const KEY_COMMA = 0x2C
+const KEY_B = 0x42
 const KEY_O = 0x4F
 const CONTROL = 0x04000000
 const ALT = 0x08000000
@@ -37,15 +38,45 @@ function opensSettings(key, modifiers) {
   return key === KEY_COMMA && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
 }
 
+// Whether a field browses for a folder (Book folders do, instead of a link).
+function browses(key) { return key === "bookFolders" }
+
 // Ctrl+O in Settings opens the focused field's link.
 function opensLink(key, modifiers) {
   return key === KEY_O && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
+}
+
+// Ctrl+B in Settings browses for a Book folder.
+function opensBrowse(key, modifiers) {
+  return key === KEY_B && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
 }
 
 // The command that opens a field's link, [] for a field without one.
 function browserArgv(key) {
   const url = link(key)
   return url ? ["omarchy-launch-browser", url] : []
+}
+
+// The folder FolderDialog picked (a file URL) as the field writes it: `~/…`
+// inside home, the full path elsewhere.
+function chosenFolder(url, home) {
+  let path = decodeURIComponent(String(url || "").replace(/^file:\/\//, ""))
+  if (path.length > 1) path = path.replace(/\/+$/, "")
+  const base = String(home || "").replace(/\/+$/, "")
+  if (base === "") return path
+  if (path === base) return "~"
+  if (path.indexOf(base + "/") === 0) return "~" + path.slice(base.length)
+  return path
+}
+
+// The Book folders field text with a picked folder appended. "" (Cancel) or
+// a folder already listed leaves it as it was.
+function withFolder(text, folder) {
+  if (!folder) return String(text || "")
+  const folders = String(text || "").split(",")
+    .map(function(f) { return f.trim() }).filter(function(f) { return f !== "" })
+  if (folders.indexOf(folder) < 0) folders.push(folder)
+  return folders.join(", ")
 }
 
 // Form values (strings) from the line `kindle-send settings` printed.
@@ -124,10 +155,11 @@ function status(result) {
 }
 
 // The keys that work on the focused field. Esc warns once something changed.
-// Open link shows only on a field that has one.
+// Open link shows only on a field that has one, Browse only on Book folders.
 function footer(focusedKey, isChanged) {
   const keys = ["Tab  Next field", "Enter  Save"]
   if (link(focusedKey)) keys.push("Ctrl+O  Open link")
+  if (browses(focusedKey)) keys.push("Ctrl+B  Browse")
   keys.push(isChanged ? "Esc  Back (discard changes)" : "Esc  Back to Books")
   return keys.join("      ")
 }
