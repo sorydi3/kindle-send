@@ -226,3 +226,11 @@ function summoned(payloadJson) {
   problems[key] = key === "appPassword" && reason ? reason : NEEDED
   return { focus: key, problems: problems }
 }
+
+// The Omarchy menu's "Send to Kindle → Settings" summons with
+// {"settings": ""}: open Settings on no field in particular (spec §14).
+function opensFromMenu(payloadJson) {
+  let p = null
+  try { p = JSON.parse(payloadJson || "{}") } catch (e) { return false }
+  return !!p && p.settings === ""
+}

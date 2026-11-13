@@ -95,7 +95,9 @@ Item {
     root.settingsAside = null
     // A failure notification's click opens Settings on the field at fault (spec §10, §13).
     const onField = SettingsForm.summoned(payloadJson)
-    if (onField) root.openSettings(onField.focus, onField.problems)
+    // The Omarchy menu's Settings entry opens Settings on no field (spec §14).
+    if (SettingsForm.opensFromMenu(payloadJson)) root.openSettings()
+    else if (onField) root.openSettings(onField.focus, onField.problems)
     else if (back) root.returnToSettings(back)
     else Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
