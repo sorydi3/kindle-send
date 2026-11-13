@@ -210,6 +210,28 @@ function stepAside(form) { return { settings: copy(form) } }
 
 function reopened(kept) { return kept && kept.settings ? copy(kept.settings) : null }
 
+// --- Opening on a field ----------------------------------------------------------
+// A failure notification a Setting fixes summons the Picker with
+// {"settings": <field key>, "problem": <the Send's reason>} (spec §10, §13).
+// summoned gives { focus, problems } to open Settings on that field with its
+// problem shown, or null for any other summon. A missing address reads as
+// save would put it; the app password shows the Send's own reason (rejected or none stored).
+
+const NEEDED = "Needed before Books can be sent."
+// The fields a failed Send can name (kindle-send's result `field`).
+const SEND_FIELDS = ["kindleAddress", "senderAddress", "appPassword"]
+
+function summoned(payloadJson) {
+  let p = null
+  try { p = JSON.parse(payloadJson || "{}") } catch (e) { return null }
+  const key = p && typeof p.settings === "string" ? p.settings : ""
+  if (SEND_FIELDS.indexOf(key) < 0) return null
+  const reason = typeof p.problem === "string" ? p.problem : ""
+  const problems = {}
+  problems[key] = key === "appPassword" && reason ? reason : NEEDED
+  return { focus: key, problems: problems }
+}
+
 // --- Setup needed (spec §4, §9) -----------------------------------------------
 // `missing`: the field keys `kindle-send settings` says setup still needs. One
 // form serves setup and later changes; only its title, flags and Esc differ.

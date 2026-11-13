@@ -90,7 +90,8 @@ def test_missing_setting_fails_before_connecting(
 
     assert code == 0
     assert lines == [
-        {"result": "failed", "reason": f"Not set up: {missing} missing.", "fixBySetup": True}
+        {"result": "failed", "reason": f"Not set up: {missing} missing.", "fixBySetup": True,
+         "field": missing}
     ]
     assert smtp.instances == []
 
@@ -105,6 +106,7 @@ def test_no_shell_json_names_both_settings(ks, smtp, home, keyring, book, capsys
             "result": "failed",
             "reason": "Not set up: kindleAddress, senderAddress missing.",
             "fixBySetup": True,
+            "field": "kindleAddress",
         }
     ]
     assert smtp.instances == []
@@ -120,7 +122,8 @@ def test_missing_or_empty_password_fails_before_connecting(
 
     _, lines = run(ks, capsys, "send", "--route", "email", str(book))
 
-    assert lines == [{"result": "failed", "reason": "No app password stored.", "fixBySetup": True}]
+    assert lines == [{"result": "failed", "reason": "No app password stored.", "fixBySetup": True,
+                      "field": "appPassword"}]
     assert smtp.instances == []
     assert keyring.calls() == ["lookup service kindle-send user sender@gmail.com"]
 
@@ -144,7 +147,8 @@ def test_rejected_password_asks_for_setup(ks, smtp, setup_done, book, capsys):
 
     assert lines == [
         {"stage": "sending"},
-        {"result": "failed", "reason": "Gmail rejected the app password.", "fixBySetup": True},
+        {"result": "failed", "reason": "Gmail rejected the app password.", "fixBySetup": True,
+         "field": "appPassword"},
     ]
 
 

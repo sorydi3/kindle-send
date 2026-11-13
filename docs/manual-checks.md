@@ -89,7 +89,7 @@ Uses real email to your own Kindle, so 20 deliveries. If you'd rather not, lower
 ## 8. Wrong app password (§15.8)
 
 - [ ] Store a wrong password (`secret-tool store --label="kindle-send Gmail" service kindle-send user <gmail>`, type rubbish), then send a Book by email. A critical notification says "Gmail rejected the app password."
-- [ ] Clicking it opens setup in a floating terminal. Enter the right password there.
+- [ ] Clicking it opens the Picker in Settings on the app password field, with "Gmail rejected the app password." under it (section 15). Paste the right password there and press Enter.
 
 ## 9. History and uninstall (§15.9)
 
@@ -115,7 +115,7 @@ These came up while building and aren't covered above.
 - [ ] **Kindle detection on the real Paperwhite.** It is a whole-disk device with no partition table. `kindle-send kindle` prints `{"present": true, "mount": "/run/media/…", "free": N}` while plugged in and mounted by udiskie, and `{"present": false}` after unplugging.
 - [ ] **Eject.** `kindle-send eject` unmounts and powers off the Kindle (`{"ejected": true}`). The Kindle leaves USB mode.
 - [ ] **Real SMTP.** Gmail's advertised `SIZE` is cached in `~/.local/state/kindle-send/email-limit.json` after the first send, and `kindle-send plan` estimates the Email limit from it.
-- [ ] **Notifications.** Progress replaces itself in one card (not a new card per stage). Normal summaries go after about 5 s. Critical ones stay. Clicking a setup-fixable failure opens setup.
+- [ ] **Notifications.** Progress replaces itself in one card (not a new card per stage). Normal summaries go after about 5 s. Critical ones stay. Clicking a failure a Setting fixes opens Settings in the Picker on that field (section 15).
 - [ ] **Stage lines.** "Converting <Book>…" and "Copying to Kindle…" (with "i of n" for several Books) show during a USB Send.
 - [ ] **Mixed Send held by the limit.** A Send that mixes USB Books and held emails ejects the Kindle as soon as its USB Books are copied, and posts its summary for them; the held emails are reported when they go.
 - [ ] **Picker reload.** New settings from setup show the next time the Picker opens, without a shell restart.
@@ -167,7 +167,17 @@ These came up while building and aren't covered above.
 - [ ] Inside the chooser, `Ctrl+L` does nothing (known, spec §16); picking takes the mouse.
 - [ ] After a Browse, press `Enter`: the folder is saved and the Book list (after `Esc`) lists Books from it.
 
-## 15. First run opens straight into Settings (§4 Setup needed, §9)
+## 15. Failure notifications open Settings (§10, §13)
+
+Back up `~/.config/omarchy/shell.json` first and put it back afterwards.
+
+- [ ] Remove `kindleAddress` from the plugin's entry in `shell.json` (keep the app password stored) and send a Book by email. The critical notification says "Not set up: kindleAddress missing." Clicking it opens the Picker in Settings, the cursor in the Kindle address, "Needed before Books can be sent." in place of its help line. No terminal opens.
+- [ ] Same with `senderAddress` removed: the click lands on the Gmail address, flagged the same way.
+- [ ] Clear the stored password (`secret-tool clear service kindle-send user <Gmail>`) and send by email: "No app password stored." Clicking it opens Settings on the app password field with "No app password stored." under it.
+- [ ] Section 8's wrong password: the click lands on the app password field with "Gmail rejected the app password." under it. Type the right one: the problem clears as you type; `Enter` saves it.
+- [ ] From the wrong-password case, `Esc` goes back to the Book list (not the terminal). From the missing-value cases setup is needed, so the form is titled "Set up Send to Kindle" and `Esc` closes the Picker (section 16). A failure no Setting fixes (e.g. "Too big for email") does nothing on click.
+
+## 16. First run opens straight into Settings (§4 Setup needed, §9)
 
 Start from no setup: move the `sorydi3.kindle-send` keys out of `shell.json` (keep a copy) and `secret-tool clear service kindle-send user <Gmail>`, and move `~/Books` aside if it's empty.
 

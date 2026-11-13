@@ -9,6 +9,8 @@ QtObject {
   // `kindle-send limit` answers, one per ask; the last one repeats.
   property var limits: []
   property bool kindle: true
+  // Book path -> the result line `kindle-send send` prints for it; others succeed.
+  property var sendResults: ({})
   property int nextId: 100
 
   function event(e) {
@@ -30,11 +32,14 @@ QtObject {
       const r = cmd.indexOf("-r")
       const at = r >= 0 ? r + 2 : cmd.indexOf("-p") + 1
       const id = r >= 0 ? parseInt(cmd[r + 1], 10) : w.nextId++
-      w.event({ kind: "notify", id: id, urgency: cmd[cmd.indexOf("-u") + 1], headline: cmd[at], body: cmd[at + 1] })
+      const exec = cmd.indexOf("--exec")
+      w.event({ kind: "notify", id: id, urgency: cmd[cmd.indexOf("-u") + 1], headline: cmd[at], body: cmd[at + 1],
+                exec: exec >= 0 ? cmd.slice(exec + 1) : [] })
       return { lines: r >= 0 ? [] : [String(id)], code: 0 }
     }
     w.event({ kind: "run", cmd: cmd.slice(1).join(" ") })
     if (cmd[1] === "limit") return { lines: [JSON.stringify(w.limits.length > 1 ? w.limits.shift() : w.limits[0])], code: 0 }
+    if (cmd[1] === "send" && w.sendResults[cmd[4]]) return { lines: [JSON.stringify(w.sendResults[cmd[4]])], code: 0 }
     if (cmd[1] === "send" && cmd[3] === "usb") {
       if (!w.kindle) return { lines: ['{"result":"failed","reason":"Kindle not plugged in. Plug it in and send again."}'], code: 0 }
       return { lines: ['{"stage":"copying"}', '{"result":"copied"}'], code: 0 }

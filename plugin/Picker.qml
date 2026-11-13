@@ -99,7 +99,10 @@ Item {
     root.list()
     const back = SettingsForm.reopened(root.settingsAside)
     root.settingsAside = null
-    if (back) root.returnToSettings(back)
+    // A failure notification's click opens Settings on the field at fault (spec §10, §13).
+    const onField = SettingsForm.summoned(payloadJson)
+    if (onField) root.openSettings(onField.focus, onField.problems)
+    else if (back) root.returnToSettings(back)
     else Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -210,13 +213,14 @@ Item {
 
   // --- Settings ---------------------------------------------------------
 
-  // Opens Settings on `field` (a field key; "" for the first field). The one way
-  // in: Ctrl+, and the cog, setup needed, the empty Book list (Book folders).
-  // Already open, it changes nothing.
-  function openSettings(field) {
+  // Opens Settings on `focusKey` (a field key; "" for the first field), with
+  // `problems` (key -> message) shown if given. The one way in: Ctrl+, and the
+  // cog, setup needed, the empty Book list (Book folders), a failure
+  // notification (the field at fault). Already open, it changes nothing.
+  function openSettings(focusKey, problems) {
     if (root.settingsOpen) return
     root.settingsOpen = true
-    root.settingsProblems = {}
+    root.settingsProblems = problems || {}
     root.settingsStatus = ""
     root.settingsSavedSinceOpen = false
     root.settingsPasswordStored = false
@@ -225,7 +229,7 @@ Item {
     root.settingsValues = SettingsForm.fromSettings(null)
     root.settingsBaseline = root.settingsValues
     root.loadSettings(true)
-    const focus = field || SettingsForm.fields()[0].key
+    const focus = focusKey || SettingsForm.fields()[0].key
     Qt.callLater(function() { root.focusSettingsField(focus) })
   }
 
