@@ -146,7 +146,7 @@ Item {
       const s = Feedback.summary(root.results, root.ejectResult)
       // A fully successful summary times out; any failure stays (critical) and,
       // when a Setting is the fix, a click opens Settings on it (spec §10, §13).
-      // A test send's click always opens Settings (spec §9).
+      // A sent test Book's click opens Settings (spec §9).
       root.notify(send.id, s.headline, s.body, s.urgency, Feedback.clickArgv(root.pluginId, s), s.timeout || 0)
     }
     root.startNext()

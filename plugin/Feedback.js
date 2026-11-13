@@ -78,15 +78,12 @@ function summaryText(results, eject) {
 
   if (results.length === 1) {
     const only = results[0]
-    // A test send, failed or not, opens Settings on click (clickArgv).
-    const test = only.test === true
     if (only.result === "failed") {
-      const f = { headline: "Couldn't send " + only.name, body: only.reason, urgency: urgency, fix: fix }
-      if (test) f.test = true
-      return f
+      return { headline: "Couldn't send " + only.name, body: only.reason, urgency: urgency, fix: fix }
     }
     // Amazon never confirms delivery, so the test send names what to check instead (spec §9).
-    if (test) return { headline: only.name, body: testSent(only.sender), urgency: urgency, fix: fix, test: true }
+    // Its click opens Settings (clickArgv); a failed one opens them only through fix.
+    if (only.test === true) return { headline: only.name, body: testSent(only.sender), urgency: urgency, fix: fix, test: true }
     const tail = only.result === "copied" ? ejectLine : ARRIVES
     return { headline: only.name, body: done(only) + (tail ? " " + tail : ""), urgency: urgency, fix: fix }
   }
@@ -156,7 +153,7 @@ function settingsArgv(pluginId, fix) {
 }
 
 // What a click on a summary runs: Settings on the field at fault, else Settings
-// themselves for a test send (whatever its result), else nothing.
+// themselves for a sent test Book, else nothing (spec §9, §13).
 function clickArgv(pluginId, summary) {
   const onField = settingsArgv(pluginId, summary.fix)
   if (onField.length > 0 || summary.test !== true) return onField
