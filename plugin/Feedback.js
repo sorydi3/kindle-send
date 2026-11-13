@@ -78,7 +78,15 @@ function summaryText(results, eject) {
 
   if (results.length === 1) {
     const only = results[0]
-    if (only.result === "failed") return { headline: "Couldn't send " + only.name, body: only.reason, urgency: urgency, fix: fix }
+    // A test send, failed or not, opens Settings on click (clickArgv).
+    const test = only.test === true
+    if (only.result === "failed") {
+      const f = { headline: "Couldn't send " + only.name, body: only.reason, urgency: urgency, fix: fix }
+      if (test) f.test = true
+      return f
+    }
+    // Amazon never confirms delivery, so the test send names what to check instead (spec §9).
+    if (test) return { headline: only.name, body: testSent(only.sender), urgency: urgency, fix: fix, test: true }
     const tail = only.result === "copied" ? ejectLine : ARRIVES
     return { headline: only.name, body: done(only) + (tail ? " " + tail : ""), urgency: urgency, fix: fix }
   }
@@ -95,7 +103,14 @@ function summaryText(results, eject) {
 }
 
 // The result line of one `kindle-send send` run, or a failure when there was none.
+// A test Book's result keeps the Gmail address for its summary.
 function resultFor(book, lines, exitCode, started) {
+  const r = resultLine(book, lines, exitCode, started)
+  if (book.test === true) { r.test = true; r.sender = String(book.sender || "") }
+  return r
+}
+
+function resultLine(book, lines, exitCode, started) {
   for (let i = lines.length - 1; i >= 0; i--) {
     if (lines[i] && lines[i].result) {
       const r = { name: book.name, result: lines[i].result }
@@ -110,6 +125,27 @@ function resultFor(book, lines, exitCode, started) {
   return { name: book.name, result: "failed", reason: reason }
 }
 
+// --- The test send (spec §9, §10) ---------------------------------------------
+// Settings' Ctrl+T sends the bundled test EPUB as "Kindle Send Test" like any
+// Send: `kindle-send send --route email --test`, which finds the file itself.
+
+const TEST_NAME = "Kindle Send Test"
+
+// sender: the saved Gmail address, which the success summary names.
+function testBook(sender) {
+  return { test: true, path: "", name: TEST_NAME, route: Routes.EMAIL, sender: String(sender || "") }
+}
+
+// The `kindle-send send` argv for one Book; paths go as argv words, never through a shell.
+function sendArgv(book) {
+  return ["kindle-send", "send", "--route", book.route, book.test === true ? "--test" : book.path]
+}
+
+function testSent(sender) {
+  return SENT + " Not on your Kindle in a few minutes? Check that " + (sender || "your Gmail address") +
+    " is on Amazon's approved list and the Kindle address is right."
+}
+
 // What a click on a failure a Setting fixes runs: the Picker summoned straight
 // into Settings on that field, with the reason to show there (spec §10, §13).
 // [] when there is no such failure.
@@ -117,6 +153,14 @@ function settingsArgv(pluginId, fix) {
   if (!fix || !fix.field) return []
   return ["omarchy-shell", "shell", "summon", pluginId,
           JSON.stringify({ settings: fix.field, problem: fix.reason || "" })]
+}
+
+// What a click on a summary runs: Settings on the field at fault, else Settings
+// themselves for a test send (whatever its result), else nothing.
+function clickArgv(pluginId, summary) {
+  const onField = settingsArgv(pluginId, summary.fix)
+  if (onField.length > 0 || summary.test !== true) return onField
+  return ["omarchy-shell", "shell", "summon", pluginId, JSON.stringify({ settings: "" })]
 }
 
 // The omarchy-notification-send argv for one post. replaceId 0 posts a new

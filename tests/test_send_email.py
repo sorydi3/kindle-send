@@ -282,3 +282,63 @@ def test_password_never_in_output_or_tool_arguments(ks, smtp, setup_done, keyrin
 
     assert PASSWORD not in captured.out + captured.err
     assert all(PASSWORD not in call for call in keyring.calls())
+
+
+# --- Test send from Settings (spec §3, §9) -------------------------------------
+
+def test_send_test_emails_the_bundled_epub_as_kindle_send_test(ks, smtp, setup_done, capsys):
+    code, lines = run(ks, capsys, "send", "--route", "email", "--test")
+
+    assert code == 0
+    assert lines == [{"stage": "sending"}, {"result": "sent"}]
+    [server] = smtp.instances
+    [msg] = server.sent
+    assert msg["Subject"] == "Kindle Send Test"
+    assert msg["To"] == KINDLE
+    [attachment] = list(msg.iter_attachments())
+    assert attachment.get_filename() == "Kindle Send Test.epub"
+    assert attachment.get_payload(decode=True) == ks.test_epub_path().read_bytes()
+
+
+def test_send_test_is_recorded_in_the_send_history(ks, smtp, setup_done, capsys):
+    run(ks, capsys, "send", "--route", "email", "--test")
+
+    [entry] = ks.read_history()
+    assert entry["name"] == "Kindle Send Test.epub"
+    assert entry["route"] == "email"
+    assert entry["result"] == "sent"
+    assert entry["size"] == ks.test_epub_path().stat().st_size
+
+
+def test_a_failed_send_test_names_its_field_and_is_recorded(ks, smtp, setup_done, capsys):
+    smtp.login_error = smtplib.SMTPAuthenticationError(535, b"bad credentials")
+
+    code, lines = run(ks, capsys, "send", "--route", "email", "--test")
+
+    assert code == 0
+    assert lines[-1] == {"result": "failed", "reason": "Gmail rejected the app password.",
+                         "fixBySetup": True, "field": "appPassword"}
+    [entry] = ks.read_history()
+    assert (entry["name"], entry["result"]) == ("Kindle Send Test.epub", "failed")
+
+
+def test_send_test_without_the_bundled_epub_fails_with_a_reason(ks, smtp, setup_done, tmp_path,
+                                                                 monkeypatch, capsys):
+    monkeypatch.setenv("KINDLE_SEND_TEST_EPUB", str(tmp_path / "gone.epub"))
+
+    code, lines = run(ks, capsys, "send", "--route", "email", "--test")
+
+    assert code == 0
+    assert lines == [{"result": "failed", "reason": "Couldn't find the test Book. Reinstall kindle-send."}]
+    assert smtp.instances == []
+
+
+@pytest.mark.parametrize("argv", [
+    ["send", "--route", "usb", "--test"],
+    ["send", "--route", "email", "--test", "Dune.epub"],
+    ["send", "--route", "email"],
+])
+def test_send_takes_either_a_file_or_test_by_email(ks, argv, capsys):
+    with pytest.raises(SystemExit) as exit_:
+        ks.main(argv)
+    assert exit_.value.code == 2

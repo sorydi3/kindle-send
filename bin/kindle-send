@@ -690,22 +690,28 @@ def test_epub_path():
     return Path(__file__).resolve().parent.parent / "assets" / "test.epub"
 
 
-def run_test_send(kindle):
-    """Email the test EPUB, named after its title (the subject), then ask whether it arrived."""
+def send_test_book():
+    """Email the test EPUB as "Kindle Send Test" (its subject) like any Send, recorded in
+    the Send history. Returns the result line; progress lines go to stdout as usual."""
     with tempfile.TemporaryDirectory(prefix="kindle-send-") as tmp:
         book = Path(tmp) / f"{TEST_BOOK_TITLE}.epub"
         try:
             shutil.copyfile(test_epub_path(), book)
-        except OSError as error:
-            print(f"Couldn't find the test Book ({error}). Reinstall kindle-send.")
-            return
-        print("Sending…")
+        except OSError:
+            return SendFailed("Couldn't find the test Book. Reinstall kindle-send.").result()
         try:
-            with contextlib.redirect_stdout(io.StringIO()):  # no JSON progress lines here
-                result = send_email(book)
+            result = send_email(book)
         except SendFailed as failure:
             result = failure.result()
         record_send(book, "email", result)
+    return result
+
+
+def run_test_send(kindle):
+    """The wizard's test send, then ask whether it arrived."""
+    print("Sending…")
+    with contextlib.redirect_stdout(io.StringIO()):  # no JSON progress lines here
+        result = send_test_book()
     if result["result"] != "sent":
         print(f"The test send failed: {result['reason']}")
         print("Fix that and run `kindle-send setup` again.")
@@ -953,7 +959,7 @@ def create_books_folder():
 
 def save_form():
     """`kindle-send save`: check the form's values and write them to shell.json (spec §3, §9).
-    Reads one JSON line on stdin. Prints {"saved": bool, "problems": [{"field", "message", "blocking"}]};
+    Reads one JSON line on stdin. Prints {"saved": bool, "firstSave"?: true, "problems": [{"field", "message", "blocking"}]};
     field "" is about the whole form."""
     try:
         raw = json.loads(sys.stdin.readline())  # one line, so the Picker needs no EOF
@@ -1002,7 +1008,10 @@ def save_form():
     if first_save:
         create_books_folder()
     found = sorted(warnings(values) + checked, key=lambda p: FORM_FIELDS.index(p["field"]))
-    emit({"saved": True, "problems": found})
+    answer = {"saved": True, "problems": found}
+    if first_save:
+        answer["firstSave"] = True  # the Picker suggests the test send after it (spec §9)
+    emit(answer)
     return 0
 
 
@@ -1011,7 +1020,9 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
     send = sub.add_parser("send", help="send one Book")
     send.add_argument("--route", choices=["email", "usb"], required=True)
-    send.add_argument("file")
+    send.add_argument("file", nargs="?")
+    send.add_argument("--test", action="store_true",
+                      help='instead of FILE: email the bundled test Book as "Kindle Send Test"')
     sub.add_parser("setup", help="interactive setup wizard (needs a terminal)")
     sub.add_parser("settings", help="the Settings for the Picker's form (never the password)")
     sub.add_parser("save", help="check and save the Settings form's values, read as JSON on stdin")
@@ -1026,6 +1037,11 @@ def main(argv=None):
     pick_parser = sub.add_parser("pick", help="open the Picker with just these Books (Strata's action)")
     pick_parser.add_argument("files", nargs="+")
     args = parser.parse_args(argv)
+    if args.command == "send":
+        if args.test and args.route != "email":
+            send.error("--test sends by email only: use --route email")
+        if args.test == bool(args.file):
+            send.error("give either FILE or --test")
 
     if args.command == "kindle":
         emit(kindle_status())
@@ -1055,6 +1071,9 @@ def main(argv=None):
     if args.command == "save":
         return save_form()
 
+    if args.command == "send" and args.test:
+        emit(send_test_book())
+        return 0
     if args.command == "send":
         book = Path(args.file)
         try:

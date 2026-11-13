@@ -99,7 +99,7 @@ def test_save_writes_the_values_and_keeps_every_other_key(ks, home, folders, sto
 
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders)
 
-    assert out == {"saved": True, "problems": []}
+    assert out == {"saved": True, "firstSave": True, "problems": []}
     data, mine = entry(home)
     assert data["theme"] == {"accent": "blue"}
     assert {"id": "other.plugin", "x": 1} in data["plugins"]
@@ -193,7 +193,7 @@ def test_every_blocking_problem_is_reported_in_form_order(ks, home, folders, sto
 def test_a_kindle_address_not_on_kindle_com_saves_with_a_warning(ks, home, folders, stored, capsys, monkeypatch, kindle):
     out = save(ks, capsys, monkeypatch, kindleAddress=kindle, senderAddress=SENDER, bookFolders=folders)
 
-    assert out == {"saved": True, "problems": [
+    assert out == {"saved": True, "firstSave": True, "problems": [
         {"field": "kindleAddress", "message": "Kindle addresses usually end in @kindle.com", "blocking": False}]}
     assert entry(home)[1]["kindleAddress"] == kindle
 
@@ -201,14 +201,14 @@ def test_a_kindle_address_not_on_kindle_com_saves_with_a_warning(ks, home, folde
 def test_a_kindle_com_address_in_capitals_needs_no_warning(ks, home, folders, stored, capsys, monkeypatch):
     out = save(ks, capsys, monkeypatch, kindleAddress="Reader@Kindle.com", senderAddress=SENDER, bookFolders=folders)
 
-    assert out == {"saved": True, "problems": []}
+    assert out == {"saved": True, "firstSave": True, "problems": []}
 
 
 def test_a_sender_not_on_gmail_com_saves_with_a_warning(ks, home, folders, stored, capsys, monkeypatch):
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress="me@company.example",
                bookFolders=folders)
 
-    assert out == {"saved": True, "problems": [
+    assert out == {"saved": True, "firstSave": True, "problems": [
         {"field": "senderAddress", "message": "Make sure this is a Google account", "blocking": False}]}
     assert entry(home)[1]["senderAddress"] == "me@company.example"
 
@@ -218,7 +218,7 @@ def test_a_book_folder_that_doesnt_exist_saves_with_a_warning_and_isnt_created(k
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER,
                bookFolders=["~/Books", "~/Bokos"])
 
-    assert out == {"saved": True, "problems": [
+    assert out == {"saved": True, "firstSave": True, "problems": [
         {"field": "bookFolders", "message": "~/Bokos doesn't exist, so the Picker skips it", "blocking": False}]}
     assert entry(home)[1]["bookFolders"] == ["~/Books", "~/Bokos"]
     assert not (home / "Bokos").exists()
@@ -281,7 +281,7 @@ def test_a_typed_app_password_is_stored_in_the_keyring_under_the_gmail_address(k
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders,
                appPassword=PASSWORD)
 
-    assert out == {"saved": True, "problems": []}
+    assert out == {"saved": True, "firstSave": True, "problems": []}
     assert keyring.password() == PASSWORD
     stores = [c for c in keyring.calls() if c.startswith("store")]
     assert len(stores) == 1 and stores[0].endswith("service kindle-send user " + SENDER)
@@ -337,7 +337,7 @@ def test_when_gmail_cant_be_reached_the_password_is_saved_anyway_with_a_warning(
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders,
                appPassword=PASSWORD)
 
-    assert out == {"saved": True, "problems": [
+    assert out == {"saved": True, "firstSave": True, "problems": [
         {"field": "appPassword", "message": "Couldn't reach Gmail to check the password. Saved anyway.",
          "blocking": False}]}
     assert keyring.password() == PASSWORD
@@ -422,7 +422,7 @@ def test_the_first_save_creates_books(ks, home, keyring, smtp, capsys, monkeypat
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Books"],
                appPassword=PASSWORD)
 
-    assert out == {"saved": True, "problems": []}
+    assert out == {"saved": True, "firstSave": True, "problems": []}
     assert (home / "Books").is_dir()
 
 
@@ -443,6 +443,7 @@ def test_a_save_once_set_up_never_creates_books(ks, home, stored, capsys, monkey
                bookFolders=["~/Books"])
 
     assert out["saved"] is True
+    assert "firstSave" not in out
     assert not (home / "Books").exists()
 
 

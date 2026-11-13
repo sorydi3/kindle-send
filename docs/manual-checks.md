@@ -199,3 +199,15 @@ Back up `~/.config/omarchy/extensions/omarchy-menu.jsonc` first.
 - [ ] Once set up, Omarchy menu → Send to Kindle → Settings opens the Picker in Settings, no field flagged, no terminal. `Esc` goes back to the Book list.
 - [ ] Run the install again: `Already in …` for the menu.
 - [ ] `./scripts/uninstall.sh` removes the block; the rest of the menu still shows.
+
+## 18. Test send from Settings (§9 Test send, §10)
+
+Sends one real email to your own Kindle. Start from section 16's state just before the first save.
+
+- [ ] Save the form for the first time: the status line says "Saved. Ctrl+T sends a test Book to check it all works."
+- [ ] Type in any field without saving and press `Ctrl+T`: nothing is sent; the status line says "Save first, then Ctrl+T sends a test Book." `Esc`, reopen Settings with `Ctrl+,`.
+- [ ] With everything saved, press `Ctrl+T`: the Picker stays in Settings, the status line says "Sending a test Book…", then "Gmail accepted the test Book at <time>. Check your Kindle in a few minutes." A second `Ctrl+T` while it is sending sends nothing more.
+- [ ] The notification is headed "Kindle Send Test" and reads "Sent to Amazon. Not on your Kindle in a few minutes? Check that <Gmail> is on Amazon's approved list and the Kindle address is right." Clicking it (before it goes) opens the Picker in Settings.
+- [ ] "Kindle Send Test" arrives on the Kindle. `kindle-send history` lists "Kindle Send Test.epub" by Email, sent.
+- [ ] With section 8's wrong app password stored, `Ctrl+T`: the status line says "Couldn't send the test Book.", "Gmail rejected the app password." replaces the app password's help line and the cursor is there. The critical notification's click opens Settings on that field.
+- [ ] With the network off, `Ctrl+T`: the status line says "Couldn't send the test Book." followed by the reason.

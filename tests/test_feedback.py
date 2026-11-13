@@ -201,3 +201,62 @@ def test_a_send_result_keeps_the_field_at_fault():
 
     assert r == {"name": "Dune.epub", "result": "failed", "reason": "No app password stored.",
                  "fixBySetup": True, "field": "appPassword"}
+
+
+# --- The test send (spec §9, §10) ---------------------------------------------
+
+TEST_SENT = ("Sent to Amazon. Not on your Kindle in a few minutes? Check that sender@gmail.com is on "
+             "Amazon's approved list and the Kindle address is right.")
+SUMMON_SETTINGS = ["omarchy-shell", "shell", "summon", "sorydi3.kindle-send", '{"settings":""}']
+
+
+def test_the_test_book_runs_send_with_test_instead_of_a_file():
+    book = call("testBook", "sender@gmail.com")
+
+    assert book["name"] == "Kindle Send Test"
+    assert book["route"] == "email"
+    assert call("sendArgv", book) == ["kindle-send", "send", "--route", "email", "--test"]
+
+
+def test_any_other_book_runs_send_with_its_path():
+    book = {"path": "/b/Dune.epub", "name": "Dune.epub", "route": "email"}
+
+    assert call("sendArgv", book) == ["kindle-send", "send", "--route", "email", "/b/Dune.epub"]
+
+
+def test_a_sent_test_book_lists_the_usual_causes_instead_of_a_question():
+    book = call("testBook", "sender@gmail.com")
+    result = call("resultFor", book, [{"stage": "sending"}, {"result": "sent"}], 0, True)
+
+    s = call("summary", [result], None)
+
+    assert s["headline"] == "Kindle Send Test"
+    assert s["body"] == TEST_SENT
+    assert s["urgency"] == "normal"
+
+
+def test_clicking_a_sent_test_book_opens_settings():
+    book = call("testBook", "sender@gmail.com")
+    result = call("resultFor", book, [{"result": "sent"}], 0, True)
+
+    assert call("clickArgv", "sorydi3.kindle-send", call("summary", [result], None)) == SUMMON_SETTINGS
+
+
+def test_clicking_a_failed_test_book_opens_settings_on_its_field_or_else_on_settings():
+    book = call("testBook", "sender@gmail.com")
+    rejected = call("resultFor", book, [{"result": "failed", "reason": "Gmail rejected the app password.",
+                                         "fixBySetup": True, "field": "appPassword"}], 0, True)
+    offline = call("resultFor", book, [{"result": "failed", "reason": "Couldn't reach Gmail."}], 0, True)
+
+    on_field = call("clickArgv", "sorydi3.kindle-send", call("summary", [rejected], None))
+    assert json.loads(on_field[4]) == {"settings": "appPassword", "problem": "Gmail rejected the app password."}
+    assert call("clickArgv", "sorydi3.kindle-send", call("summary", [offline], None)) == SUMMON_SETTINGS
+
+
+def test_clicking_an_ordinary_send_opens_settings_only_for_a_fix():
+    sent = call("summary", [{"name": "Dune.epub", "result": "sent"}], None)
+    rejected = call("summary", [{"name": "Dune.epub", "result": "failed", "reason": "No app password stored.",
+                                 "fixBySetup": True, "field": "appPassword"}], None)
+
+    assert call("clickArgv", "sorydi3.kindle-send", sent) == []
+    assert json.loads(call("clickArgv", "sorydi3.kindle-send", rejected)[4])["settings"] == "appPassword"
