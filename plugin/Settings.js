@@ -23,8 +23,8 @@ function placeholder(field, passwordStored) {
   return field.placeholder
 }
 
-// The page each field's help line links to (spec §9), keyed by field so a
-// field added later (the app password) gets its link by its key alone.
+// The page each field's help line links to (spec §9), keyed by field key,
+// apart from FIELDS. Book folders have none: they browse instead.
 const LINKS = {
   kindleAddress: "https://www.amazon.com/mycd",
   senderAddress: "https://www.amazon.com/hz/mycd/myx#/home/settings/pdoc",
@@ -42,23 +42,22 @@ const ALT = 0x08000000
 const META = 0x10000000
 const SHIFT = 0x02000000
 
-// Ctrl+, in the Book list opens Settings; a plain comma still filters.
-function opensSettings(key, modifiers) {
-  return key === KEY_COMMA && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
+// Whether a key press is `wanted` with Ctrl and no other modifier.
+function ctrlOnly(key, modifiers, wanted) {
+  return key === wanted && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
 }
+
+// Ctrl+, in the Book list opens Settings; a plain comma still filters.
+function opensSettings(key, modifiers) { return ctrlOnly(key, modifiers, KEY_COMMA) }
 
 // Whether a field browses for a folder (Book folders do, instead of a link).
 function browses(key) { return key === "bookFolders" }
 
 // Ctrl+O in Settings opens the focused field's link.
-function opensLink(key, modifiers) {
-  return key === KEY_O && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
-}
+function opensLink(key, modifiers) { return ctrlOnly(key, modifiers, KEY_O) }
 
 // Ctrl+B in Settings browses for a Book folder.
-function opensBrowse(key, modifiers) {
-  return key === KEY_B && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
-}
+function opensBrowse(key, modifiers) { return ctrlOnly(key, modifiers, KEY_B) }
 
 // The command that opens a field's link, [] for a field without one.
 function browserArgv(key) {
@@ -185,9 +184,7 @@ function status(result) {
 const KEY_T = 0x54
 const SENDING_TEST = "Sending a test Book…"
 
-function opensTestSend(key, modifiers) {
-  return key === KEY_T && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
-}
+function opensTestSend(key, modifiers) { return ctrlOnly(key, modifiers, KEY_T) }
 
 // What Ctrl+T does: { send } to start one, else a status line saying why not.
 function testKey(isSetup, isChanged, testSend) {
