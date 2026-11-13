@@ -39,7 +39,7 @@ Run from the menu: Send to Kindle → Setup. It should open a floating terminal.
 - [ ] `~/Books` exists.
 - [ ] The test send runs, and "Kindle Send Test" appears on the Kindle within a few minutes. It was found through the installed link, so this also checks the test-EPUB path.
 - [ ] Rerun setup and press Enter at every prompt. Every value is kept, the password included.
-- [ ] The Picker no longer shows the setup line, without a shell restart.
+- [ ] The Picker now opens into the Book list, not Settings, without a shell restart.
 
 ## 3. Small EPUB by email (§15.3)
 
@@ -127,7 +127,7 @@ These came up while building and aren't covered above.
 - [ ] Type a comma in the Book list: it goes into the search. `Ctrl+,` opens Settings instead.
 - [ ] Click the cog at the right end of the search line: Settings open.
 - [ ] Settings show the Kindle address, the Gmail address and the Book folders as they are in `shell.json` (`~` kept), with the cursor in the Kindle address field. Typed text goes into the fields.
-- [ ] `Tab` moves Kindle address → Gmail address → Book folders; `Shift+Tab` goes back. Focus never lands on the Book list behind.
+- [ ] `Tab` moves Kindle address → Gmail address → app password → Book folders; `Shift+Tab` goes back. Focus never lands on the Book list behind.
 - [ ] **Key isolation.** With Settings open, press `Enter`, `Space`, `Tab`, `Delete`, letters and arrows: no Book is sent, marked or switched, the search stays as it was, and no notification appears. Mouse clicks on the form don't mark Books either.
 - [ ] Change a field: the footer says "Esc  Back (discard changes)". Press `Esc`: back in the Book list; reopen Settings and the old value is there.
 - [ ] Clear the Gmail address and press `Enter` (from any field): "Needed before Books can be sent." replaces its help line in the accent color, focus jumps to it, the status line says "1 value needs fixing", and `shell.json` is unchanged. Type one letter: the problem goes and the help line is back.
@@ -166,3 +166,17 @@ These came up while building and aren't covered above.
 - [ ] Open the chooser and cancel it (Cancel, or `Esc`): the Picker reopens in Settings with the field and any unsaved values as they were.
 - [ ] Inside the chooser, `Ctrl+L` does nothing (known, spec §16); picking takes the mouse.
 - [ ] After a Browse, press `Enter`: the folder is saved and the Book list (after `Esc`) lists Books from it.
+
+## 15. First run opens straight into Settings (§4 Setup needed, §9)
+
+Start from no setup: move the `sorydi3.kindle-send` keys out of `shell.json` (keep a copy) and `secret-tool clear service kindle-send user <Gmail>`, and move `~/Books` aside if it's empty.
+
+- [ ] `SUPER + SHIFT + K` opens straight into the form titled "Set up Send to Kindle". No Book list, no "Start setup" screen, and no terminal opens.
+- [ ] Kindle address, Gmail address and Gmail app password each show "· needed" beside their label in the accent color; Book folders doesn't. The footer ends "Esc  Close".
+- [ ] Press `Esc`: the Picker closes. Open it again: back in "Set up Send to Kindle".
+- [ ] Type a Kindle address: its "· needed" goes at once. Press `Enter` with the others still empty: the status line says "2 still needed before Books can be sent.", "Needed before Books can be sent." replaces both help lines, focus jumps to the Gmail address, and `shell.json` is unchanged.
+- [ ] Fill in the Gmail address and the real app password and press `Enter`: saved. The title changes to "Settings", no field is flagged, `~/Books` now exists, and the footer ends "Esc  Back to Books". `Esc` shows the Book list.
+- [ ] Delete `~/Books` (if empty), change only the Kindle address in Settings and save: `~/Books` is not created again.
+- [ ] With Book folders pointing at empty folders, the Picker says "No Books found in …" with "Enter  Change Book folders". `Enter` (or a click on the message) opens Settings with the cursor in Book folders.
+- [ ] `kindle-send setup` in a terminal still runs the wizard.
+- [ ] Put back your own `shell.json` keys and app password.
