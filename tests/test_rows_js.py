@@ -152,24 +152,24 @@ def test_with_no_rows_enter_sends_nothing():
 
 def test_hints_on_a_book_offer_mark_route_send_and_close():
     assert rows(f"hints({book(path='/b/Dune.epub')}, 'Send this Book')") \
-        == "Space  Mark      Tab  Route      Enter  Send this Book      Esc  Close"
+        == "Space  Mark      Tab  Route      Enter  Send this Book      Ctrl+,  Settings      Esc  Close"
 
 
 def test_hints_on_the_waiting_line_offer_cancel_instead():
     waiting = json.dumps({"waiting": True, "path": "", "name": "1 Book waiting for Kindle"})
 
-    assert rows(f"hints({waiting}, '')") == "Delete  Cancel waiting      Esc  Close"
+    assert rows(f"hints({waiting}, '')") == "Delete  Cancel waiting      Ctrl+,  Settings      Esc  Close"
 
 
 def test_hints_with_marked_books_on_the_waiting_line_keep_send():
     waiting = json.dumps({"waiting": True, "path": "", "name": "1 Book waiting for Kindle"})
 
     assert rows(f"hints({waiting}, 'Send 2 Books')") \
-        == "Delete  Cancel waiting      Enter  Send 2 Books      Esc  Close"
+        == "Delete  Cancel waiting      Enter  Send 2 Books      Ctrl+,  Settings      Esc  Close"
 
 
 def test_hints_with_no_rows_offer_only_close():
-    assert rows("hints(null, '')") == "Esc  Close"
+    assert rows("hints(null, '')") == "Ctrl+,  Settings      Esc  Close"
 
 
 # --- The Picker's screens other than the list ------------------------------
@@ -189,7 +189,7 @@ def test_setup_says_what_it_needs_and_enter_starts_it():
 
     assert s["message"] == "Set up Send to Kindle"
     assert s["detail"] == "You'll need your Kindle's email address and a Gmail app password."
-    assert s["keys"] == "Enter  Start setup      Esc  Close"
+    assert s["keys"] == "Enter  Start setup      Ctrl+,  Settings      Esc  Close"
     assert s["enter"] == "setup"
 
 
@@ -197,7 +197,7 @@ def test_no_books_in_the_folders_offers_setup_to_change_them():
     s = screen(books=0, rows=0)
 
     assert s["message"] == "No Books found in ~/Books, ~/Downloads"
-    assert s["keys"] == "Enter  Change Book folders      Esc  Close"
+    assert s["keys"] == "Enter  Change Book folders      Ctrl+,  Settings      Esc  Close"
     assert s["enter"] == "setup"
 
 
@@ -206,7 +206,7 @@ def test_a_failed_listing_names_how_to_see_why_and_can_be_retried():
 
     assert s["message"] == "Couldn't list your Books."
     assert s["detail"] == "To see the error, run kindle-send plan --folders in a terminal."
-    assert s["keys"] == "Enter  Try again      Esc  Close"
+    assert s["keys"] == "Enter  Try again      Ctrl+,  Settings      Esc  Close"
     assert s["enter"] == "retry"
 
 
@@ -222,7 +222,8 @@ def test_a_missing_program_says_how_to_install_it():
 
     assert s["message"] == "kindle-send isn't installed."
     assert s["detail"] == "Run scripts/install.sh from the kindle-send folder."
-    assert s["keys"] == "Esc  Close"
+    assert s["keys"] == "Esc  Close"  # no kindle-send, so no Settings to open
+    assert s["settings"] is False
 
 
 def test_loading_names_what_it_is_doing_and_lets_you_type_ahead():
@@ -238,7 +239,7 @@ def test_no_matches_offers_to_clear_the_search():
     s = screen(rows=0, filterText="dune")
 
     assert s["message"] == "No matches for “dune”"
-    assert s["keys"] == "Esc  Clear search"
+    assert s["keys"] == "Ctrl+,  Settings      Esc  Clear search"
     assert s["enter"] == "none"
     assert s["typing"] is True
 
@@ -247,12 +248,12 @@ def test_files_none_of_which_can_be_sent():
     s = screen(payloadCount=2, books=0, rows=0)
 
     assert s["message"] == "None of these files can be sent to a Kindle."
-    assert s["keys"] == "Esc  Close"
+    assert s["keys"] == "Ctrl+,  Settings      Esc  Close"
 
 
 def test_while_searching_esc_clears_the_search_first():
     assert rows(f"hints({book(path='/b/Dune.epub')}, 'Send this Book', 'du')") \
-        == "Space  Mark      Tab  Route      Enter  Send this Book      Esc  Clear search"
+        == "Space  Mark      Tab  Route      Enter  Send this Book      Ctrl+,  Settings      Esc  Clear search"
 
 
 def test_a_waiting_book_keeps_the_list_even_with_no_other_books():
@@ -297,3 +298,8 @@ def test_tab_on_the_waiting_line_changes_nothing():
 
     assert rows(f"switchRoutes([{book(path='/b/Dune.epub')}], {{}}, {{'/b/Dune.epub': 'usb'}}, {waiting})") \
         == {"/b/Dune.epub": "usb"}
+
+
+def test_settings_open_from_every_other_screen():
+    assert screen(books=0, rows=0)["settings"] is True
+    assert screen(failure="failed", books=0, rows=0)["settings"] is True

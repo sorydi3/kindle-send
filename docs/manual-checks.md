@@ -120,3 +120,17 @@ These came up while building and aren't covered above.
 - [ ] **Mixed Send held by the limit.** A Send that mixes USB Books and held emails ejects the Kindle as soon as its USB Books are copied, and posts its summary for them; the held emails are reported when they go.
 - [ ] **Picker reload.** New settings from setup show the next time the Picker opens, without a shell restart.
 - [ ] **QML loads in the live shell.** The Picker and the Service load without errors in `journalctl --user -u omarchy-shell` (or wherever the shell logs), since qmllint can't check injected members.
+
+## 11. Settings in the Picker (§9)
+
+- [ ] In the Book list the footer ends "Ctrl+,  Settings      Esc  Close" (or "Esc  Clear search" while searching).
+- [ ] Type a comma in the Book list: it goes into the search. `Ctrl+,` opens Settings instead.
+- [ ] Click the cog at the right end of the search line: Settings open.
+- [ ] Settings show the Kindle address, the Gmail address and the Book folders as they are in `shell.json` (`~` kept), with the cursor in the Kindle address field. Typed text goes into the fields.
+- [ ] `Tab` moves Kindle address → Gmail address → Book folders; `Shift+Tab` goes back. Focus never lands on the Book list behind.
+- [ ] **Key isolation.** With Settings open, press `Enter`, `Space`, `Tab`, `Delete`, letters and arrows: no Book is sent, marked or switched, the search stays as it was, and no notification appears. Mouse clicks on the form don't mark Books either.
+- [ ] Change a field: the footer says "Esc  Back (discard changes)". Press `Esc`: back in the Book list; reopen Settings and the old value is there.
+- [ ] Clear the Gmail address and press `Enter` (from any field): "Needed before Books can be sent." replaces its help line in the accent color, focus jumps to it, the status line says "1 value needs fixing", and `shell.json` is unchanged. Type one letter: the problem goes and the help line is back.
+- [ ] Save a Kindle address on `@kindle.cn` and a Book folder `~/Bokos`: saved (check `shell.json`), with the two warnings under their fields and "Saved. 2 values to check below.". `~/Bokos` isn't created. `shell.json` is still mode 600 and its other keys are untouched.
+- [ ] Empty the Book folders field and save: it shows "~/Books, ~/Downloads" again.
+- [ ] After a save, `Esc` returns to a Book list planned from the new folders.
