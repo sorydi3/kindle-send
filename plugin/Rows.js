@@ -7,17 +7,18 @@
 // labelled, so those defaults live only in kindle-send.
 function fromPlan(lines) {
   let setupNeeded = false
+  let missing = []
   let bookFolders = []
   let routeLabels = {}
   const books = []
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]
     if (!l) continue
-    if (l.setupNeeded) setupNeeded = true
+    if (l.setupNeeded) { setupNeeded = true; missing = Array.isArray(l.missing) ? l.missing.map(String) : [] }
     else if (Array.isArray(l.bookFolders)) { bookFolders = l.bookFolders.map(String); routeLabels = l.routeLabels || {} }
     else if (l.path) books.push(l)
   }
-  return { setupNeeded: setupNeeded, books: books, bookFolders: bookFolders, routeLabels: routeLabels }
+  return { setupNeeded: setupNeeded, missing: missing, books: books, bookFolders: bookFolders, routeLabels: routeLabels }
 }
 
 // Typing filters by file name only.
@@ -100,27 +101,25 @@ function hints(current, enter, filterText) {
 const PLAN_HINT = "kindle-send plan --folders"
 
 // What the Picker shows instead of the list, or null when it shows the list.
-// state: {loading, setupNeeded, failure: ""|"missing"|"failed"|"slow",
+// state: {loading, failure: ""|"missing"|"failed"|"slow",
 //         payloadCount, books, rows, waiting, filterText, bookFolders}.
 // A waiting line keeps the list up: it is where Delete cancels it.
-// enter: what Enter does here: "setup", "retry", "close" or "none".
+// enter: what Enter does here: "settings" (opens them on `field`), "retry", "close" or "none".
 // typing: whether typing still edits the search.
 // settings: whether Ctrl+, opens Settings here (not without kindle-send).
+// Setup needed has no screen: the Picker opens straight into Settings then (spec §4).
 function screen(state) {
   const settings = state.failure !== "missing"
-  function make(message, detail, enter, enterLabel, typing) {
+  function make(message, detail, enter, enterLabel, typing, field) {
     const keys = (enterLabel ? "Enter  " + enterLabel + "      " : "")
       + (settings ? closingHints(state.filterText) : escHint(state.filterText))
     return { message: message, detail: detail, enter: enter, keys: keys, typing: typing === true,
-             settings: settings }
+             settings: settings, field: field || "" }
   }
   if (state.loading) {
     const what = state.payloadCount > 0 ? "Checking " + plural(state.payloadCount, "file") + "…" : "Looking for Books…"
     return make(what, "", "none", "", true)
   }
-  if (state.setupNeeded)
-    return make("Set up Send to Kindle", "You'll need your Kindle's email address and a Gmail app password.",
-                "setup", "Start setup")
   if (state.failure === "missing")
     return make("kindle-send isn't installed.", "Run scripts/install.sh from the kindle-send folder.", "close", "")
   if (state.failure === "failed")
@@ -133,7 +132,7 @@ function screen(state) {
   if (state.books === 0 && state.payloadCount > 0)
     return make("None of these files can be sent to a Kindle.", "", "close", "")
   if (state.books === 0)
-    return make(emptyMessage(state.bookFolders || []), "", "setup", "Change Book folders")
+    return make(emptyMessage(state.bookFolders || []), "", "settings", "Change Book folders", false, "bookFolders")
   if (state.rows === 0)
     return make("No matches for “" + state.filterText + "”", "", "none", "", true)
   return null

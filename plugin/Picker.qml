@@ -1,7 +1,8 @@
 // The Picker (spec §4): lists Books from the Book folders, newest first.
 // Space marks, Tab switches the Route, Enter hands the marked (or highlighted)
 // Books to the Service and closes at once, Esc closes. Ctrl+, or the cog opens
-// Settings in the card (spec §9); kindle-send checks and writes them.
+// Settings in the card (spec §9); kindle-send checks and writes them. While
+// setup is needed the Picker opens straight into Settings.
 import QtQuick
 import QtQuick.Dialogs
 import Quickshell
@@ -23,7 +24,9 @@ Item {
   property bool loading: false
   // Set a moment after loading starts, so a quick plan shows no flash of "Looking…".
   property bool loadingShown: false
+  // From plan: a setting or the app password is missing, so the Picker opens into Settings.
   property bool setupNeeded: false
+  property var setupMissing: []
   // Why listing failed: "" | "missing" (no kindle-send) | "failed" | "slow".
   property string failure: ""
   property var books: []
@@ -46,6 +49,9 @@ Item {
   property var settingsBaseline: SettingsForm.fromSettings(null)
   // kindle-send settings says whether an app password is stored; the password itself never reaches the form.
   property bool settingsPasswordStored: false
+  // What setup still needs (kindle-send settings): titles the form, flags fields, makes Esc close.
+  property var settingsMissing: []
+  readonly property bool settingsSetup: SettingsForm.setupNeeded(settingsMissing)
   // field key -> problem message from the last save, cleared as each field is edited.
   property var settingsProblems: ({})
   property string settingsStatus: ""
@@ -73,7 +79,7 @@ Item {
   readonly property var sendSummary: Rows.footer(books, marked, routes, current, routeLabels)
   // Setup, a failure, loading, or an empty list: what shows instead of the list (null: the list).
   readonly property var screen: Rows.screen({
-    loading: loading, setupNeeded: setupNeeded, failure: failure, payloadCount: payloadFiles.length,
+    loading: loading, failure: failure, payloadCount: payloadFiles.length,
     books: books.length, rows: rows.length, waiting: pending.length, filterText: filterText,
     bookFolders: bookFolders })
   onListRowsChanged: selectedIndex = Math.max(0, Math.min(selectedIndex, listRows.length - 1))
@@ -131,12 +137,15 @@ Item {
     root.loading = false
     const parsed = Rows.fromPlan(planner.lines)
     root.setupNeeded = parsed.setupNeeded
+    root.setupMissing = parsed.missing
     root.books = parsed.books
     root.bookFolders = parsed.bookFolders
     root.routeLabels = parsed.routeLabels
     if (root.payloadMode) root.marked = Rows.allMarked(parsed.books)
     if (exitCode !== 0 && parsed.books.length === 0 && !parsed.setupNeeded)
       root.failure = "failed"
+    // No usable Book list yet: straight into Settings (spec §4, Setup needed).
+    if (parsed.setupNeeded) root.openSettings("")
   }
 
   Process {
@@ -206,8 +215,10 @@ Item {
 
   // --- Settings ---------------------------------------------------------
 
-  // focusKey and problems (key -> message) are optional: a failure notification
-  // opens on the field at fault with its problem shown.
+  // Opens Settings on `focusKey` (a field key; "" for the first field), with
+  // `problems` (key -> message) shown if given. The one way in: Ctrl+, and the
+  // cog, setup needed, the empty Book list (Book folders), a failure
+  // notification (the field at fault). Already open, it changes nothing.
   function openSettings(focusKey, problems) {
     if (root.settingsOpen) return
     root.settingsOpen = true
@@ -215,6 +226,8 @@ Item {
     root.settingsStatus = ""
     root.settingsSavedSinceOpen = false
     root.settingsPasswordStored = false
+    // plan's word until kindle-send settings answers, so the title doesn't flicker.
+    root.settingsMissing = root.setupNeeded ? root.setupMissing : []
     root.settingsValues = SettingsForm.fromSettings(null)
     root.settingsBaseline = root.settingsValues
     root.loadSettings(true)
@@ -222,7 +235,13 @@ Item {
     Qt.callLater(function() { root.focusSettingsField(focus) })
   }
 
-  // Esc: back to the Book list; unsaved edits are dropped.
+  // Esc: back to the Book list, unsaved edits dropped; while setup is needed
+  // there is no Book list yet, so it closes the Picker.
+  function leaveSettings() {
+    if (SettingsForm.escCloses(root.settingsMissing)) root.close()
+    else root.closeSettings()
+  }
+
   function closeSettings() {
     root.settingsOpen = false
     root.settingsValues = root.settingsBaseline
@@ -247,6 +266,7 @@ Item {
     }
     root.settingsBaseline = SettingsForm.fromSettings(line)
     root.settingsPasswordStored = line.appPasswordStored === true
+    root.settingsMissing = SettingsForm.missing(line)
     if (settingsReader.replaceValues) root.settingsValues = root.settingsBaseline
   }
 
@@ -295,7 +315,7 @@ Item {
       values: root.settingsValues, baseline: root.settingsBaseline,
       problems: root.settingsProblems, status: root.settingsStatus,
       focus: root.settingsFocus, savedSinceOpen: root.settingsSavedSinceOpen,
-      passwordStored: root.settingsPasswordStored })
+      passwordStored: root.settingsPasswordStored, missing: root.settingsMissing })
     root.close()
   }
 
@@ -307,6 +327,7 @@ Item {
     root.settingsStatus = back.status || ""
     root.settingsSavedSinceOpen = back.savedSinceOpen === true
     root.settingsPasswordStored = back.passwordStored === true
+    root.settingsMissing = back.missing || []
     const focus = back.focus || SettingsForm.fields()[0].key
     Qt.callLater(function() { root.focusSettingsField(focus) })
   }
@@ -389,11 +410,6 @@ Item {
     onExited: function(exitCode) { root.settingsSaved(exitCode) }
   }
 
-  function runSetup() {
-    Util.execArgv(["omarchy-launch-floating-terminal-with-presentation", "kindle-send", "setup"])
-    root.close()
-  }
-
   // Delete on the waiting line cancels every Pending Send.
   function cancelWaiting(row) {
     if (row && row.waiting && root.service) root.service.cancelPending()
@@ -453,15 +469,15 @@ Item {
             if (root.filterText) root.filterText = ""
             else root.close()
           } else if (SettingsForm.opensSettings(event.key, event.modifiers)) {
-            if (!screen || screen.settings) root.openSettings()
+            if (!screen || screen.settings) root.openSettings("")
           } else if (enter) {
             const action = screen ? screen.enter : "send"
             if (action === "send") root.send()
-            else if (action === "setup") root.runSetup()
+            else if (action === "settings") root.openSettings(screen.field)
             else if (action === "retry") root.list()
             else if (action === "close") root.close()
           } else if (screen && !screen.typing) {
-            // Setup, failures and empty folders take only Enter and Esc.
+            // Failures and empty folders take only Enter and Esc.
           } else if (event.key === Qt.Key_Space) root.toggleMark(root.current)
           else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) root.switchRoute(root.current)
           else if (event.key === Qt.Key_Delete) root.cancelWaiting(root.current)
@@ -519,7 +535,7 @@ Item {
             anchors.margins: -Style.space(6)
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: root.openSettings()
+            onClicked: root.openSettings("")
           }
         }
 
@@ -666,7 +682,7 @@ Item {
           }
         }
 
-        // Setup, a failure, loading, no Books or no matches. Loading shows after a short delay.
+        // A failure, loading, no Books or no matches. Loading shows after a short delay.
         Column {
           id: stateView
           anchors.centerIn: parent
@@ -676,8 +692,8 @@ Item {
 
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            // A cog for setup, a warning for failures, a book otherwise.
-            text: root.setupNeeded ? "\u{F0493}" : root.failure ? "\u{F0026}" : "\u{F02D}"
+            // A warning for failures, a book otherwise.
+            text: root.failure ? "\u{F0026}" : "\u{F02D}"
             color: Color.menu.selectedText
             opacity: root.secondaryOpacity
             font.family: Style.font.menuFamily
@@ -707,17 +723,18 @@ Item {
           }
         }
 
-        // Where Enter opens setup, clicking the message does too; the rest of the card doesn't.
+        // Where Enter opens Settings, clicking the message does too; the rest of the card doesn't.
         MouseArea {
           anchors.fill: stateView
-          visible: stateView.visible && root.screen !== null && root.screen.enter === "setup"
+          visible: stateView.visible && root.screen !== null && root.screen.enter === "settings"
           cursorShape: Qt.PointingHandCursor
-          onClicked: root.runSetup()
+          onClicked: root.openSettings(root.screen.field)
         }
 
         // Settings (spec §9): one form over the Book list. Its own keys only:
         // Tab/Shift+Tab move between fields, Enter saves, Ctrl+O opens the
-        // focused field's link, Ctrl+B on Book folders browses, Esc goes back.
+        // focused field's link, Ctrl+B on Book folders browses, Esc goes back
+        // (or closes the Picker while setup is needed).
         FocusScope {
           id: settingsForm
           anchors.fill: parent
@@ -728,7 +745,7 @@ Item {
           Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Escape) {
               event.accepted = true
-              root.closeSettings()
+              root.leaveSettings()
             } else if (SettingsForm.opensLink(event.key, event.modifiers)) {
               event.accepted = true
               root.openLink(root.settingsFocus)
@@ -746,7 +763,7 @@ Item {
             spacing: Style.space(12)
 
             Text {
-              text: "Settings"
+              text: SettingsForm.title(root.settingsMissing)
               color: Color.menu.text
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.heading
@@ -766,11 +783,24 @@ Item {
                 width: parent.width
                 spacing: Style.space(4)
 
-                Text {
-                  text: entry.modelData.label
-                  color: Color.menu.text
-                  font.family: Style.font.menuFamily
-                  font.pixelSize: Style.font.body
+                // The label, with "· needed" beside it in the accent color while the value is missing.
+                Row {
+                  spacing: Style.space(6)
+
+                  Text {
+                    text: entry.modelData.label
+                    color: Color.menu.text
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.font.body
+                  }
+                  Text {
+                    visible: text !== ""
+                    text: SettingsForm.flag(entry.modelData.key, root.settingsMissing, root.settingsValues,
+                                            root.settingsBaseline)
+                    color: Color.menu.selectedText
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.font.body
+                  }
                 }
                 // The field, with Browse… beside it on Book folders.
                 Item {
@@ -847,7 +877,7 @@ Item {
               width: parent.width
               horizontalAlignment: Text.AlignHCenter
               textFormat: Text.PlainText
-              text: SettingsForm.footer(root.settingsFocus, root.settingsChanged)
+              text: SettingsForm.footer(root.settingsFocus, root.settingsChanged, root.settingsSetup)
               color: Color.menu.text
               opacity: root.hintOpacity
               font.family: Style.font.menuFamily

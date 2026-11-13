@@ -170,18 +170,23 @@ function status(result) {
   const general = problems.filter(function(p) { return !p.field })
   if (general.length > 0) return general[0].message
   const fieldsWith = Object.keys(byField(problems)).length
+  // A missing value is what setup is waiting for, so it's named before any typo.
+  const stillNeeded = problems.filter(function(p) { return p.needed === true }).length
+  if (!result.saved && stillNeeded > 0) return stillNeeded + " still needed before Books can be sent."
   if (!result.saved) return plural(fieldsWith, "value needs", "values need") + " fixing"
   if (fieldsWith > 0) return "Saved. " + plural(fieldsWith, "value", "values") + " to check below."
   return "Saved."
 }
 
-// The keys that work on the focused field. Esc warns once something changed.
+// The keys that work on the focused field. Esc warns once something changed;
+// while setup is needed it closes the Picker instead (escCloses).
 // Open link shows only on a field that has one, Browse only on Book folders.
-function footer(focusedKey, isChanged) {
+function footer(focusedKey, isChanged, isSetup) {
   const keys = ["Tab  Next field", "Enter  Save"]
   if (link(focusedKey)) keys.push("Ctrl+O  Open link")
   if (browses(focusedKey)) keys.push("Ctrl+B  Browse")
-  keys.push(isChanged ? "Esc  Back (discard changes)" : "Esc  Back to Books")
+  if (isSetup) keys.push("Esc  Close")
+  else keys.push(isChanged ? "Esc  Back (discard changes)" : "Esc  Back to Books")
   return keys.join("      ")
 }
 
@@ -233,4 +238,27 @@ function opensFromMenu(payloadJson) {
   let p = null
   try { p = JSON.parse(payloadJson || "{}") } catch (e) { return false }
   return !!p && p.settings === ""
+}
+
+// --- Setup needed (spec §4, §9) -----------------------------------------------
+// `missing`: the field keys `kindle-send settings` says setup still needs. One
+// form serves setup and later changes; only its title, flags and Esc differ.
+
+function setupNeeded(missing) { return Array.isArray(missing) && missing.length > 0 }
+
+// Esc closes the Picker while setup is needed: there is no usable Book list yet.
+function escCloses(missing) { return setupNeeded(missing) }
+
+function title(missing) { return setupNeeded(missing) ? "Set up Send to Kindle" : "Settings" }
+
+// What setup still needs, from the line `kindle-send settings` printed.
+function missing(line) {
+  return line && Array.isArray(line.missing) ? line.missing.map(String) : []
+}
+
+// The flag beside a field's label (accent color): "· needed" for a missing
+// value until the field is edited, "" otherwise.
+function flag(key, missingKeys, values, saved) {
+  if (!Array.isArray(missingKeys) || missingKeys.indexOf(key) < 0) return ""
+  return String(values[key] || "") === String(saved[key] || "") ? "· needed" : ""
 }

@@ -31,7 +31,7 @@ Run `./scripts/install.sh` from the repo, in a terminal.
 
 ## 2. Setup (§15.2)
 
-Run `kindle-send setup` in a terminal (the menu's Send to Kindle → Settings opens the Picker instead; see section 16).
+Run `kindle-send setup` in a terminal (the menu's Send to Kindle → Settings opens the Picker instead; see section 17).
 
 - [ ] It asks, in order: Kindle address, Gmail address, app password (through `secret-tool store`), the Approved list step (waits for Enter), and Book folders (defaults filled in).
 - [ ] The `sorydi3.kindle-send` entry in `~/.config/omarchy/shell.json` holds `kindleAddress`, `senderAddress`, `bookFolders`, `minEmailGapSeconds: 10` and `maxEmailsPerHour: 20`. The file mode is `600`, and the other plugins and keys are unchanged.
@@ -39,7 +39,7 @@ Run `kindle-send setup` in a terminal (the menu's Send to Kindle → Settings op
 - [ ] `~/Books` exists.
 - [ ] The test send runs, and "Kindle Send Test" appears on the Kindle within a few minutes. It was found through the installed link, so this also checks the test-EPUB path.
 - [ ] Rerun setup and press Enter at every prompt. Every value is kept, the password included.
-- [ ] The Picker no longer shows the setup line, without a shell restart.
+- [ ] The Picker now opens into the Book list, not Settings, without a shell restart.
 
 ## 3. Small EPUB by email (§15.3)
 
@@ -127,7 +127,7 @@ These came up while building and aren't covered above.
 - [ ] Type a comma in the Book list: it goes into the search. `Ctrl+,` opens Settings instead.
 - [ ] Click the cog at the right end of the search line: Settings open.
 - [ ] Settings show the Kindle address, the Gmail address and the Book folders as they are in `shell.json` (`~` kept), with the cursor in the Kindle address field. Typed text goes into the fields.
-- [ ] `Tab` moves Kindle address → Gmail address → Book folders; `Shift+Tab` goes back. Focus never lands on the Book list behind.
+- [ ] `Tab` moves Kindle address → Gmail address → app password → Book folders; `Shift+Tab` goes back. Focus never lands on the Book list behind.
 - [ ] **Key isolation.** With Settings open, press `Enter`, `Space`, `Tab`, `Delete`, letters and arrows: no Book is sent, marked or switched, the search stays as it was, and no notification appears. Mouse clicks on the form don't mark Books either.
 - [ ] Change a field: the footer says "Esc  Back (discard changes)". Press `Esc`: back in the Book list; reopen Settings and the old value is there.
 - [ ] Clear the Gmail address and press `Enter` (from any field): "Needed before Books can be sent." replaces its help line in the accent color, focus jumps to it, the status line says "1 value needs fixing", and `shell.json` is unchanged. Type one letter: the problem goes and the help line is back.
@@ -175,13 +175,27 @@ Back up `~/.config/omarchy/shell.json` first and put it back afterwards.
 - [ ] Same with `senderAddress` removed: the click lands on the Gmail address, flagged the same way.
 - [ ] Clear the stored password (`secret-tool clear service kindle-send user <Gmail>`) and send by email: "No app password stored." Clicking it opens Settings on the app password field with "No app password stored." under it.
 - [ ] Section 8's wrong password: the click lands on the app password field with "Gmail rejected the app password." under it. Type the right one: the problem clears as you type; `Enter` saves it.
-- [ ] From any of these, `Esc` goes back to the Book list (not the terminal), and a failure no Setting fixes (e.g. "Too big for email") does nothing on click.
+- [ ] From the wrong-password case, `Esc` goes back to the Book list (not the terminal). From the missing-value cases setup is needed, so the form is titled "Set up Send to Kindle" and `Esc` closes the Picker (section 16). A failure no Setting fixes (e.g. "Too big for email") does nothing on click.
 
-## 16. Omarchy menu opens Settings (§14)
+## 16. First run opens straight into Settings (§4 Setup needed, §9)
+
+Start from no setup: move the `sorydi3.kindle-send` keys out of `shell.json` (keep a copy) and `secret-tool clear service kindle-send user <Gmail>`, and move `~/Books` aside if it's empty.
+
+- [ ] `SUPER + SHIFT + K` opens straight into the form titled "Set up Send to Kindle". No Book list, no "Start setup" screen, and no terminal opens.
+- [ ] Kindle address, Gmail address and Gmail app password each show "· needed" beside their label in the accent color; Book folders doesn't. The footer ends "Esc  Close".
+- [ ] Press `Esc`: the Picker closes. Open it again: back in "Set up Send to Kindle".
+- [ ] Type a Kindle address: its "· needed" goes at once. Press `Enter` with the others still empty: the status line says "2 still needed before Books can be sent.", "Needed before Books can be sent." replaces both help lines, focus jumps to the Gmail address, and `shell.json` is unchanged.
+- [ ] Fill in the Gmail address and the real app password and press `Enter`: saved. The title changes to "Settings", no field is flagged, `~/Books` now exists, and the footer ends "Esc  Back to Books". `Esc` shows the Book list.
+- [ ] Delete `~/Books` (if empty), change only the Kindle address in Settings and save: `~/Books` is not created again.
+- [ ] With Book folders pointing at empty folders, the Picker says "No Books found in …" with "Enter  Change Book folders". `Enter` (or a click on the message) opens Settings with the cursor in Book folders.
+- [ ] `kindle-send setup` in a terminal still runs the wizard.
+- [ ] Put back your own `shell.json` keys and app password.
+
+## 17. Omarchy menu opens Settings (§14)
 
 Back up `~/.config/omarchy/extensions/omarchy-menu.jsonc` first.
 
 - [ ] Over an install from before Settings moved into the Picker (the menu shows Send to Kindle → Setup), run `./scripts/install.sh` in a terminal. It asks `Replace the older Send to Kindle entries in …? [y/N]`. Answer `y`: it says `Updated in …`, and the block sits where it was, with **Settings** in place of **Setup**.
-- [ ] Omarchy menu → Send to Kindle → Settings opens the Picker in Settings, no field flagged, no terminal. `Esc` goes back to the Book list.
+- [ ] Once set up, Omarchy menu → Send to Kindle → Settings opens the Picker in Settings, no field flagged, no terminal. `Esc` goes back to the Book list.
 - [ ] Run the install again: `Already in …` for the menu.
 - [ ] `./scripts/uninstall.sh` removes the block; the rest of the menu still shows.
