@@ -500,6 +500,35 @@ def test_other_summons_are_not_the_menus_settings_entry():
     assert form('opensFromMenu("")') is False
 
 
+# --- Which way open() goes -----------------------------------------------------
+
+def open_intent(payload, kept):
+    return form(f"openIntent({json.dumps(json.dumps(payload))}, {json.dumps(kept)})")
+
+
+KEPT = {"settings": {"values": {"kindleAddress": "new@kindle.com"}, "focus": "senderAddress"}}
+
+
+def test_the_menus_entry_opens_settings_on_no_field_even_with_a_form_kept():
+    assert open_intent({"settings": ""}, KEPT) == {"to": "settings", "focus": "", "problems": {}}
+
+
+def test_a_failure_notification_opens_settings_on_its_field_even_with_a_form_kept():
+    assert open_intent({"settings": "appPassword", "problem": "No app password stored."}, KEPT) == {
+        "to": "settings", "focus": "appPassword", "problems": {"appPassword": "No app password stored."}}
+
+
+def test_an_ordinary_open_returns_to_a_form_that_stepped_aside():
+    assert open_intent({}, KEPT) == {"to": "returned", "form": KEPT["settings"]}
+    assert open_intent({"files": ["/b/Dune.epub"]}, KEPT)["to"] == "returned"
+
+
+def test_an_ordinary_open_with_nothing_kept_shows_the_book_list():
+    assert open_intent({}, None) == {"to": "list"}
+    assert form('openIntent("", null)') == {"to": "list"}
+    assert form('openIntent("not json", null)') == {"to": "list"}
+
+
 # --- Test send (spec §9) --------------------------------------------------------
 
 QT_KEY_T = 0x54

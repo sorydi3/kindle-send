@@ -283,6 +283,18 @@ function opensFromMenu(payloadJson) {
   return !!p && p.settings === ""
 }
 
+// Which way the Picker's open(payload) goes, given what stepAside kept (or null):
+// { to: "settings", focus, problems } for the menu's entry (no field) or a
+// failure notification (its field), ahead of anything kept; else
+// { to: "returned", form } back to a form that stepped aside; else { to: "list" }.
+function openIntent(payloadJson, kept) {
+  if (opensFromMenu(payloadJson)) return { to: "settings", focus: "", problems: {} }
+  const onField = summoned(payloadJson)
+  if (onField) return { to: "settings", focus: onField.focus, problems: onField.problems }
+  const back = reopened(kept)
+  return back ? { to: "returned", form: back } : { to: "list" }
+}
+
 // --- Setup needed (spec §4, §9) -----------------------------------------------
 // `missing`: the field keys `kindle-send settings` says setup still needs. One
 // form serves setup and later changes; only its title, flags and Esc differ.
