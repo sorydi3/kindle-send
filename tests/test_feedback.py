@@ -242,7 +242,7 @@ def test_clicking_a_sent_test_book_opens_settings():
     assert call("clickArgv", "sorydi3.kindle-send", call("summary", [result], None)) == SUMMON_SETTINGS
 
 
-def test_clicking_a_failed_test_book_opens_settings_on_its_field_or_else_on_settings():
+def test_clicking_a_failed_test_book_opens_settings_only_on_a_field_a_setting_fixes():
     book = call("testBook", "sender@gmail.com")
     rejected = call("resultFor", book, [{"result": "failed", "reason": "Gmail rejected the app password.",
                                          "fixBySetup": True, "field": "appPassword"}], 0, True)
@@ -250,7 +250,8 @@ def test_clicking_a_failed_test_book_opens_settings_on_its_field_or_else_on_sett
 
     on_field = call("clickArgv", "sorydi3.kindle-send", call("summary", [rejected], None))
     assert json.loads(on_field[4]) == {"settings": "appPassword", "problem": "Gmail rejected the app password."}
-    assert call("clickArgv", "sorydi3.kindle-send", call("summary", [offline], None)) == SUMMON_SETTINGS
+    # No Setting fixes a network failure, so its click does nothing (spec §13).
+    assert call("clickArgv", "sorydi3.kindle-send", call("summary", [offline], None)) == []
 
 
 def test_clicking_an_ordinary_send_opens_settings_only_for_a_fix():

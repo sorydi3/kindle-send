@@ -99,14 +99,11 @@ Item {
     root.payloadFiles = Rows.payloadFiles(payloadJson)
     // plan reruns on every open, so settings rewritten by setup show at once.
     root.list()
-    const back = SettingsForm.reopened(root.settingsAside)
+    // The menu's Settings entry, a failure notification's click, a form that stepped aside, or the list (spec §10, §13, §14).
+    const intent = SettingsForm.openIntent(payloadJson, root.settingsAside)
     root.settingsAside = null
-    // A failure notification's click opens Settings on the field at fault (spec §10, §13).
-    const onField = SettingsForm.summoned(payloadJson)
-    // The Omarchy menu's Settings entry opens Settings on no field (spec §14).
-    if (SettingsForm.opensFromMenu(payloadJson)) root.openSettings()
-    else if (onField) root.openSettings(onField.focus, onField.problems)
-    else if (back) root.returnToSettings(back)
+    if (intent.to === "settings") root.openSettings(intent.focus, intent.problems)
+    else if (intent.to === "returned") root.returnToSettings(intent.form)
     else Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -284,7 +281,7 @@ Item {
   function saveSettings() {
     if (root.settingsSaving) return
     root.settingsSaving = true
-    root.settingsStatus = SettingsForm.savingStatus(root.settingsValues, root.settingsBaseline)
+    root.settingsStatus = SettingsForm.savingStatus(root.settingsValues)
     saver.result = null
     saver.didStart = false
     saver.payload = JSON.stringify(SettingsForm.toSave(root.settingsValues))

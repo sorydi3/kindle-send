@@ -130,7 +130,7 @@ These came up while building and aren't covered above.
 - [ ] `Tab` moves Kindle address → Gmail address → app password → Book folders; `Shift+Tab` goes back. Focus never lands on the Book list behind.
 - [ ] **Key isolation.** With Settings open, press `Enter`, `Space`, `Tab`, `Delete`, letters and arrows: no Book is sent, marked or switched, the search stays as it was, and no notification appears. Mouse clicks on the form don't mark Books either.
 - [ ] Change a field: the footer says "Esc  Back (discard changes)". Press `Esc`: back in the Book list; reopen Settings and the old value is there.
-- [ ] Clear the Gmail address and press `Enter` (from any field): "Needed before Books can be sent." replaces its help line in the accent color, focus jumps to it, the status line says "1 value needs fixing", and `shell.json` is unchanged. Type one letter: the problem goes and the help line is back.
+- [ ] Clear the Gmail address and press `Enter` (from any field): "Needed before Books can be sent." replaces its help line in the accent color, focus jumps to it, the status line says "1 value needs fixing.", and `shell.json` is unchanged. Type one letter: the problem goes and the help line is back.
 - [ ] Save a Kindle address on `@kindle.cn` and a Book folder `~/Bokos`: saved (check `shell.json`), with the two warnings under their fields and "Saved. 2 values to check below.". `~/Bokos` isn't created. `shell.json` is still mode 600 and its other keys are untouched.
 - [ ] Empty the Book folders field and save: it shows "~/Books, ~/Downloads" again.
 - [ ] After a save, `Esc` returns to a Book list planned from the new folders.
@@ -150,7 +150,7 @@ These came up while building and aren't covered above.
 
 - [ ] Settings show "Gmail app password" between the Gmail address and the Book folders (so `Tab` now goes Kindle address → Gmail address → app password → Book folders). Its help line reads "Create one at myaccount.google.com/apppasswords. It needs 2-Step Verification."
 - [ ] With a password stored, the field is empty with "Stored. Type to replace it." in grey; without one, "xxxx xxxx xxxx xxxx". Typed characters show as dots.
-- [ ] Type a wrong app password and press `Enter`: the status line says "Checking the app password with Gmail…", then "Gmail rejected this app password" replaces the help line, focus jumps to the field, and `shell.json` and the keyring (`secret-tool lookup service kindle-send user <Gmail>`) are unchanged.
+- [ ] Type a wrong app password and press `Enter`: the status line says "Checking the app password with Gmail…", then "Gmail rejected this app password." replaces the help line, focus jumps to the field, and `shell.json` and the keyring (`secret-tool lookup service kindle-send user <Gmail>`) are unchanged.
 - [ ] Type the real app password and save: "Saved.", the field empties and shows "Stored. Type to replace it.", and `secret-tool lookup service kindle-send user <Gmail>` prints it.
 - [ ] While that save runs, `ps -eo args | grep kindle-send` and `ps -eo args | grep secret-tool` never show the password, and it isn't in `shell.json` or the journal (`journalctl --user -b | grep -F '<first 4 characters>'`).
 - [ ] Turn Wi-Fi off, type the password and save: saved anyway, with "Couldn't reach Gmail to check the password. Saved anyway." under the field.
@@ -210,4 +210,12 @@ Sends one real email to your own Kindle. Start from section 16's state just befo
 - [ ] The notification is headed "Kindle Send Test" and reads "Sent to Amazon. Not on your Kindle in a few minutes? Check that <Gmail> is on Amazon's approved list and the Kindle address is right." Clicking it (before it goes) opens the Picker in Settings.
 - [ ] "Kindle Send Test" arrives on the Kindle. `kindle-send history` lists "Kindle Send Test.epub" by Email, sent.
 - [ ] With section 8's wrong app password stored, `Ctrl+T`: the status line says "Couldn't send the test Book.", "Gmail rejected the app password." replaces the app password's help line and the cursor is there. The critical notification's click opens Settings on that field.
-- [ ] With the network off, `Ctrl+T`: the status line says "Couldn't send the test Book." followed by the reason.
+- [ ] With the network off, `Ctrl+T`: the status line says "Couldn't send the test Book." followed by the reason. Clicking its critical notification does nothing: no Setting fixes it.
+
+## 19. Settings in a light and a dark theme (PRODUCT.md look)
+
+Settings draw with the Omarchy theme's tokens only, so they follow the theme. Switch themes from the Omarchy menu (Style → Theme); no restart is needed.
+
+- [ ] With a dark theme (e.g. Tokyo Night), open Settings with `Ctrl+,`: the title, labels, field text, placeholders, help lines, the status line and the footer are all readable on the card; the focused field and the "· needed" flag stand out in the theme's accent color.
+- [ ] Type a wrong value and save, so a problem replaces a help line: it reads in the accent color, clearly apart from the help lines.
+- [ ] Switch to a light theme (e.g. Catppuccin Latte) and repeat: nothing keeps a dark-theme color (no dark text boxes, no white-on-white text), and the same text is readable.

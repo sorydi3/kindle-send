@@ -60,19 +60,28 @@ def add(text):
     return "\n".join(lines) + "\n" + block() + "\n" + text[close:]
 
 
-def remove(text, replacement=None):
-    """The text without the block's lines, or with `replacement` where they were."""
+def swap_block(text, lines):
+    """The text with `lines` in place of the block's lines."""
     out, inside = [], False
     for line in text.split("\n"):
         if line.strip() == START:
             inside = True
-            if replacement is not None:
-                out.append(replacement)
+            out.extend(lines)
         elif inside:
             inside = line.strip() != END
         else:
             out.append(line)
     return "\n".join(out)
+
+
+def remove(text):
+    """The text without the block's lines."""
+    return swap_block(text, [])
+
+
+def replace(text, replacement):
+    """The text with `replacement` where the block's lines were."""
+    return swap_block(text, [replacement])
 
 
 def current(text):
@@ -114,7 +123,7 @@ def main(argv):
             return 3
         if not parses(text):
             return 1
-        write(path, remove(text, block()))
+        write(path, replace(text, block()))
         return 0
     raise SystemExit(f"unknown command: {command}")
 

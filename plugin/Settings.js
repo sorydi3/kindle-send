@@ -23,8 +23,8 @@ function placeholder(field, passwordStored) {
   return field.placeholder
 }
 
-// The page each field's help line links to (spec §9), keyed by field so a
-// field added later (the app password) gets its link by its key alone.
+// The page each field's help line links to (spec §9), keyed by field key,
+// apart from FIELDS. Book folders have none: they browse instead.
 const LINKS = {
   kindleAddress: "https://www.amazon.com/mycd",
   senderAddress: "https://www.amazon.com/hz/mycd/myx#/home/settings/pdoc",
@@ -42,23 +42,22 @@ const ALT = 0x08000000
 const META = 0x10000000
 const SHIFT = 0x02000000
 
-// Ctrl+, in the Book list opens Settings; a plain comma still filters.
-function opensSettings(key, modifiers) {
-  return key === KEY_COMMA && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
+// Whether a key press is `wanted` with Ctrl and no other modifier.
+function ctrlOnly(key, modifiers, wanted) {
+  return key === wanted && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
 }
+
+// Ctrl+, in the Book list opens Settings; a plain comma still filters.
+function opensSettings(key, modifiers) { return ctrlOnly(key, modifiers, KEY_COMMA) }
 
 // Whether a field browses for a folder (Book folders do, instead of a link).
 function browses(key) { return key === "bookFolders" }
 
 // Ctrl+O in Settings opens the focused field's link.
-function opensLink(key, modifiers) {
-  return key === KEY_O && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
-}
+function opensLink(key, modifiers) { return ctrlOnly(key, modifiers, KEY_O) }
 
 // Ctrl+B in Settings browses for a Book folder.
-function opensBrowse(key, modifiers) {
-  return key === KEY_B && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
-}
+function opensBrowse(key, modifiers) { return ctrlOnly(key, modifiers, KEY_B) }
 
 // The command that opens a field's link, [] for a field without one.
 function browserArgv(key) {
@@ -113,12 +112,10 @@ function toSave(values) {
   return out
 }
 
-// The status line while save runs: it signs in to Gmail first when the Gmail
-// address or the app password changed.
-function savingStatus(values, saved) {
-  const typed = String(values.appPassword || "").trim() !== ""
-  const moved = String(values.senderAddress || "").trim() !== String(saved.senderAddress || "").trim()
-  return typed || moved ? "Checking the app password with Gmail…" : "Saving…"
+// The status line while save runs. Only a typed app password surely means a
+// Gmail sign-in first; without one the form can't tell, so it just says saving.
+function savingStatus(values) {
+  return String(values.appPassword || "").trim() !== "" ? "Checking the app password with Gmail…" : "Saving…"
 }
 
 // Whether any field differs from what was loaded or last saved.
@@ -173,7 +170,7 @@ function status(result) {
   // A missing value is what setup is waiting for, so it's named before any typo.
   const stillNeeded = problems.filter(function(p) { return p.needed === true }).length
   if (!result.saved && stillNeeded > 0) return stillNeeded + " still needed before Books can be sent."
-  if (!result.saved) return plural(fieldsWith, "value needs", "values need") + " fixing"
+  if (!result.saved) return plural(fieldsWith, "value needs", "values need") + " fixing."
   const saved = fieldsWith > 0 ? "Saved. " + plural(fieldsWith, "value", "values") + " to check below." : "Saved."
   // The save that completed setup suggests the test send (spec §9).
   return result.firstSave === true ? saved + " Ctrl+T sends a test Book to check it all works." : saved
@@ -187,9 +184,7 @@ function status(result) {
 const KEY_T = 0x54
 const SENDING_TEST = "Sending a test Book…"
 
-function opensTestSend(key, modifiers) {
-  return key === KEY_T && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
-}
+function opensTestSend(key, modifiers) { return ctrlOnly(key, modifiers, KEY_T) }
 
 // What Ctrl+T does: { send } to start one, else a status line saying why not.
 function testKey(isSetup, isChanged, testSend) {
@@ -283,6 +278,18 @@ function opensFromMenu(payloadJson) {
   let p = null
   try { p = JSON.parse(payloadJson || "{}") } catch (e) { return false }
   return !!p && p.settings === ""
+}
+
+// Which way the Picker's open(payload) goes, given what stepAside kept (or null):
+// { to: "settings", focus, problems } for the menu's entry (no field) or a
+// failure notification (its field), ahead of anything kept; else
+// { to: "returned", form } back to a form that stepped aside; else { to: "list" }.
+function openIntent(payloadJson, kept) {
+  if (opensFromMenu(payloadJson)) return { to: "settings", focus: "", problems: {} }
+  const onField = summoned(payloadJson)
+  if (onField) return { to: "settings", focus: onField.focus, problems: onField.problems }
+  const back = reopened(kept)
+  return back ? { to: "returned", form: back } : { to: "list" }
 }
 
 // --- Setup needed (spec §4, §9) -----------------------------------------------

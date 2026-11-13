@@ -819,9 +819,14 @@ def pick(files):
     return 0
 
 
+def sender_address(settings):
+    """The Gmail address in `settings`, trimmed; "" when none is set."""
+    return str(settings.get("senderAddress") or "").strip()
+
+
 def password_stored(settings):
     """Whether an app password is stored for the Gmail address set (never the password itself)."""
-    sender = str(settings.get("senderAddress") or "").strip()
+    sender = sender_address(settings)
     return bool(sender and lookup_password(sender))
 
 
@@ -839,7 +844,7 @@ def form_settings():
     current = load_settings()
     missing = setup_missing(current)
     emit({"kindleAddress": str(current.get("kindleAddress") or "").strip(),
-          "senderAddress": str(current.get("senderAddress") or "").strip(),
+          "senderAddress": sender_address(current),
           "bookFolders": book_folder_setting(current),
           "appPasswordStored": "appPassword" not in missing,
           "missing": missing})
@@ -895,19 +900,19 @@ def blocking_problems(values, has_password):
     return problems
 
 
-def warnings(values):
+def value_warnings(values):
     """Unusual but valid values: they save, and the form says why they might be wrong."""
     found = []
     if not values["kindleAddress"].lower().endswith("@kindle.com"):
-        found.append(problem("kindleAddress", "Kindle addresses usually end in @kindle.com", False))
+        found.append(problem("kindleAddress", "Kindle addresses usually end in @kindle.com.", False))
     if not values["senderAddress"].lower().endswith("@gmail.com"):
-        found.append(problem("senderAddress", "Make sure this is a Google account", False))
+        found.append(problem("senderAddress", "Make sure this is a Google account.", False))
     absent = [f for f in values["bookFolders"] if not Path(os.path.expanduser(f)).is_dir()]
     if len(absent) == 1:
-        found.append(problem("bookFolders", f"{absent[0]} doesn't exist, so the Picker skips it", False))
+        found.append(problem("bookFolders", f"{absent[0]} doesn't exist, so the Picker skips it.", False))
     elif absent:
         names = ", ".join(absent[:-1]) + " and " + absent[-1]
-        found.append(problem("bookFolders", f"{names} don't exist, so the Picker skips them", False))
+        found.append(problem("bookFolders", f"{names} don't exist, so the Picker skips them.", False))
     return found
 
 
@@ -930,7 +935,7 @@ def check_password(sender, password):
     return "accepted"
 
 
-def keep_password(sender, password):
+def store_typed_password(sender, password):
     """Store the app password under `sender`, handing it to `secret-tool store` on stdin,
     never on its command line (ADR 0001). None when stored, else the problem to show."""
     try:
@@ -975,23 +980,23 @@ def save_form():
     if blocking:
         emit({"saved": False, "problems": blocking})
         return 0
-    checked = []
+    password_problems = []
     before = load_settings()
     # The save that completes setup is the first; it creates ~/Books, as the wizard does.
     first_save = bool(setup_missing(before))
-    address_changed = sender != str(before.get("senderAddress") or "").strip()
+    address_changed = sender != sender_address(before)
     # A changed address is checked with the password already stored for it, if any.
     password = typed or (lookup_password(sender) if address_changed else None)
     if password:
         outcome = check_password(sender, password)
         if outcome == "rejected":
-            emit({"saved": False, "problems": [problem("appPassword", "Gmail rejected this app password", True)]})
+            emit({"saved": False, "problems": [problem("appPassword", "Gmail rejected this app password.", True)]})
             return 0
         if outcome == "unreachable":
-            checked.append(problem("appPassword", "Couldn't reach Gmail to check the password. Saved anyway.",
+            password_problems.append(problem("appPassword", "Couldn't reach Gmail to check the password. Saved anyway.",
                                    False))
     if typed:
-        stored = keep_password(sender, typed)
+        stored = store_typed_password(sender, typed)
         if stored:
             emit({"saved": False, "problems": [stored]})
             return 0
@@ -1007,7 +1012,7 @@ def save_form():
         return 0
     if first_save:
         create_books_folder()
-    found = sorted(warnings(values) + checked, key=lambda p: FORM_FIELDS.index(p["field"]))
+    found = sorted(value_warnings(values) + password_problems, key=lambda p: FORM_FIELDS.index(p["field"]))
     answer = {"saved": True, "problems": found}
     if first_save:
         answer["firstSave"] = True  # the Picker suggests the test send after it (spec §9)

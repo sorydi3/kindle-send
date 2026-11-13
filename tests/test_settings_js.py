@@ -106,17 +106,16 @@ def test_typing_a_password_is_an_edit():
 
 
 def test_saving_a_typed_password_checks_it_with_gmail():
-    assert form(f"savingStatus({values(appPassword='abcd')}, {values(appPassword='')})") \
+    assert form(f"savingStatus({values(appPassword='abcd')})") \
         == "Checking the app password with Gmail…"
 
 
-def test_saving_a_changed_gmail_address_checks_the_password_with_gmail():
-    assert form(f"savingStatus({values(senderAddress='new@gmail.com ')}, {values()})") \
-        == "Checking the app password with Gmail…"
+def test_saving_a_changed_gmail_address_without_a_typed_password_just_saves():
+    assert form(f"savingStatus({values(senderAddress='new@gmail.com ')})") == "Saving…"
 
 
 def test_saving_with_the_same_address_and_no_typed_password_just_saves():
-    assert form(f"savingStatus({values(kindleAddress='new@kindle.com', senderAddress=' ' + SENDER)}, {values()})") \
+    assert form(f"savingStatus({values(kindleAddress='new@kindle.com', senderAddress=' ' + SENDER)})") \
         == "Saving…"
 
 
@@ -126,10 +125,10 @@ def problems(*items):
 
 def test_problems_are_shown_per_field():
     shown = form("byField(" + problems(("senderAddress", "That isn't an email address.", True),
-                                       ("bookFolders", "~/Bokos doesn't exist, so the Picker skips it", False)) + ")")
+                                       ("bookFolders", "~/Bokos doesn't exist, so the Picker skips it.", False)) + ")")
 
     assert shown == {"senderAddress": "That isn't an email address.",
-                     "bookFolders": "~/Bokos doesn't exist, so the Picker skips it"}
+                     "bookFolders": "~/Bokos doesn't exist, so the Picker skips it."}
 
 
 def test_a_problem_replaces_the_help_line():
@@ -163,8 +162,8 @@ def test_the_status_line_counts_the_values_that_need_fixing():
     two = problems(("kindleAddress", "That isn't an email address.", True),
                    ("senderAddress", "That isn't an email address.", True))
 
-    assert form(f"status({{saved: false, problems: {one}}})") == "1 value needs fixing"
-    assert form(f"status({{saved: false, problems: {two}}})") == "2 values need fixing"
+    assert form(f"status({{saved: false, problems: {one}}})") == "1 value needs fixing."
+    assert form(f"status({{saved: false, problems: {two}}})") == "2 values need fixing."
 
 
 def test_a_problem_with_the_whole_form_is_the_status_line():
@@ -175,7 +174,7 @@ def test_a_problem_with_the_whole_form_is_the_status_line():
 
 
 def test_saved_says_so_and_counts_the_warnings():
-    found = problems(("kindleAddress", "Kindle addresses usually end in @kindle.com", False))
+    found = problems(("kindleAddress", "Kindle addresses usually end in @kindle.com.", False))
 
     assert form("status({saved: true, problems: []})") == "Saved."
     assert form(f"status({{saved: true, problems: {found}}})") == "Saved. 1 value to check below."
@@ -261,14 +260,14 @@ def test_nothing_is_launched_for_a_field_without_a_link():
 def test_reopening_after_stepping_aside_returns_to_settings_with_unsaved_values():
     typed = values(kindleAddress="new@kindle.com")
     open_form = ("{values: " + typed + ", baseline: " + values() + ", focus: 'kindleAddress',"
-                 " problems: {senderAddress: 'Make sure this is a Google account'}, status: 'Saved.'}")
+                 " problems: {senderAddress: 'Make sure this is a Google account.'}, status: 'Saved.'}")
 
     back = form(f"reopened(stepAside({open_form}))")
 
     assert back["values"]["kindleAddress"] == "new@kindle.com"
     assert back["baseline"]["kindleAddress"] == KINDLE
     assert back["focus"] == "kindleAddress"
-    assert back["problems"] == {"senderAddress": "Make sure this is a Google account"}
+    assert back["problems"] == {"senderAddress": "Make sure this is a Google account."}
     assert back["status"] == "Saved."
     assert form(f"(function(b) {{ return changed(b.values, b.baseline) }})(reopened(stepAside({open_form})))") is True
 
@@ -501,6 +500,35 @@ def test_other_summons_are_not_the_menus_settings_entry():
     assert form('opensFromMenu("")') is False
 
 
+# --- Which way open() goes -----------------------------------------------------
+
+def open_intent(payload, kept):
+    return form(f"openIntent({json.dumps(json.dumps(payload))}, {json.dumps(kept)})")
+
+
+KEPT = {"settings": {"values": {"kindleAddress": "new@kindle.com"}, "focus": "senderAddress"}}
+
+
+def test_the_menus_entry_opens_settings_on_no_field_even_with_a_form_kept():
+    assert open_intent({"settings": ""}, KEPT) == {"to": "settings", "focus": "", "problems": {}}
+
+
+def test_a_failure_notification_opens_settings_on_its_field_even_with_a_form_kept():
+    assert open_intent({"settings": "appPassword", "problem": "No app password stored."}, KEPT) == {
+        "to": "settings", "focus": "appPassword", "problems": {"appPassword": "No app password stored."}}
+
+
+def test_an_ordinary_open_returns_to_a_form_that_stepped_aside():
+    assert open_intent({}, KEPT) == {"to": "returned", "form": KEPT["settings"]}
+    assert open_intent({"files": ["/b/Dune.epub"]}, KEPT)["to"] == "returned"
+
+
+def test_an_ordinary_open_with_nothing_kept_shows_the_book_list():
+    assert open_intent({}, None) == {"to": "list"}
+    assert form('openIntent("", null)') == {"to": "list"}
+    assert form('openIntent("not json", null)') == {"to": "list"}
+
+
 # --- Test send (spec §9) --------------------------------------------------------
 
 QT_KEY_T = 0x54
@@ -512,7 +540,7 @@ def test_the_first_save_suggests_the_test_send():
 
 
 def test_a_first_save_with_warnings_names_them_before_the_suggestion():
-    found = json.dumps([{"field": "kindleAddress", "message": "Kindle addresses usually end in @kindle.com",
+    found = json.dumps([{"field": "kindleAddress", "message": "Kindle addresses usually end in @kindle.com.",
                          "blocking": False}])
 
     assert form(f"status({{saved: true, firstSave: true, problems: {found}}})") \
