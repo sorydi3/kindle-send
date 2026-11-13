@@ -231,6 +231,8 @@ def test_nautilus_extension_is_installed_and_nautilus_restarted(env):
 BINDINGS_TEXT = '-- mine\no.bind("SUPER + SHIFT + R", "SSH", "alacritty -e ssh host")\n'
 MENU_TEXT = ('{\n  // my menu\n  "snip": {"icon":"x","label":"Snip"},\n'
              '  "snip.rect": {"icon":"y","label":"Rect","action":"snip rect"}\n}\n')
+# Opens the Picker in Settings, on no field in particular (spec §14).
+SETTINGS_ACTION = "omarchy-shell shell summon sorydi3.kindle-send '{\"settings\":\"\"}'"
 BIND_LINE = 'o.bind("SUPER + SHIFT + K", "Send to Kindle", "omarchy-shell shell toggle sorydi3.kindle-send")'
 
 
@@ -315,9 +317,9 @@ def test_yes_adds_both_menu_entries_and_the_menu_still_parses(env):
     assert menu["kindle-send"]["label"] == "Send to Kindle"
     assert "action" not in menu["kindle-send"]  # a submenu
     assert menu["kindle-send.pick"]["action"] == "omarchy-shell shell toggle sorydi3.kindle-send"
-    assert menu["kindle-send.setup"]["label"] == "Setup"
-    assert menu["kindle-send.setup"]["action"] == \
-        "omarchy-launch-floating-terminal-with-presentation kindle-send setup"
+    assert menu["kindle-send.settings"]["label"] == "Settings"
+    assert menu["kindle-send.settings"]["action"] == SETTINGS_ACTION
+    assert "kindle-send.setup" not in menu
     lines = m.read_text().splitlines()
     start = lines.index("  // >>> kindle-send menu (added by scripts/install.sh) >>>")
     end = lines.index("  // <<< kindle-send <<<")
@@ -330,7 +332,7 @@ def test_a_missing_menu_file_is_created(env):
 
     install(env, "--yes")
 
-    assert set(shell_parse(m.read_text())) == {"kindle-send", "kindle-send.pick", "kindle-send.setup"}
+    assert set(shell_parse(m.read_text())) == {"kindle-send", "kindle-send.pick", "kindle-send.settings"}
 
 
 def test_rerunning_install_does_not_duplicate_the_config_blocks(env):
@@ -343,6 +345,46 @@ def test_rerunning_install_does_not_duplicate_the_config_blocks(env):
     assert result.returncode == 0, result.stderr
     assert (b.read_text(), m.read_text()) == first
     assert result.stdout.count("Already in") == 2
+
+
+# The menu block an install before Settings moved into the Picker left behind.
+OLD_MENU_BLOCK = (
+    '  // >>> kindle-send menu (added by scripts/install.sh) >>>\n'
+    '  "kindle-send": {"icon":"\U000f00ba","label":"Send to Kindle","aliases":["kindle"]},\n'
+    '  "kindle-send.pick": {"icon":"\U000f00ba","label":"Send to Kindle",'
+    '"action":"omarchy-shell shell toggle sorydi3.kindle-send"},\n'
+    '  "kindle-send.setup": {"icon":"","label":"Setup",'
+    '"action":"omarchy-launch-floating-terminal-with-presentation kindle-send setup"},\n'
+    '  // <<< kindle-send <<<\n')
+MENU_WITH_OLD_BLOCK = ('{\n  // my menu\n  "snip": {"icon":"x","label":"Snip"},\n' + OLD_MENU_BLOCK +
+                       '  "snip.rect": {"icon":"y","label":"Rect","action":"snip rect"}\n}\n')
+
+
+def test_reinstalling_over_an_old_install_replaces_its_setup_entry_in_place(env):
+    _, m = config_files(env, menu=MENU_WITH_OLD_BLOCK)
+
+    result = install(env, "--yes")
+
+    assert result.returncode == 0, result.stderr
+    text = m.read_text()
+    menu = shell_parse(text)
+    assert "kindle-send.setup" not in menu
+    assert menu["kindle-send.settings"]["action"] == SETTINGS_ACTION
+    assert text.count("kindle-send menu") == 1
+    # In place: still between the user's own entries.
+    assert text.index('"snip"') < text.index("kindle-send menu") < text.index('"snip.rect"')
+    assert menu["snip.rect"]["action"] == "snip rect"
+    assert (m.parent / "omarchy-menu.jsonc.before-kindle-send").read_text() == MENU_WITH_OLD_BLOCK
+    assert "Updated" in result.stdout
+
+
+def test_without_a_terminal_an_old_menu_block_is_left_as_it_is(env):
+    _, m = config_files(env, menu=MENU_WITH_OLD_BLOCK)
+
+    result = install(env)
+
+    assert m.read_text() == MENU_WITH_OLD_BLOCK
+    assert "no terminal to ask in" in result.stdout
 
 
 def test_a_menu_file_that_does_not_parse_is_left_alone(env):
@@ -387,21 +429,30 @@ def test_on_a_terminal_each_edit_is_asked_about(env):
     assert m.read_text() == MENU_TEXT
 
 
-def test_install_ends_by_offering_setup(env):
+PICKER_SETUP = "Press SUPER + SHIFT + K to set up Send to Kindle in the Picker"
+TERMINAL_SETUP = "Or set up in the terminal instead: kindle-send setup"
+
+
+def test_install_ends_by_pointing_to_the_picker_and_offering_the_terminal_wizard(env):
     config_files(env)
 
     code, out = run_tty(INSTALL, env, ["n", "n", "n"])
 
     assert code == 0, out
-    assert "Run setup now" in out
-    assert "Run setup when ready: kindle-send setup" in out.split("Run setup now")[1]
+    finish = out.split("==> Setup")[1]
+    assert PICKER_SETUP in finish
+    assert "Set up in the terminal instead? [y/N]" in finish
+    assert TERMINAL_SETUP in finish
+    assert "Run setup now" not in out
 
 
-def test_without_a_terminal_install_tells_how_to_run_setup(env):
+def test_without_a_terminal_install_points_to_the_picker_and_the_terminal_wizard(env):
     result = install(env)
 
-    assert "Run setup when ready: kindle-send setup" in result.stdout
-    assert "Run setup now" not in result.stdout
+    finish = result.stdout.split("==> Setup")[1]
+    assert PICKER_SETUP in finish
+    assert TERMINAL_SETUP in finish
+    assert "instead? [y/N]" not in result.stdout
 
 
 # ---- Strata

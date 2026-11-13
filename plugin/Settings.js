@@ -232,6 +232,14 @@ function summoned(payloadJson) {
   return { focus: key, problems: problems }
 }
 
+// The Omarchy menu's "Send to Kindle → Settings" summons with
+// {"settings": ""}: open Settings on no field in particular (spec §14).
+function opensFromMenu(payloadJson) {
+  let p = null
+  try { p = JSON.parse(payloadJson || "{}") } catch (e) { return false }
+  return !!p && p.settings === ""
+}
+
 // --- Setup needed (spec §4, §9) -----------------------------------------------
 // `missing`: the field keys `kindle-send settings` says setup still needs. One
 // form serves setup and later changes; only its title, flags and Esc differ.

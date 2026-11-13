@@ -483,3 +483,19 @@ def test_other_summons_do_not_open_settings_on_a_field():
     assert summoned({"settings": "bookFolders", "problem": "x"}) is None
     assert form('summoned("not json")') is None
     assert form('summoned("")') is None
+
+
+def from_menu(payload):
+    return form(f"opensFromMenu({json.dumps(json.dumps(payload))})")
+
+
+def test_the_menus_settings_entry_opens_settings_on_no_field():
+    assert from_menu({"settings": ""}) is True
+
+
+def test_other_summons_are_not_the_menus_settings_entry():
+    assert from_menu({}) is False
+    assert from_menu({"files": ["/b/Dune.epub"]}) is False
+    assert from_menu({"settings": "appPassword", "problem": "x"}) is False
+    assert form('opensFromMenu("not json")') is False
+    assert form('opensFromMenu("")') is False

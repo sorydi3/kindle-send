@@ -303,9 +303,9 @@ Modelled on `~/Projects/omarchy-window-restore/scripts/install.sh`.
    - if Strata is installed, its action → `~/.config/strata/actions/kindle-send/` (Section 4)
 3. **Edit config, after asking for each edit, each backed up first and wrapped in `>>> kindle-send … >>>` / `<<< kindle-send <<<` markers:**
    - `~/.config/hypr/bindings.lua`: `SUPER + SHIFT + K` → `omarchy-shell shell toggle sorydi3.kindle-send`
-   - `~/.config/omarchy/extensions/omarchy-menu.jsonc`: "Send to Kindle" (toggle the picker) and "Send to Kindle → Settings" (**Proposed:** opens the Picker in Settings; it was a floating terminal running `kindle-send setup`)
+   - `~/.config/omarchy/extensions/omarchy-menu.jsonc`: "Send to Kindle" (toggle the picker) and "Send to Kindle → Settings" (`omarchy-shell shell summon sorydi3.kindle-send '{"settings":""}'`: opens the Picker in Settings on no field). An older install's block, whose "Setup" entry ran `kindle-send setup` in a floating terminal, is replaced in place (asked like any edit); an up-to-date block is left as it is.
 4. **Enable and reload:** `omarchy plugin enable sorydi3.kindle-send` (it has no bar widget, so nothing else enables it), `omarchy-shell -q shell rescanPlugins`, `nautilus -q`.
-5. **Finish:** **Proposed:** say that `SUPER + SHIFT + K` opens setup in the Picker, and offer `kindle-send setup` in the terminal instead.
+5. **Finish:** say that `SUPER + SHIFT + K` (or the menu's Settings) opens setup in the Picker. On a terminal, ask "Set up in the terminal instead? [y/N]" and run `kindle-send setup` on yes; otherwise print `kindle-send setup` as the terminal alternative.
 
 Rerun install to update. Asking needs a terminal: without one, install makes no config edits and says so. `--yes` makes them without asking, `--no-config` skips them. Each block goes in only once. The menu block goes before the final `}`. After the edit, install checks the file with the shell's own parsing rules and restores the backup if that fails. A menu file that already fails to parse is left alone. Backups: `<file>.before-kindle-send`.
 
