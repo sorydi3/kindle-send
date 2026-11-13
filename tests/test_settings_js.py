@@ -483,3 +483,65 @@ def test_other_summons_do_not_open_settings_on_a_field():
     assert summoned({"settings": "bookFolders", "problem": "x"}) is None
     assert form('summoned("not json")') is None
     assert form('summoned("")') is None
+
+
+# --- Test send (spec §9) --------------------------------------------------------
+
+QT_KEY_T = 0x54
+SUGGESTION = "Ctrl+T sends a test Book to check it all works."
+
+
+def test_the_first_save_suggests_the_test_send():
+    assert form("status({saved: true, firstSave: true, problems: []})") == "Saved. " + SUGGESTION
+
+
+def test_a_first_save_with_warnings_names_them_before_the_suggestion():
+    found = json.dumps([{"field": "kindleAddress", "message": "Kindle addresses usually end in @kindle.com",
+                         "blocking": False}])
+
+    assert form(f"status({{saved: true, firstSave: true, problems: {found}}})") \
+        == "Saved. 1 value to check below. " + SUGGESTION
+
+
+def test_later_saves_do_not_suggest_the_test_send():
+    assert form("status({saved: true, problems: []})") == "Saved."
+
+
+def test_ctrl_t_is_the_test_send_key():
+    assert form(f"opensTestSend({QT_KEY_T}, {QT_CTRL})") is True
+    assert form(f"opensTestSend({QT_KEY_T}, 0)") is False
+    assert form(f"opensTestSend({QT_KEY_T}, {QT_CTRL | QT_SHIFT})") is False
+    assert form(f"opensTestSend({QT_KEY_COMMA}, {QT_CTRL})") is False
+
+
+def test_ctrl_t_sends_only_once_everything_is_saved():
+    # testKey(isSetup, isChanged, testSend)
+    assert form("testKey(false, false, null)") == {"send": True, "status": ""}
+    assert form("testKey(false, false, {state: 'sent', at: 1})")["send"] is True
+    assert form("testKey(false, true, null)") == {"send": False, "status": "Save first, then Ctrl+T sends a test Book."}
+    assert form("testKey(true, false, null)") == {"send": False, "status": "Save first, then Ctrl+T sends a test Book."}
+
+
+def test_ctrl_t_while_the_test_book_is_going_does_nothing_more():
+    assert form("testKey(false, false, {state: 'sending'})") == {"send": False, "status": "Sending a test Book…"}
+
+
+def test_the_status_line_follows_the_test_send():
+    assert form("testOutcome({state: 'sending'})") == {"status": "Sending a test Book…", "problems": {}}
+    sent = form("testOutcome({state: 'sent', at: new Date(2026, 10, 13, 9, 5).getTime()})")
+    assert sent == {"status": "Gmail accepted the test Book at 09:05. Check your Kindle in a few minutes.",
+                    "problems": {}}
+
+
+def test_a_failed_test_send_shows_next_to_its_field():
+    failed = form("testOutcome({state: 'failed', at: 1, reason: 'Gmail rejected the app password.', "
+                  "field: 'appPassword'})")
+
+    assert failed == {"status": "Couldn't send the test Book.",
+                      "problems": {"appPassword": "Gmail rejected the app password."}}
+
+
+def test_a_failed_test_send_no_field_fixes_is_the_status_line():
+    failed = form("testOutcome({state: 'failed', at: 1, reason: 'Couldn\\'t reach Gmail.', field: ''})")
+
+    assert failed == {"status": "Couldn't send the test Book. Couldn't reach Gmail.", "problems": {}}

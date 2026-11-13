@@ -62,6 +62,8 @@ Item {
   readonly property bool settingsChanged: SettingsForm.changed(settingsValues, settingsBaseline)
   // The form kept while the Picker steps aside for a browser or dialog; the next open returns to it.
   property var settingsAside: null
+  // Ctrl+T started a test send from this form, so its status line follows the Service's testSend.
+  property bool settingsTesting: false
 
   readonly property int rowHeight: Style.space(54)
   // Three text strengths, never multiplied together. Secondary stays readable
@@ -222,6 +224,7 @@ Item {
     root.settingsOpen = true
     root.settingsProblems = problems || {}
     root.settingsStatus = ""
+    root.settingsTesting = false
     root.settingsSavedSinceOpen = false
     root.settingsPasswordStored = false
     // plan's word until kindle-send settings answers, so the title doesn't flicker.
@@ -313,7 +316,8 @@ Item {
       values: root.settingsValues, baseline: root.settingsBaseline,
       problems: root.settingsProblems, status: root.settingsStatus,
       focus: root.settingsFocus, savedSinceOpen: root.settingsSavedSinceOpen,
-      passwordStored: root.settingsPasswordStored, missing: root.settingsMissing })
+      passwordStored: root.settingsPasswordStored, missing: root.settingsMissing,
+      testing: root.settingsTesting })
     root.close()
   }
 
@@ -326,8 +330,41 @@ Item {
     root.settingsSavedSinceOpen = back.savedSinceOpen === true
     root.settingsPasswordStored = back.passwordStored === true
     root.settingsMissing = back.missing || []
+    root.settingsTesting = back.testing === true
+    // A test send may have finished while the Picker was closed.
+    if (root.settingsTesting) root.showTestSend()
     const focus = back.focus || SettingsForm.fields()[0].key
     Qt.callLater(function() { root.focusSettingsField(focus) })
+  }
+
+  // --- Test send (spec §9): Ctrl+T, only once everything is saved. The Picker
+  // stays in Settings; its status line follows the Service's testSend.
+
+  function sendTestBook() {
+    const testSend = root.service ? root.service.testSend : null
+    const k = SettingsForm.testKey(root.settingsSetup, root.settingsChanged || root.settingsSaving, testSend)
+    if (!k.send || !root.service) {
+      root.settingsStatus = k.status
+      return
+    }
+    root.settingsTesting = true
+    root.service.sendTest(root.settingsBaseline.senderAddress)
+  }
+
+  function showTestSend() {
+    const o = SettingsForm.testOutcome(root.service ? root.service.testSend : null)
+    root.settingsStatus = o.status
+    root.settingsProblems = Object.assign({}, root.settingsProblems, o.problems)
+    const first = Object.keys(o.problems)[0]
+    if (first) root.focusSettingsField(first)
+  }
+
+  Connections {
+    target: root.service
+    ignoreUnknownSignals: true
+    function onTestSendChanged() {
+      if (root.settingsOpen && root.settingsTesting) root.showTestSend()
+    }
   }
 
   // Ctrl+O, or a click on the help line: the field's page in the browser.
@@ -731,7 +768,8 @@ Item {
 
         // Settings (spec §9): one form over the Book list. Its own keys only:
         // Tab/Shift+Tab move between fields, Enter saves, Ctrl+O opens the
-        // focused field's link, Ctrl+B on Book folders browses, Esc goes back
+        // focused field's link, Ctrl+B on Book folders browses, Ctrl+T sends a
+        // test Book once everything is saved, Esc goes back
         // (or closes the Picker while setup is needed).
         FocusScope {
           id: settingsForm
@@ -750,6 +788,9 @@ Item {
             } else if (SettingsForm.opensBrowse(event.key, event.modifiers) && SettingsForm.browses(root.settingsFocus)) {
               event.accepted = true
               root.browseFolder()
+            } else if (SettingsForm.opensTestSend(event.key, event.modifiers)) {
+              event.accepted = true
+              root.sendTestBook()
             } else event.accepted = false
           }
 

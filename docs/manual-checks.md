@@ -190,3 +190,15 @@ Start from no setup: move the `sorydi3.kindle-send` keys out of `shell.json` (ke
 - [ ] With Book folders pointing at empty folders, the Picker says "No Books found in …" with "Enter  Change Book folders". `Enter` (or a click on the message) opens Settings with the cursor in Book folders.
 - [ ] `kindle-send setup` in a terminal still runs the wizard.
 - [ ] Put back your own `shell.json` keys and app password.
+
+## 17. Test send from Settings (§9 Test send, §10)
+
+Sends one real email to your own Kindle. Start from section 16's state just before the first save.
+
+- [ ] Save the form for the first time: the status line says "Saved. Ctrl+T sends a test Book to check it all works."
+- [ ] Type in any field without saving and press `Ctrl+T`: nothing is sent; the status line says "Save first, then Ctrl+T sends a test Book." `Esc`, reopen Settings with `Ctrl+,`.
+- [ ] With everything saved, press `Ctrl+T`: the Picker stays in Settings, the status line says "Sending a test Book…", then "Gmail accepted the test Book at <time>. Check your Kindle in a few minutes." A second `Ctrl+T` while it is sending sends nothing more.
+- [ ] The notification is headed "Kindle Send Test" and reads "Sent to Amazon. Not on your Kindle in a few minutes? Check that <Gmail> is on Amazon's approved list and the Kindle address is right." Clicking it (before it goes) opens the Picker in Settings.
+- [ ] "Kindle Send Test" arrives on the Kindle. `kindle-send history` lists "Kindle Send Test.epub" by Email, sent.
+- [ ] With section 8's wrong app password stored, `Ctrl+T`: the status line says "Couldn't send the test Book.", "Gmail rejected the app password." replaces the app password's help line and the cursor is there. The critical notification's click opens Settings on that field.
+- [ ] With the network off, `Ctrl+T`: the status line says "Couldn't send the test Book." followed by the reason.

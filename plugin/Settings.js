@@ -174,8 +174,53 @@ function status(result) {
   const stillNeeded = problems.filter(function(p) { return p.needed === true }).length
   if (!result.saved && stillNeeded > 0) return stillNeeded + " still needed before Books can be sent."
   if (!result.saved) return plural(fieldsWith, "value needs", "values need") + " fixing"
-  if (fieldsWith > 0) return "Saved. " + plural(fieldsWith, "value", "values") + " to check below."
-  return "Saved."
+  const saved = fieldsWith > 0 ? "Saved. " + plural(fieldsWith, "value", "values") + " to check below." : "Saved."
+  // The save that completed setup suggests the test send (spec §9).
+  return result.firstSave === true ? saved + " Ctrl+T sends a test Book to check it all works." : saved
+}
+
+// --- Test send (spec §9) --------------------------------------------------------
+// Ctrl+T has the Service email the bundled test Book. It only checks what is
+// saved, so it works only once everything is. testSend: the Service's state,
+// null before any, else { state: "sending" | "sent" | "failed", at?, reason?, field? }.
+
+const KEY_T = 0x54
+const SENDING_TEST = "Sending a test Book…"
+
+function opensTestSend(key, modifiers) {
+  return key === KEY_T && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
+}
+
+// What Ctrl+T does: { send } to start one, else a status line saying why not.
+function testKey(isSetup, isChanged, testSend) {
+  if (isSetup || isChanged) return { send: false, status: "Save first, then Ctrl+T sends a test Book." }
+  if (testSend && testSend.state === "sending") return { send: false, status: SENDING_TEST }
+  return { send: true, status: "" }
+}
+
+function clock(ms) {
+  const d = new Date(ms)
+  const two = function(n) { return (n < 10 ? "0" : "") + n }
+  return two(d.getHours()) + ":" + two(d.getMinutes())
+}
+
+// The status line and field problems for the test send's state. A failure a
+// Setting fixes shows next to that field, any other in the status line.
+function testOutcome(testSend) {
+  const t = testSend || {}
+  if (t.state === "sending") return { status: SENDING_TEST, problems: {} }
+  if (t.state === "sent") {
+    return { status: "Gmail accepted the test Book at " + clock(t.at) + ". Check your Kindle in a few minutes.",
+             problems: {} }
+  }
+  if (t.state !== "failed") return { status: "", problems: {} }
+  const reason = String(t.reason || "")
+  if (t.field && FIELDS.some(function(f) { return f.key === t.field })) {
+    const problems = {}
+    problems[t.field] = reason
+    return { status: "Couldn't send the test Book.", problems: problems }
+  }
+  return { status: "Couldn't send the test Book." + (reason ? " " + reason : ""), problems: {} }
 }
 
 // The keys that work on the focused field. Esc warns once something changed;
