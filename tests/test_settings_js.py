@@ -106,17 +106,16 @@ def test_typing_a_password_is_an_edit():
 
 
 def test_saving_a_typed_password_checks_it_with_gmail():
-    assert form(f"savingStatus({values(appPassword='abcd')}, {values(appPassword='')})") \
+    assert form(f"savingStatus({values(appPassword='abcd')})") \
         == "Checking the app password with Gmail…"
 
 
-def test_saving_a_changed_gmail_address_checks_the_password_with_gmail():
-    assert form(f"savingStatus({values(senderAddress='new@gmail.com ')}, {values()})") \
-        == "Checking the app password with Gmail…"
+def test_saving_a_changed_gmail_address_without_a_typed_password_just_saves():
+    assert form(f"savingStatus({values(senderAddress='new@gmail.com ')})") == "Saving…"
 
 
 def test_saving_with_the_same_address_and_no_typed_password_just_saves():
-    assert form(f"savingStatus({values(kindleAddress='new@kindle.com', senderAddress=' ' + SENDER)}, {values()})") \
+    assert form(f"savingStatus({values(kindleAddress='new@kindle.com', senderAddress=' ' + SENDER)})") \
         == "Saving…"
 
 

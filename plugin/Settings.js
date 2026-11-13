@@ -113,12 +113,10 @@ function toSave(values) {
   return out
 }
 
-// The status line while save runs: it signs in to Gmail first when the Gmail
-// address or the app password changed.
-function savingStatus(values, saved) {
-  const typed = String(values.appPassword || "").trim() !== ""
-  const moved = String(values.senderAddress || "").trim() !== String(saved.senderAddress || "").trim()
-  return typed || moved ? "Checking the app password with Gmail…" : "Saving…"
+// The status line while save runs. Only a typed app password surely means a
+// Gmail sign-in first; without one the form can't tell, so it just says saving.
+function savingStatus(values) {
+  return String(values.appPassword || "").trim() !== "" ? "Checking the app password with Gmail…" : "Saving…"
 }
 
 // Whether any field differs from what was loaded or last saved.

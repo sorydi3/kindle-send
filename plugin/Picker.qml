@@ -284,7 +284,7 @@ Item {
   function saveSettings() {
     if (root.settingsSaving) return
     root.settingsSaving = true
-    root.settingsStatus = SettingsForm.savingStatus(root.settingsValues, root.settingsBaseline)
+    root.settingsStatus = SettingsForm.savingStatus(root.settingsValues)
     saver.result = null
     saver.didStart = false
     saver.payload = JSON.stringify(SettingsForm.toSave(root.settingsValues))
