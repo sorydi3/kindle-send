@@ -14,7 +14,19 @@ const FIELDS = [
 
 function fields() { return FIELDS }
 
+// The page each field's help line links to (spec §9), keyed by field so a
+// field added later (the app password) gets its link by its key alone.
+const LINKS = {
+  kindleAddress: "https://www.amazon.com/mycd",
+  senderAddress: "https://www.amazon.com/hz/mycd/myx#/home/settings/pdoc",
+  appPassword: "https://myaccount.google.com/apppasswords"
+}
+
+// The focused field's link, "" for a field without one (Book folders browse instead).
+function link(key) { return Object.prototype.hasOwnProperty.call(LINKS, key) ? LINKS[key] : "" }
+
 const KEY_COMMA = 0x2C
+const KEY_O = 0x4F
 const CONTROL = 0x04000000
 const ALT = 0x08000000
 const META = 0x10000000
@@ -23,6 +35,17 @@ const SHIFT = 0x02000000
 // Ctrl+, in the Book list opens Settings; a plain comma still filters.
 function opensSettings(key, modifiers) {
   return key === KEY_COMMA && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
+}
+
+// Ctrl+O in Settings opens the focused field's link.
+function opensLink(key, modifiers) {
+  return key === KEY_O && (modifiers & (CONTROL | ALT | META | SHIFT)) === CONTROL
+}
+
+// The command that opens a field's link, [] for a field without one.
+function browserArgv(key) {
+  const url = link(key)
+  return url ? ["omarchy-launch-browser", url] : []
 }
 
 // Form values (strings) from the line `kindle-send settings` printed.
@@ -101,9 +124,30 @@ function status(result) {
 }
 
 // The keys that work on the focused field. Esc warns once something changed.
-// focusedKey is unused until fields gain keys of their own (Open link, Browse).
+// Open link shows only on a field that has one.
 function footer(focusedKey, isChanged) {
   const keys = ["Tab  Next field", "Enter  Save"]
+  if (link(focusedKey)) keys.push("Ctrl+O  Open link")
   keys.push(isChanged ? "Esc  Back (discard changes)" : "Esc  Back to Books")
   return keys.join("      ")
 }
+
+// --- Stepping aside -----------------------------------------------------------
+// Opening a link or the folder chooser closes the Picker so the browser or the
+// dialog shows. stepAside keeps the whole form (values, what was loaded,
+// problems, status, focus) in memory only; reopened gives it back on the next
+// open, or null for an ordinary open into the Book list.
+
+function copy(value) {
+  if (Array.isArray(value)) return value.map(copy)
+  if (value && typeof value === "object") {
+    const out = {}
+    for (const k in value) out[k] = copy(value[k])
+    return out
+  }
+  return value
+}
+
+function stepAside(form) { return { settings: copy(form) } }
+
+function reopened(kept) { return kept && kept.settings ? copy(kept.settings) : null }

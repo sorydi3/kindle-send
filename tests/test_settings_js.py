@@ -146,9 +146,91 @@ def test_any_changed_field_is_an_edit():
 
 
 def test_the_footer_offers_tab_save_and_back():
-    assert form("footer('kindleAddress', false)") == "Tab  Next field      Enter  Save      Esc  Back to Books"
+    assert form("footer('bookFolders', false)") == "Tab  Next field      Enter  Save      Esc  Back to Books"
 
 
 def test_the_footer_warns_that_esc_discards_once_something_changed():
-    assert form("footer('kindleAddress', true)") \
+    assert form("footer('bookFolders', true)") \
         == "Tab  Next field      Enter  Save      Esc  Back (discard changes)"
+
+
+# --- Help links (spec §9, Links) -------------------------------------------------
+
+QT_KEY_O = 0x4F
+
+MANAGE_DEVICES = "https://www.amazon.com/mycd"
+APPROVED_LIST = "https://www.amazon.com/hz/mycd/myx#/home/settings/pdoc"
+APP_PASSWORDS = "https://myaccount.google.com/apppasswords"
+
+
+def test_each_address_field_links_to_where_its_value_comes_from():
+    assert form("link('kindleAddress')") == MANAGE_DEVICES
+    assert form("link('senderAddress')") == APPROVED_LIST
+
+
+def test_the_app_password_links_to_googles_app_passwords_page():
+    assert form("link('appPassword')") == APP_PASSWORDS
+
+
+def test_book_folders_have_no_link():
+    """They get Browse instead."""
+    assert form("link('bookFolders')") == ""
+    assert form("link('')") == ""
+
+
+def test_the_footer_offers_open_link_on_a_field_with_a_link():
+    assert form("footer('senderAddress', false)") \
+        == "Tab  Next field      Enter  Save      Ctrl+O  Open link      Esc  Back to Books"
+
+
+def test_the_footer_never_offers_open_link_where_there_is_none():
+    assert "Open link" not in form("footer('bookFolders', true)")
+    assert "Open link" not in form("footer('', false)")
+
+
+def test_ctrl_o_opens_the_link():
+    assert form(f"opensLink({QT_KEY_O}, {QT_CTRL})") is True
+
+
+def test_a_plain_or_shifted_o_is_typing():
+    assert form(f"opensLink({QT_KEY_O}, 0)") is False
+    assert form(f"opensLink({QT_KEY_O}, {QT_SHIFT})") is False
+    assert form(f"opensLink({QT_KEY_O}, {QT_CTRL | QT_SHIFT})") is False
+
+
+def test_the_link_opens_in_the_browser_omarchy_launches():
+    assert form("browserArgv('senderAddress')") == ["omarchy-launch-browser", APPROVED_LIST]
+
+
+def test_nothing_is_launched_for_a_field_without_a_link():
+    assert form("browserArgv('bookFolders')") == []
+
+
+# --- Stepping aside (for a link, or Browse) and coming back ---------------------
+
+def test_reopening_after_stepping_aside_returns_to_settings_with_unsaved_values():
+    typed = values(kindleAddress="new@kindle.com")
+    open_form = ("{values: " + typed + ", baseline: " + values() + ", focus: 'kindleAddress',"
+                 " problems: {senderAddress: 'Make sure this is a Google account'}, status: 'Saved.'}")
+
+    back = form(f"reopened(stepAside({open_form}))")
+
+    assert back["values"]["kindleAddress"] == "new@kindle.com"
+    assert back["baseline"]["kindleAddress"] == KINDLE
+    assert back["focus"] == "kindleAddress"
+    assert back["problems"] == {"senderAddress": "Make sure this is a Google account"}
+    assert back["status"] == "Saved."
+    assert form(f"(function(b) {{ return changed(b.values, b.baseline) }})(reopened(stepAside({open_form})))") is True
+
+
+def test_the_kept_form_does_not_follow_later_edits():
+    """What comes back is what was there when the Picker stepped aside."""
+    expr = ("(function() { var f = {values: {kindleAddress: 'a@kindle.com'}};"
+            " var kept = stepAside(f); f.values.kindleAddress = 'b@kindle.com';"
+            " return reopened(kept).values.kindleAddress })()")
+
+    assert form(expr) == "a@kindle.com"
+
+
+def test_an_ordinary_open_starts_in_the_book_list():
+    assert form("reopened(null)") is None

@@ -51,6 +51,8 @@ Item {
   // Something was saved since Settings opened, so the Book list is planned again on the way back.
   property bool settingsSavedSinceOpen: false
   readonly property bool settingsChanged: SettingsForm.changed(settingsValues, settingsBaseline)
+  // The form kept while the Picker steps aside for a browser or dialog; the next open returns to it.
+  property var settingsAside: null
 
   readonly property int rowHeight: Style.space(54)
   // Three text strengths, never multiplied together. Secondary stays readable
@@ -86,7 +88,10 @@ Item {
     root.payloadFiles = Rows.payloadFiles(payloadJson)
     // plan reruns on every open, so settings rewritten by setup show at once.
     root.list()
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    const back = SettingsForm.reopened(root.settingsAside)
+    root.settingsAside = null
+    if (back) root.returnToSettings(back)
+    else Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   function close() {
@@ -265,6 +270,37 @@ Item {
       root.settingsSavedSinceOpen = true
       root.loadSettings(true)
     }
+  }
+
+  // --- Stepping aside: a link (or the folder chooser) shows over a closed Picker.
+  // stepAside() keeps the form, unsaved values included, and closes; the next
+  // open() comes back to it through returnToSettings().
+
+  function stepAside() {
+    root.settingsAside = SettingsForm.stepAside({
+      values: root.settingsValues, baseline: root.settingsBaseline,
+      problems: root.settingsProblems, status: root.settingsStatus,
+      focus: root.settingsFocus, savedSinceOpen: root.settingsSavedSinceOpen })
+    root.close()
+  }
+
+  function returnToSettings(back) {
+    root.settingsOpen = true
+    root.settingsValues = back.values
+    root.settingsBaseline = back.baseline
+    root.settingsProblems = back.problems || {}
+    root.settingsStatus = back.status || ""
+    root.settingsSavedSinceOpen = back.savedSinceOpen === true
+    const focus = back.focus || SettingsForm.fields()[0].key
+    Qt.callLater(function() { root.focusSettingsField(focus) })
+  }
+
+  // Ctrl+O, or a click on the help line: the field's page in the browser.
+  function openLink(key) {
+    const argv = SettingsForm.browserArgv(key)
+    if (argv.length === 0) return
+    Util.execArgv(argv)
+    root.stepAside()
   }
 
   function focusSettingsField(key) {
@@ -638,7 +674,8 @@ Item {
         }
 
         // Settings (spec §9): one form over the Book list. Its own keys only:
-        // Tab/Shift+Tab move between fields, Enter saves, Esc goes back.
+        // Tab/Shift+Tab move between fields, Enter saves, Ctrl+O opens the
+        // focused field's link, Esc goes back.
         FocusScope {
           id: settingsForm
           anchors.fill: parent
@@ -650,6 +687,9 @@ Item {
             if (event.key === Qt.Key_Escape) {
               event.accepted = true
               root.closeSettings()
+            } else if (SettingsForm.opensLink(event.key, event.modifiers)) {
+              event.accepted = true
+              root.openLink(root.settingsFocus)
             } else event.accepted = false
           }
 
@@ -676,6 +716,8 @@ Item {
                 required property int index
                 property alias input: input
                 readonly property var line: SettingsForm.helpLine(modelData, root.settingsProblems)
+                // The help line is link text when the field has a page and no problem covers it.
+                readonly property bool linked: !line.problem && SettingsForm.link(modelData.key) !== ""
                 width: parent.width
                 spacing: Style.space(4)
 
@@ -703,9 +745,19 @@ Item {
                   text: entry.line.text
                   wrapMode: Text.Wrap
                   color: entry.line.problem ? Color.menu.selectedText : Color.menu.text
-                  opacity: entry.line.problem ? 1 : root.secondaryOpacity
+                  opacity: entry.line.problem || helpMouse.containsMouse ? 1 : root.secondaryOpacity
                   font.family: Style.font.menuFamily
                   font.pixelSize: Style.font.bodySmall
+                  font.underline: entry.linked
+
+                  MouseArea {
+                    id: helpMouse
+                    anchors.fill: parent
+                    enabled: entry.linked
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.openLink(entry.modelData.key)
+                  }
                 }
               }
             }

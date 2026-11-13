@@ -134,3 +134,14 @@ These came up while building and aren't covered above.
 - [ ] Save a Kindle address on `@kindle.cn` and a Book folder `~/Bokos`: saved (check `shell.json`), with the two warnings under their fields and "Saved. 2 values to check below.". `~/Bokos` isn't created. `shell.json` is still mode 600 and its other keys are untouched.
 - [ ] Empty the Book folders field and save: it shows "~/Books, ~/Downloads" again.
 - [ ] After a save, `Esc` returns to a Book list planned from the new folders.
+
+## 12. Help links in Settings (§9, Links)
+
+- [ ] In Settings, the footer shows "Ctrl+O  Open link" on the Kindle address and the Gmail address (and the app password, once that field exists), and not on Book folders.
+- [ ] On the Kindle address, press `Ctrl+O`: the Picker closes and the browser shows Amazon's Manage Your Content and Devices.
+- [ ] On the Gmail address, press `Ctrl+O`: the browser shows Amazon's Personal Document Settings, where the approved list is. No "done?" question follows.
+- [ ] On the app password (once it exists), `Ctrl+O` opens myaccount.google.com/apppasswords.
+- [ ] Click the underlined help line under the Kindle address: same as `Ctrl+O`. Book folders' help line isn't underlined and does nothing on click. A problem shown in place of a help line isn't a link.
+- [ ] **Round trip.** Change the Kindle address without saving, move to the Gmail address and press `Ctrl+O`. After the browser shows, press `SUPER + SHIFT + K`: the Picker opens in Settings, the changed Kindle address is still there, the cursor is in the Gmail address, and the footer says "Esc  Back (discard changes)". `shell.json` is unchanged.
+- [ ] After that round trip, `Esc` goes back to the Book list; closing and reopening the Picker now opens the Book list, not Settings.
+- [ ] Save with a warning, then follow a link and come back: the warning and the status line are still shown.
