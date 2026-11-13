@@ -145,3 +145,14 @@ These came up while building and aren't covered above.
 - [ ] **Round trip.** Change the Kindle address without saving, move to the Gmail address and press `Ctrl+O`. After the browser shows, press `SUPER + SHIFT + K`: the Picker opens in Settings, the changed Kindle address is still there, the cursor is in the Gmail address, and the footer says "Esc  Back (discard changes)". `shell.json` is unchanged.
 - [ ] After that round trip, `Esc` goes back to the Book list; closing and reopening the Picker now opens the Book list, not Settings.
 - [ ] Save with a warning, then follow a link and come back: the warning and the status line are still shown.
+
+## 13. App password in Settings (§9, ADR 0001)
+
+- [ ] Settings show "Gmail app password" between the Gmail address and the Book folders (so `Tab` now goes Kindle address → Gmail address → app password → Book folders). Its help line reads "Create one at myaccount.google.com/apppasswords. It needs 2-Step Verification."
+- [ ] With a password stored, the field is empty with "Stored. Type to replace it." in grey; without one, "xxxx xxxx xxxx xxxx". Typed characters show as dots.
+- [ ] Type a wrong app password and press `Enter`: the status line says "Checking the app password with Gmail…", then "Gmail rejected this app password" replaces the help line, focus jumps to the field, and `shell.json` and the keyring (`secret-tool lookup service kindle-send user <Gmail>`) are unchanged.
+- [ ] Type the real app password and save: "Saved.", the field empties and shows "Stored. Type to replace it.", and `secret-tool lookup service kindle-send user <Gmail>` prints it.
+- [ ] While that save runs, `ps -eo args | grep kindle-send` and `ps -eo args | grep secret-tool` never show the password, and it isn't in `shell.json` or the journal (`journalctl --user -b | grep -F '<first 4 characters>'`).
+- [ ] Turn Wi-Fi off, type the password and save: saved anyway, with "Couldn't reach Gmail to check the password. Saved anyway." under the field.
+- [ ] Change only the Kindle address and save: the status line goes straight to "Saved." with no "Checking…".
+- [ ] Type a password, then press `Esc`: back in the Book list; reopen Settings and the field is empty again.

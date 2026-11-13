@@ -92,7 +92,8 @@ class FakeKeyring:
     """A fake `secret-tool` first on PATH. Logs its argv, prints the stored password.
 
     `secret-tool store` stands in for the user typing at its own prompt: it
-    stores whatever `will_type()` set (nothing, if it wasn't called).
+    stores whatever `will_type()` set. Without that, like the real one when
+    stdin isn't a terminal, it stores what it reads on stdin (nothing if empty).
     """
 
     def __init__(self, tmp_path, monkeypatch):
@@ -106,7 +107,10 @@ class FakeKeyring:
             "#!/bin/bash\n"
             f'echo "$@" >> "{self.log}"\n'
             'if [ "$1" = store ]; then\n'
-            f'  [ -f "{self.typed}" ] && cp "{self.typed}" "{self.store}"\n'
+            f'  if [ -f "{self.typed}" ]; then cp "{self.typed}" "{self.store}"\n'
+            f'  elif [ ! -t 0 ]; then cat > "{self.store}.in"\n'
+            f'    if [ -s "{self.store}.in" ]; then mv "{self.store}.in" "{self.store}"; else rm -f "{self.store}.in"; fi\n'
+            "  fi\n"
             "  exit 0\n"
             "fi\n"
             f'[ -f "{self.store}" ] || exit 1\n'
