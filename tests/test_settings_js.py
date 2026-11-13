@@ -44,17 +44,20 @@ def test_the_form_shows_what_kindle_send_settings_printed():
                        "bookFolders": ["~/Books", "/srv/my books"], "appPasswordStored": True})
 
     assert form(f"fromSettings({line})") == {
-        "kindleAddress": KINDLE, "senderAddress": SENDER, "bookFolders": "~/Books, /srv/my books"}
+        "kindleAddress": KINDLE, "senderAddress": SENDER, "appPassword": "", "bookFolders": "~/Books, /srv/my books"}
 
 
 def test_the_form_starts_blank_when_settings_gave_nothing():
-    assert form("fromSettings(null)") == {"kindleAddress": "", "senderAddress": "", "bookFolders": ""}
+    assert form("fromSettings(null)") == {"kindleAddress": "", "senderAddress": "", "appPassword": "",
+                                          "bookFolders": ""}
 
 
 def test_the_fields_in_order_with_their_help_lines():
     assert form("fields().map(function(f) { return [f.key, f.label, f.help] })") == [
         ["kindleAddress", "Kindle address", "Find it at amazon.com → Manage Your Content and Devices → Devices."],
         ["senderAddress", "Gmail address", "Amazon must list it as an approved sender, or it drops every Book."],
+        ["appPassword", "Gmail app password",
+         "Create one at myaccount.google.com/apppasswords. It needs 2-Step Verification."],
         ["bookFolders", "Book folders", "The folders the Picker lists, separated by commas."],
     ]
 
@@ -68,6 +71,53 @@ def test_save_sends_the_book_folders_as_a_list():
 
 def test_save_never_sends_a_password_it_was_not_given():
     assert "appPassword" not in form(f"toSave({values()})")
+    assert "appPassword" not in form(f"toSave({values(appPassword='')})")
+
+
+def test_save_sends_a_typed_password():
+    assert form(f"toSave({values(appPassword='abcd efgh ijkl mnop')})")["appPassword"] == "abcd efgh ijkl mnop"
+
+
+# --- The app password -----------------------------------------------------------
+
+def password_field():
+    return "fields().filter(function(f) { return f.key === 'appPassword' })[0]"
+
+
+def test_only_the_app_password_field_is_masked():
+    assert form("fields().filter(function(f) { return f.masked }).map(function(f) { return f.key })") \
+        == ["appPassword"]
+
+
+def test_the_password_field_says_a_stored_password_is_kept_until_one_is_typed():
+    assert form(f"placeholder({password_field()}, true)") == "Stored. Type to replace it."
+    assert form(f"placeholder({password_field()}, false)") == "xxxx xxxx xxxx xxxx"
+    assert form("placeholder(fields()[0], true)") == "…@kindle.com"
+
+
+def test_the_form_never_shows_the_password_even_when_one_is_stored():
+    line = json.dumps({"kindleAddress": KINDLE, "senderAddress": SENDER, "appPasswordStored": True})
+
+    assert form(f"fromSettings({line})")["appPassword"] == ""
+
+
+def test_typing_a_password_is_an_edit():
+    assert form(f"changed({values(appPassword='x')}, {values(appPassword='')})") is True
+
+
+def test_saving_a_typed_password_checks_it_with_gmail():
+    assert form(f"savingStatus({values(appPassword='abcd')}, {values(appPassword='')})") \
+        == "Checking the app password with Gmail…"
+
+
+def test_saving_a_changed_gmail_address_checks_the_password_with_gmail():
+    assert form(f"savingStatus({values(senderAddress='new@gmail.com ')}, {values()})") \
+        == "Checking the app password with Gmail…"
+
+
+def test_saving_with_the_same_address_and_no_typed_password_just_saves():
+    assert form(f"savingStatus({values(kindleAddress='new@kindle.com', senderAddress=' ' + SENDER)}, {values()})") \
+        == "Saving…"
 
 
 def problems(*items):
