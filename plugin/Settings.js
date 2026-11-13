@@ -8,11 +8,20 @@ const FIELDS = [
     help: "Find it at amazon.com → Manage Your Content and Devices → Devices." },
   { key: "senderAddress", label: "Gmail address", placeholder: "…@gmail.com",
     help: "Amazon must list it as an approved sender, or it drops every Book." },
+  // Masked, and never filled in: kindle-send settings only says whether one is stored (ADR 0001).
+  { key: "appPassword", label: "Gmail app password", placeholder: "xxxx xxxx xxxx xxxx", masked: true,
+    help: "Create one at myaccount.google.com/apppasswords. It needs 2-Step Verification." },
   { key: "bookFolders", label: "Book folders", placeholder: "~/Books, ~/Downloads",
     help: "The folders the Picker lists, separated by commas." }
 ]
 
 function fields() { return FIELDS }
+
+// The grey text in an empty field. A stored password stays stored until one is typed.
+function placeholder(field, passwordStored) {
+  if (field.masked && passwordStored) return "Stored. Type to replace it."
+  return field.placeholder
+}
 
 // The page each field's help line links to (spec §9), keyed by field so a
 // field added later (the app password) gets its link by its key alone.
@@ -54,19 +63,31 @@ function fromSettings(line) {
   return {
     kindleAddress: String(s.kindleAddress || ""),
     senderAddress: String(s.senderAddress || ""),
+    appPassword: "",
     bookFolders: Array.isArray(s.bookFolders) ? s.bookFolders.map(String).join(", ") : ""
   }
 }
 
 // What `kindle-send save` reads on stdin. Book folders split on commas; an
-// empty list saves as the defaults there.
+// empty list saves as the defaults there. The app password only when one was typed.
 function toSave(values) {
-  return {
+  const out = {
     kindleAddress: String(values.kindleAddress || "").trim(),
     senderAddress: String(values.senderAddress || "").trim(),
     bookFolders: String(values.bookFolders || "").split(",")
       .map(function(f) { return f.trim() }).filter(function(f) { return f !== "" })
   }
+  const password = String(values.appPassword || "")
+  if (password.trim() !== "") out.appPassword = password
+  return out
+}
+
+// The status line while save runs: it signs in to Gmail first when the Gmail
+// address or the app password changed.
+function savingStatus(values, saved) {
+  const typed = String(values.appPassword || "").trim() !== ""
+  const moved = String(values.senderAddress || "").trim() !== String(saved.senderAddress || "").trim()
+  return typed || moved ? "Checking the app password with Gmail…" : "Saving…"
 }
 
 // Whether any field differs from what was loaded or last saved.

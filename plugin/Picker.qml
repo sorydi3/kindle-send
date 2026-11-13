@@ -43,6 +43,8 @@ Item {
   // The form's values (strings), and what was loaded or last saved, to tell edits apart.
   property var settingsValues: SettingsForm.fromSettings(null)
   property var settingsBaseline: SettingsForm.fromSettings(null)
+  // kindle-send settings says whether an app password is stored; the password itself never reaches the form.
+  property bool settingsPasswordStored: false
   // field key -> problem message from the last save, cleared as each field is edited.
   property var settingsProblems: ({})
   property string settingsStatus: ""
@@ -204,6 +206,7 @@ Item {
     root.settingsProblems = {}
     root.settingsStatus = ""
     root.settingsSavedSinceOpen = false
+    root.settingsPasswordStored = false
     root.settingsValues = SettingsForm.fromSettings(null)
     root.settingsBaseline = root.settingsValues
     root.loadSettings(true)
@@ -234,6 +237,7 @@ Item {
       return
     }
     root.settingsBaseline = SettingsForm.fromSettings(line)
+    root.settingsPasswordStored = line.appPasswordStored === true
     if (settingsReader.replaceValues) root.settingsValues = root.settingsBaseline
   }
 
@@ -248,7 +252,7 @@ Item {
   function saveSettings() {
     if (root.settingsSaving) return
     root.settingsSaving = true
-    root.settingsStatus = "Saving…"
+    root.settingsStatus = SettingsForm.savingStatus(root.settingsValues, root.settingsBaseline)
     saver.result = null
     saver.didStart = false
     saver.payload = JSON.stringify(SettingsForm.toSave(root.settingsValues))
@@ -257,6 +261,7 @@ Item {
 
   function settingsSaved(exitCode) {
     root.settingsSaving = false
+    saver.payload = ""  // it may hold the app password if save never started
     const result = saver.result
     if (exitCode !== 0 || !result) {
       root.settingsStatus = "Couldn't save. Run kindle-send save in a terminal to see why."
@@ -280,7 +285,8 @@ Item {
     root.settingsAside = SettingsForm.stepAside({
       values: root.settingsValues, baseline: root.settingsBaseline,
       problems: root.settingsProblems, status: root.settingsStatus,
-      focus: root.settingsFocus, savedSinceOpen: root.settingsSavedSinceOpen })
+      focus: root.settingsFocus, savedSinceOpen: root.settingsSavedSinceOpen,
+      passwordStored: root.settingsPasswordStored })
     root.close()
   }
 
@@ -291,6 +297,7 @@ Item {
     root.settingsProblems = back.problems || {}
     root.settingsStatus = back.status || ""
     root.settingsSavedSinceOpen = back.savedSinceOpen === true
+    root.settingsPasswordStored = back.passwordStored === true
     const focus = back.focus || SettingsForm.fields()[0].key
     Qt.callLater(function() { root.focusSettingsField(focus) })
   }
@@ -732,8 +739,9 @@ Item {
                   width: parent.width
                   foreground: Color.menu.text
                   accent: Color.menu.selectedText
+                  password: entry.modelData.masked === true
                   text: root.settingsValues[entry.modelData.key] || ""
-                  placeholderText: entry.modelData.placeholder
+                  placeholderText: SettingsForm.placeholder(entry.modelData, root.settingsPasswordStored)
                   onTextEdited: root.editSetting(entry.modelData.key, text)
                   onAccepted: root.saveSettings()
                   onActiveFocusChanged: if (activeFocus) root.settingsFocus = entry.modelData.key
