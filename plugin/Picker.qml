@@ -1,7 +1,7 @@
 // The Picker (spec §4): lists Books from the Book folders, newest first.
 // Space marks, Tab switches the Route, Enter hands the marked (or highlighted)
-// Books to the Service and closes at once, Esc closes. It never handles the
-// password: kindle-send reads the keyring itself.
+// Books to the Service and closes at once, Esc closes. Ctrl+, or the cog opens
+// Settings in the card (spec §9); kindle-send checks and writes them.
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -10,6 +10,7 @@ import qs.Commons
 import qs.Ui
 import "Rows.js" as Rows
 import "Pending.js" as Pending
+import "Settings.js" as SettingsForm
 
 Item {
   id: root
@@ -36,6 +37,20 @@ Item {
   // Files from a Nautilus summon ({"files": [...]}); empty means the Book folders.
   property var payloadFiles: []
   readonly property bool payloadMode: payloadFiles.length > 0
+
+  // --- Settings form state (spec §9). While open, the Book list takes no keys.
+  property bool settingsOpen: false
+  // The form's values (strings), and what was loaded or last saved, to tell edits apart.
+  property var settingsValues: SettingsForm.fromSettings(null)
+  property var settingsBaseline: SettingsForm.fromSettings(null)
+  // field key -> problem message from the last save, cleared as each field is edited.
+  property var settingsProblems: ({})
+  property string settingsStatus: ""
+  property string settingsFocus: ""
+  property bool settingsSaving: false
+  // Something was saved since Settings opened, so the Book list is planned again on the way back.
+  property bool settingsSavedSinceOpen: false
+  readonly property bool settingsChanged: SettingsForm.changed(settingsValues, settingsBaseline)
 
   readonly property int rowHeight: Style.space(54)
   // Three text strengths, never multiplied together. Secondary stays readable
@@ -67,6 +82,7 @@ Item {
     root.books = []
     root.failure = ""
     root.setupNeeded = false
+    root.settingsOpen = false
     root.payloadFiles = Rows.payloadFiles(payloadJson)
     // plan reruns on every open, so settings rewritten by setup show at once.
     root.list()
@@ -75,6 +91,7 @@ Item {
 
   function close() {
     root.opened = false
+    root.settingsOpen = false
     planner.running = false
     responseTimer.stop()
     loadingDelay.stop()
@@ -174,6 +191,126 @@ Item {
     root.close()
   }
 
+  // --- Settings ---------------------------------------------------------
+
+  function openSettings() {
+    if (root.settingsOpen) return
+    root.settingsOpen = true
+    root.settingsProblems = {}
+    root.settingsStatus = ""
+    root.settingsSavedSinceOpen = false
+    root.settingsValues = SettingsForm.fromSettings(null)
+    root.settingsBaseline = root.settingsValues
+    root.loadSettings(true)
+    Qt.callLater(function() { root.focusSettingsField(SettingsForm.fields()[0].key) })
+  }
+
+  // Esc: back to the Book list; unsaved edits are dropped.
+  function closeSettings() {
+    root.settingsOpen = false
+    root.settingsValues = root.settingsBaseline
+    keyCatcher.forceActiveFocus()
+    if (root.settingsSavedSinceOpen) root.list()
+  }
+
+  // replaceValues: show what was read in the fields (on opening, and after a
+  // save, so an emptied Book folders field shows the defaults it saved as).
+  function loadSettings(replaceValues) {
+    settingsReader.replaceValues = replaceValues
+    settingsReader.line = null
+    settingsReader.didStart = false
+    if (!settingsReader.running) settingsReader.running = true
+  }
+
+  function settingsLoaded(exitCode) {
+    const line = settingsReader.line
+    if (exitCode !== 0 || !line) {
+      root.settingsStatus = "Couldn't read the Settings. Run kindle-send settings in a terminal to see why."
+      return
+    }
+    root.settingsBaseline = SettingsForm.fromSettings(line)
+    if (settingsReader.replaceValues) root.settingsValues = root.settingsBaseline
+  }
+
+  function editSetting(key, text) {
+    const next = Object.assign({}, root.settingsValues)
+    next[key] = text
+    root.settingsValues = next
+    root.settingsProblems = SettingsForm.edited(root.settingsProblems, key)
+  }
+
+  // Enter, from any field: kindle-send save checks and writes; values go over stdin.
+  function saveSettings() {
+    if (root.settingsSaving) return
+    root.settingsSaving = true
+    root.settingsStatus = "Saving…"
+    saver.result = null
+    saver.didStart = false
+    saver.payload = JSON.stringify(SettingsForm.toSave(root.settingsValues))
+    saver.running = true
+  }
+
+  function settingsSaved(exitCode) {
+    root.settingsSaving = false
+    const result = saver.result
+    if (exitCode !== 0 || !result) {
+      root.settingsStatus = "Couldn't save. Run kindle-send save in a terminal to see why."
+      return
+    }
+    root.settingsProblems = SettingsForm.byField(result.problems)
+    root.settingsStatus = SettingsForm.status(result)
+    const first = SettingsForm.firstProblem(result.problems)
+    if (first) root.focusSettingsField(first)
+    if (result.saved) {
+      root.settingsSavedSinceOpen = true
+      root.loadSettings(true)
+    }
+  }
+
+  function focusSettingsField(key) {
+    const keys = SettingsForm.fields().map(function(f) { return f.key })
+    const item = settingsFields.itemAt(keys.indexOf(key))
+    if (item) item.input.forceActiveFocus()
+  }
+
+  Process {
+    id: settingsReader
+    property var line: null
+    property bool didStart: false
+    property bool replaceValues: true
+    command: ["kindle-send", "settings"]
+    stdout: SplitParser {
+      onRead: function(text) {
+        try { settingsReader.line = JSON.parse(text) } catch (e) {}
+      }
+    }
+    onStarted: didStart = true
+    onRunningChanged: if (!running && !didStart) root.settingsLoaded(1)
+    onExited: function(exitCode) { root.settingsLoaded(exitCode) }
+  }
+
+  // The form's values reach kindle-send on stdin, one JSON line, never argv.
+  Process {
+    id: saver
+    property string payload: ""
+    property var result: null
+    property bool didStart: false
+    command: ["kindle-send", "save"]
+    stdinEnabled: true
+    stdout: SplitParser {
+      onRead: function(text) {
+        try { saver.result = JSON.parse(text) } catch (e) {}
+      }
+    }
+    onStarted: {
+      didStart = true
+      write(payload + "\n")
+      payload = ""
+    }
+    onRunningChanged: if (!running && !didStart) root.settingsSaved(1)
+    onExited: function(exitCode) { root.settingsSaved(exitCode) }
+  }
+
   function runSetup() {
     Util.execArgv(["omarchy-launch-floating-terminal-with-presentation", "kindle-send", "setup"])
     root.close()
@@ -225,15 +362,20 @@ Item {
         id: keyCatcher
         anchors.fill: parent
         focus: true
+        // While Settings are open the Book list takes no keys: Enter here would send a Book.
+        enabled: !root.settingsOpen
 
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           event.accepted = true
+          if (root.settingsOpen) return
           const enter = event.key === Qt.Key_Return || event.key === Qt.Key_Enter
           const screen = root.screen
           if (event.key === Qt.Key_Escape) {
             if (root.filterText) root.filterText = ""
             else root.close()
+          } else if (SettingsForm.opensSettings(event.key, event.modifiers)) {
+            if (!screen || screen.settings) root.openSettings()
           } else if (enter) {
             const action = screen ? screen.enter : "send"
             if (action === "send") root.send()
@@ -268,8 +410,8 @@ Item {
 
         Text {
           id: search
-          visible: !root.screen || root.screen.typing
-          width: parent.width
+          visible: !root.settingsOpen && (!root.screen || root.screen.typing)
+          width: parent.width - cog.width - Style.space(8)
           height: Style.space(34)
           textFormat: Text.PlainText
           text: root.filterText || "Send to Kindle…"
@@ -281,9 +423,32 @@ Item {
           verticalAlignment: Text.AlignVCenter
         }
 
+        // Opens Settings, like Ctrl+, does.
+        Text {
+          id: cog
+          visible: !root.settingsOpen && (!root.screen || root.screen.settings)
+          anchors.right: parent.right
+          anchors.verticalCenter: search.verticalCenter
+          text: "\u{F0493}"
+          color: Color.menu.text
+          opacity: cogMouse.containsMouse ? 1 : root.secondaryOpacity
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.title
+
+          MouseArea {
+            id: cogMouse
+            anchors.fill: parent
+            anchors.margins: -Style.space(6)
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.openSettings()
+          }
+        }
+
         // What Enter will send, then the keys that work here.
         Column {
           id: footer
+          visible: !root.settingsOpen
           anchors.bottom: parent.bottom
           width: parent.width
           spacing: Style.space(6)
@@ -314,7 +479,7 @@ Item {
 
         ListView {
           id: list
-          visible: !root.screen
+          visible: !root.settingsOpen && !root.screen
           anchors.top: search.bottom
           anchors.topMargin: Style.spacing.md
           anchors.bottom: footer.top
@@ -429,7 +594,7 @@ Item {
           anchors.centerIn: parent
           width: parent.width
           spacing: Style.space(8)
-          visible: root.screen !== null && (!root.loading || root.loadingShown)
+          visible: !root.settingsOpen && root.screen !== null && (!root.loading || root.loadingShown)
 
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -470,6 +635,110 @@ Item {
           visible: stateView.visible && root.screen !== null && root.screen.enter === "setup"
           cursorShape: Qt.PointingHandCursor
           onClicked: root.runSetup()
+        }
+
+        // Settings (spec §9): one form over the Book list. Its own keys only:
+        // Tab/Shift+Tab move between fields, Enter saves, Esc goes back.
+        FocusScope {
+          id: settingsForm
+          anchors.fill: parent
+          visible: root.settingsOpen
+          enabled: root.settingsOpen
+          focus: root.settingsOpen
+
+          Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape) {
+              event.accepted = true
+              root.closeSettings()
+            } else event.accepted = false
+          }
+
+          // Clicks on the form stay off the Book list underneath.
+          MouseArea { anchors.fill: parent }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(12)
+
+            Text {
+              text: "Settings"
+              color: Color.menu.text
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.heading
+            }
+
+            Repeater {
+              id: settingsFields
+              model: SettingsForm.fields()
+              delegate: Column {
+                id: entry
+                required property var modelData
+                required property int index
+                property alias input: input
+                readonly property var line: SettingsForm.helpLine(modelData, root.settingsProblems)
+                width: parent.width
+                spacing: Style.space(4)
+
+                Text {
+                  text: entry.modelData.label
+                  color: Color.menu.text
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.body
+                }
+                TextField {
+                  id: input
+                  width: parent.width
+                  foreground: Color.menu.text
+                  accent: Color.menu.selectedText
+                  text: root.settingsValues[entry.modelData.key] || ""
+                  placeholderText: entry.modelData.placeholder
+                  onTextEdited: root.editSetting(entry.modelData.key, text)
+                  onAccepted: root.saveSettings()
+                  onActiveFocusChanged: if (activeFocus) root.settingsFocus = entry.modelData.key
+                }
+                // The help line, or the field's problem in its place, in the accent color.
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  text: entry.line.text
+                  wrapMode: Text.Wrap
+                  color: entry.line.problem ? Color.menu.selectedText : Color.menu.text
+                  opacity: entry.line.problem ? 1 : root.secondaryOpacity
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+              }
+            }
+          }
+
+          Column {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            spacing: Style.space(6)
+
+            Text {
+              visible: text !== ""
+              width: parent.width
+              horizontalAlignment: Text.AlignHCenter
+              wrapMode: Text.Wrap
+              textFormat: Text.PlainText
+              text: root.settingsStatus
+              color: Color.menu.text
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.body
+            }
+            Text {
+              width: parent.width
+              horizontalAlignment: Text.AlignHCenter
+              textFormat: Text.PlainText
+              text: SettingsForm.footer(root.settingsFocus, root.settingsChanged)
+              color: Color.menu.text
+              opacity: root.hintOpacity
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+          }
         }
       }
     }

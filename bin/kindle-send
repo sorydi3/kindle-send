@@ -879,9 +879,10 @@ def warnings(values):
 
 def save_form():
     """`kindle-send save`: check the form's values and write them to shell.json (spec §3, §9).
-    Prints {"saved": bool, "problems": [{"field", "message", "blocking"}]}; field "" is the whole form."""
+    Reads one JSON line on stdin. Prints {"saved": bool, "problems": [{"field", "message", "blocking"}]};
+    field "" is about the whole form."""
     try:
-        raw = json.loads(sys.stdin.read())
+        raw = json.loads(sys.stdin.readline())  # one line, so the Picker needs no EOF
     except ValueError:
         raw = None
     if not isinstance(raw, dict):

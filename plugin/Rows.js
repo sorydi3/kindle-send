@@ -84,13 +84,16 @@ function footer(books, marked, overrides, highlighted, labels) {
 // Esc clears a search before it closes the Picker.
 function escHint(filterText) { return filterText ? "Esc  Clear search" : "Esc  Close" }
 
+// Every Book list footer ends with these: Ctrl+, opens Settings (spec §4, §9).
+function closingHints(filterText) { return "Ctrl+,  Settings      " + escHint(filterText) }
+
 // The key hints for the highlighted row. enter: footer().enter.
 function hints(current, enter, filterText) {
   const keys = []
   if (current && current.waiting) keys.push("Delete  Cancel waiting")
   else if (current) keys.push("Space  Mark", "Tab  Route")
   if (enter) keys.push("Enter  " + enter)
-  keys.push(escHint(filterText))
+  keys.push(closingHints(filterText))
   return keys.join("      ")
 }
 
@@ -102,10 +105,14 @@ const PLAN_HINT = "kindle-send plan --folders"
 // A waiting line keeps the list up: it is where Delete cancels it.
 // enter: what Enter does here: "setup", "retry", "close" or "none".
 // typing: whether typing still edits the search.
+// settings: whether Ctrl+, opens Settings here (not without kindle-send).
 function screen(state) {
+  const settings = state.failure !== "missing"
   function make(message, detail, enter, enterLabel, typing) {
-    const keys = (enterLabel ? "Enter  " + enterLabel + "      " : "") + escHint(state.filterText)
-    return { message: message, detail: detail, enter: enter, keys: keys, typing: typing === true }
+    const keys = (enterLabel ? "Enter  " + enterLabel + "      " : "")
+      + (settings ? closingHints(state.filterText) : escHint(state.filterText))
+    return { message: message, detail: detail, enter: enter, keys: keys, typing: typing === true,
+             settings: settings }
   }
   if (state.loading) {
     const what = state.payloadCount > 0 ? "Checking " + plural(state.payloadCount, "file") + "…" : "Looking for Books…"
