@@ -35,7 +35,7 @@ def test_settings_prints_the_current_values_with_folders_as_written(ks, home, ke
     out = settings(ks, capsys)
 
     assert out == {"kindleAddress": KINDLE, "senderAddress": SENDER,
-                   "bookFolders": ["~/Novels", "/srv/books"], "appPasswordStored": True}
+                   "bookFolders": ["~/Novels", "/srv/books"], "appPasswordStored": True, "missing": []}
 
 
 def test_settings_never_prints_the_password(ks, home, keyring, capsys):
@@ -51,7 +51,14 @@ def test_settings_with_nothing_set_gives_blanks_and_the_default_folders(ks, home
     out = settings(ks, capsys)
 
     assert out == {"kindleAddress": "", "senderAddress": "",
-                   "bookFolders": ["~/Books", "~/Downloads"], "appPasswordStored": False}
+                   "bookFolders": ["~/Books", "~/Downloads"], "appPasswordStored": False,
+                   "missing": ["kindleAddress", "senderAddress", "appPassword"]}
+
+
+def test_settings_names_a_missing_app_password_once_the_addresses_are_set(ks, home, capsys):
+    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+
+    assert settings(ks, capsys)["missing"] == ["appPassword"]
 
 
 def save(ks, capsys, monkeypatch, **values):
@@ -73,7 +80,15 @@ def folders(home):
     return ["~/Books", "~/Downloads"]
 
 
-def test_save_writes_the_values_and_keeps_every_other_key(ks, home, folders, capsys, monkeypatch):
+@pytest.fixture
+def stored(keyring, smtp):
+    """An app password already in the keyring, which Gmail accepts, so a save isn't
+    blocked for want of one."""
+    keyring.set_password("abcd efgh ijkl mnop")
+    return keyring
+
+
+def test_save_writes_the_values_and_keeps_every_other_key(ks, home, folders, stored, capsys, monkeypatch):
     path = home / ".config" / "omarchy" / "shell.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({
@@ -96,13 +111,13 @@ def test_save_writes_the_values_and_keeps_every_other_key(ks, home, folders, cap
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
-def test_saved_values_are_what_settings_prints_next(ks, home, folders, capsys, monkeypatch):
+def test_saved_values_are_what_settings_prints_next(ks, home, folders, stored, capsys, monkeypatch):
     save(ks, capsys, monkeypatch, kindleAddress=" " + KINDLE + " ", senderAddress=SENDER, bookFolders=folders)
 
     assert settings(ks, capsys)["kindleAddress"] == KINDLE
 
 
-def test_an_emptied_book_folders_field_saves_as_the_defaults(ks, home, folders, capsys, monkeypatch):
+def test_an_emptied_book_folders_field_saves_as_the_defaults(ks, home, folders, stored, capsys, monkeypatch):
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=[" ", ""])
 
     assert out["saved"] is True
@@ -115,20 +130,21 @@ def shell_json(home):
 
 
 @pytest.mark.parametrize("field", ["kindleAddress", "senderAddress"])
-def test_an_empty_address_blocks_saving(ks, home, folders, capsys, monkeypatch, field):
+def test_an_empty_address_blocks_saving(ks, home, folders, stored, capsys, monkeypatch, field):
     values = {"kindleAddress": KINDLE, "senderAddress": SENDER, "bookFolders": folders, field: "  "}
 
     out = save(ks, capsys, monkeypatch, **values)
 
     assert out["saved"] is False
-    assert out["problems"] == [{"field": field, "message": "Needed before Books can be sent.", "blocking": True}]
+    assert out["problems"][0] == {"field": field, "message": "Needed before Books can be sent.", "blocking": True,
+                                  "needed": True}
     assert not shell_json(home).exists()
 
 
 @pytest.mark.parametrize("field", ["kindleAddress", "senderAddress"])
 @pytest.mark.parametrize("typed", ["reader", "reader@", "@kindle.com", "two words@kindle.com", "a@b@kindle.com",
                                    "reader@kindle"])
-def test_something_that_isnt_an_email_address_blocks_saving(ks, home, folders, capsys, monkeypatch, field, typed):
+def test_something_that_isnt_an_email_address_blocks_saving(ks, home, folders, stored, capsys, monkeypatch, field, typed):
     write_shell_json(home, kindleAddress="old@kindle.com", senderAddress="old@gmail.com")
     before = shell_json(home).read_text()
     values = {"kindleAddress": KINDLE, "senderAddress": SENDER, "bookFolders": folders, field: typed}
@@ -140,7 +156,33 @@ def test_something_that_isnt_an_email_address_blocks_saving(ks, home, folders, c
     assert shell_json(home).read_text() == before
 
 
-def test_every_blocking_problem_is_reported_in_form_order(ks, home, folders, capsys, monkeypatch):
+NEEDED = "Needed before Books can be sent."
+
+
+def test_without_an_app_password_typed_or_stored_nothing_is_saved(ks, home, folders, capsys, monkeypatch):
+    out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders)
+
+    assert out == {"saved": False, "problems": [
+        {"field": "appPassword", "message": NEEDED, "blocking": True, "needed": True}]}
+    assert not shell_json(home).exists()
+
+
+def test_every_missing_value_is_marked_needed_so_the_form_can_count_them(ks, home, capsys, monkeypatch):
+    out = save(ks, capsys, monkeypatch, kindleAddress="", senderAddress="", bookFolders=[])
+
+    assert [(p["field"], p.get("needed")) for p in out["problems"]] == [
+        ("kindleAddress", True), ("senderAddress", True), ("appPassword", True)]
+
+
+def test_a_value_that_isnt_an_address_is_not_a_missing_one(ks, home, folders, keyring, capsys, monkeypatch):
+    keyring.set_password(PASSWORD)
+
+    out = save(ks, capsys, monkeypatch, kindleAddress="reader", senderAddress=SENDER, bookFolders=folders)
+
+    assert "needed" not in out["problems"][0]
+
+
+def test_every_blocking_problem_is_reported_in_form_order(ks, home, folders, stored, capsys, monkeypatch):
     out = save(ks, capsys, monkeypatch, kindleAddress="", senderAddress="nope", bookFolders=folders)
 
     assert [(p["field"], p["blocking"]) for p in out["problems"]] == [
@@ -148,7 +190,7 @@ def test_every_blocking_problem_is_reported_in_form_order(ks, home, folders, cap
 
 
 @pytest.mark.parametrize("kindle", ["reader@free.kindle.com", "reader@kindle.cn"])
-def test_a_kindle_address_not_on_kindle_com_saves_with_a_warning(ks, home, folders, capsys, monkeypatch, kindle):
+def test_a_kindle_address_not_on_kindle_com_saves_with_a_warning(ks, home, folders, stored, capsys, monkeypatch, kindle):
     out = save(ks, capsys, monkeypatch, kindleAddress=kindle, senderAddress=SENDER, bookFolders=folders)
 
     assert out == {"saved": True, "problems": [
@@ -156,13 +198,13 @@ def test_a_kindle_address_not_on_kindle_com_saves_with_a_warning(ks, home, folde
     assert entry(home)[1]["kindleAddress"] == kindle
 
 
-def test_a_kindle_com_address_in_capitals_needs_no_warning(ks, home, folders, capsys, monkeypatch):
+def test_a_kindle_com_address_in_capitals_needs_no_warning(ks, home, folders, stored, capsys, monkeypatch):
     out = save(ks, capsys, monkeypatch, kindleAddress="Reader@Kindle.com", senderAddress=SENDER, bookFolders=folders)
 
     assert out == {"saved": True, "problems": []}
 
 
-def test_a_sender_not_on_gmail_com_saves_with_a_warning(ks, home, folders, capsys, monkeypatch):
+def test_a_sender_not_on_gmail_com_saves_with_a_warning(ks, home, folders, stored, capsys, monkeypatch):
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress="me@company.example",
                bookFolders=folders)
 
@@ -171,7 +213,7 @@ def test_a_sender_not_on_gmail_com_saves_with_a_warning(ks, home, folders, capsy
     assert entry(home)[1]["senderAddress"] == "me@company.example"
 
 
-def test_a_book_folder_that_doesnt_exist_saves_with_a_warning_and_isnt_created(ks, home, folders, capsys,
+def test_a_book_folder_that_doesnt_exist_saves_with_a_warning_and_isnt_created(ks, home, folders, stored, capsys,
                                                                                 monkeypatch):
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER,
                bookFolders=["~/Books", "~/Bokos"])
@@ -182,7 +224,7 @@ def test_a_book_folder_that_doesnt_exist_saves_with_a_warning_and_isnt_created(k
     assert not (home / "Bokos").exists()
 
 
-def test_several_missing_book_folders_share_one_warning(ks, home, folders, capsys, monkeypatch):
+def test_several_missing_book_folders_share_one_warning(ks, home, folders, stored, capsys, monkeypatch):
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER,
                bookFolders=["~/Bokos", "~/Books", "/nowhere"])
 
@@ -190,7 +232,7 @@ def test_several_missing_book_folders_share_one_warning(ks, home, folders, capsy
                                 "message": "~/Bokos and /nowhere don't exist, so the Picker skips them"}]
 
 
-def test_a_file_is_not_a_book_folder(ks, home, folders, capsys, monkeypatch):
+def test_a_file_is_not_a_book_folder(ks, home, folders, stored, capsys, monkeypatch):
     (home / "notes.txt").write_text("")
 
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/notes.txt"])
@@ -204,7 +246,7 @@ def test_warnings_are_not_given_when_saving_is_blocked(ks, home, capsys, monkeyp
                bookFolders=["~/Bokos"])
 
     assert out["saved"] is False
-    assert [p["field"] for p in out["problems"]] == ["senderAddress"]
+    assert [p["field"] for p in out["problems"]] == ["senderAddress", "appPassword"]
 
 
 def test_unreadable_input_saves_nothing(ks, home, capsys, monkeypatch):
@@ -217,7 +259,7 @@ def test_unreadable_input_saves_nothing(ks, home, capsys, monkeypatch):
     assert not shell_json(home).exists()
 
 
-def test_a_shell_json_that_isnt_valid_json_is_left_alone(ks, home, folders, capsys, monkeypatch):
+def test_a_shell_json_that_isnt_valid_json_is_left_alone(ks, home, folders, stored, capsys, monkeypatch):
     shell_json(home).parent.mkdir(parents=True)
     shell_json(home).write_text("{ broken")
 
@@ -341,14 +383,17 @@ def test_a_changed_gmail_address_whose_password_gmail_rejects_saves_nothing(ks, 
     assert shell_json(home).read_text() == before
 
 
-def test_a_changed_gmail_address_with_no_password_for_it_has_nothing_to_check(ks, home, folders, keyring, smtp,
-                                                                              capsys, monkeypatch):
+def test_a_changed_gmail_address_with_no_password_for_it_still_needs_one(ks, home, folders, smtp, capsys,
+                                                                         monkeypatch):
     write_shell_json(home, kindleAddress=KINDLE, senderAddress="old@gmail.com")
+    before = shell_json(home).read_text()
 
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders)
 
-    assert out["saved"] is True
+    assert out["saved"] is False
+    assert [p["field"] for p in out["problems"]] == ["appPassword"]
     assert smtp.instances == []
+    assert shell_json(home).read_text() == before
 
 
 def test_a_keyring_that_stores_nothing_saves_nothing(ks, home, folders, smtp, capsys, monkeypatch):
@@ -369,3 +414,46 @@ def test_a_rejected_password_is_never_echoed_back(ks, home, folders, keyring, sm
     ks.main(["save"])
 
     assert "abcd" not in capsys.readouterr().out
+
+
+# --- The first save (spec §9) ---------------------------------------------------
+
+def test_the_first_save_creates_books(ks, home, keyring, smtp, capsys, monkeypatch):
+    out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Books"],
+               appPassword=PASSWORD)
+
+    assert out == {"saved": True, "problems": []}
+    assert (home / "Books").is_dir()
+
+
+def test_the_first_save_creates_books_even_when_it_isnt_a_book_folder(ks, home, keyring, smtp, capsys,
+                                                                     monkeypatch):
+    (home / "Novels").mkdir()
+
+    save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Novels"],
+         appPassword=PASSWORD)
+
+    assert (home / "Books").is_dir()
+
+
+def test_a_save_once_set_up_never_creates_books(ks, home, stored, capsys, monkeypatch):
+    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Books"])
+
+    out = save(ks, capsys, monkeypatch, kindleAddress="other@kindle.com", senderAddress=SENDER,
+               bookFolders=["~/Books"])
+
+    assert out["saved"] is True
+    assert not (home / "Books").exists()
+
+
+def test_a_blocked_first_save_creates_nothing(ks, home, capsys, monkeypatch):
+    save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Books"])
+
+    assert not (home / "Books").exists()
+
+
+def test_once_saved_nothing_is_missing(ks, home, keyring, smtp, capsys, monkeypatch):
+    save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Books"],
+         appPassword=PASSWORD)
+
+    assert settings(ks, capsys)["missing"] == []

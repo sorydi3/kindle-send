@@ -47,12 +47,13 @@ def test_enter_on_the_waiting_line_sends_nothing():
     assert rows(f"toSend([{book(path='/b/Dune.epub')}], {{}}, {{}}, {waiting})") == []
 
 
-def test_a_plan_that_needs_setup_switches_the_picker_to_setup():
-    """The Picker then shows only "Set up Send to Kindle" (spec §4, §9)."""
+def test_a_plan_that_needs_setup_sends_the_picker_into_settings():
+    """The Picker then opens straight into Settings, titled "Set up Send to Kindle" (spec §4, §9)."""
     parsed = rows("fromPlan([{setupNeeded: true, missing: ['appPassword']},"
                   f" {book(path='/b/Dune.epub')}])")
 
     assert parsed["setupNeeded"] is True
+    assert parsed["missing"] == ["appPassword"]
 
 
 def test_a_plan_without_setup_needed_lists_books():
@@ -184,21 +185,18 @@ def test_a_list_with_books_has_no_screen_of_its_own():
     assert screen() is None
 
 
-def test_setup_says_what_it_needs_and_enter_starts_it():
-    s = screen(setupNeeded=True, books=0, rows=0)
-
-    assert s["message"] == "Set up Send to Kindle"
-    assert s["detail"] == "You'll need your Kindle's email address and a Gmail app password."
-    assert s["keys"] == "Enter  Start setup      Ctrl+,  Settings      Esc  Close"
-    assert s["enter"] == "setup"
+def test_setup_needed_has_no_screen_of_its_own():
+    """Settings cover the list while setup is needed; the old setup screen is gone."""
+    assert screen(setupNeeded=True) is None
 
 
-def test_no_books_in_the_folders_offers_setup_to_change_them():
+def test_no_books_in_the_folders_offers_settings_to_change_them():
     s = screen(books=0, rows=0)
 
     assert s["message"] == "No Books found in ~/Books, ~/Downloads"
     assert s["keys"] == "Enter  Change Book folders      Ctrl+,  Settings      Esc  Close"
-    assert s["enter"] == "setup"
+    assert s["enter"] == "settings"
+    assert s["field"] == "bookFolders"
 
 
 def test_a_failed_listing_names_how_to_see_why_and_can_be_retried():

@@ -159,8 +159,8 @@ def test_editing_a_field_clears_only_its_problem():
 
 
 def test_the_status_line_counts_the_values_that_need_fixing():
-    one = problems(("kindleAddress", "Needed before Books can be sent.", True))
-    two = problems(("kindleAddress", "Needed before Books can be sent.", True),
+    one = problems(("kindleAddress", "That isn't an email address.", True))
+    two = problems(("kindleAddress", "That isn't an email address.", True),
                    ("senderAddress", "That isn't an email address.", True))
 
     assert form(f"status({{saved: false, problems: {one}}})") == "1 value needs fixing"
@@ -370,6 +370,79 @@ def test_browsing_into_the_form_keeps_the_other_unsaved_values_and_marks_an_edit
     assert got["kindleAddress"] == "new@kindle.com"
     assert got["bookFolders"] == "~/Books, ~/Downloads, ~/Papers"
     assert edited is True
+
+
+# --- Setup needed (spec §4, §9) -------------------------------------------------
+
+def test_while_something_is_missing_the_form_is_titled_set_up():
+    assert form("title(['appPassword'])") == "Set up Send to Kindle"
+
+
+def test_once_nothing_is_missing_the_form_is_titled_settings():
+    assert form("title([])") == "Settings"
+
+
+def test_settings_says_what_is_missing():
+    line = json.dumps({"kindleAddress": "", "missing": ["kindleAddress", "appPassword"]})
+
+    assert form(f"missing({line})") == ["kindleAddress", "appPassword"]
+    assert form("missing(null)") == []
+
+
+def flag(key, missing, typed=None):
+    blank = values(kindleAddress="", appPassword="")
+    now = values(**{"kindleAddress": "", "appPassword": "", **(typed or {})})
+    return form(f"flag('{key}', {json.dumps(missing)}, {now}, {blank})")
+
+
+def test_a_missing_value_is_flagged_needed():
+    assert flag("kindleAddress", ["kindleAddress", "appPassword"]) == "· needed"
+    assert flag("appPassword", ["kindleAddress", "appPassword"]) == "· needed"
+
+
+def test_a_value_that_is_set_has_no_flag():
+    assert flag("senderAddress", ["kindleAddress", "appPassword"]) == ""
+
+
+def test_while_setup_is_needed_esc_closes_the_picker():
+    """There is no usable Book list to go back to yet."""
+    assert form("escCloses(['appPassword'])") is True
+    assert form("footer('kindleAddress', false, true)") \
+        == "Tab  Next field      Enter  Save      Ctrl+O  Open link      Esc  Close"
+
+
+def test_while_setup_is_needed_esc_closes_even_after_edits():
+    assert form("footer('bookFolders', true, true)") \
+        == "Tab  Next field      Enter  Save      Ctrl+B  Browse      Esc  Close"
+
+
+def test_once_set_up_esc_goes_back_to_books():
+    assert form("escCloses([])") is False
+    assert form("footer('bookFolders', false, false)").endswith("Esc  Back to Books")
+
+
+def needed(field):
+    return {"field": field, "message": "Needed before Books can be sent.", "blocking": True, "needed": True}
+
+
+def test_saving_with_values_missing_says_how_many_are_still_needed():
+    one = json.dumps([needed("appPassword")])
+    three = json.dumps([needed("kindleAddress"), needed("senderAddress"), needed("appPassword")])
+
+    assert form(f"status({{saved: false, problems: {one}}})") == "1 still needed before Books can be sent."
+    assert form(f"status({{saved: false, problems: {three}}})") == "3 still needed before Books can be sent."
+
+
+def test_missing_values_are_counted_even_beside_one_that_needs_fixing():
+    found = json.dumps([needed("kindleAddress"),
+                        {"field": "senderAddress", "message": "That isn't an email address.", "blocking": True}])
+
+    assert form(f"status({{saved: false, problems: {found}}})") == "1 still needed before Books can be sent."
+
+
+def test_the_flag_clears_as_soon_as_the_field_is_edited():
+    assert flag("kindleAddress", ["kindleAddress"], {"kindleAddress": "r"}) == ""
+    assert flag("appPassword", ["appPassword"], {"appPassword": "a"}) == ""
 
 
 # --- Opening from a failure notification (spec §10, §13) ---------------------
