@@ -30,8 +30,6 @@ Item {
   property int nextSendId: 1
   readonly property bool busy: current !== null
 
-  readonly property var setupCommand: ["omarchy-launch-floating-terminal-with-presentation", "kindle-send", "setup"]
-
   // A fresh notification key (Send ids and notice keys share one counter).
   function newKey() {
     const key = root.nextSendId
@@ -122,8 +120,8 @@ Item {
     if (root.results.length > 0) {
       const s = Feedback.summary(root.results, root.ejectResult)
       // A fully successful summary times out; any failure stays (critical) and,
-      // when setup is the fix, a click opens setup (spec §10).
-      root.notify(send.id, s.headline, s.body, s.urgency, s.setup ? root.setupCommand : [], s.timeout || 0)
+      // when a Setting is the fix, a click opens Settings on it (spec §10, §13).
+      root.notify(send.id, s.headline, s.body, s.urgency, Feedback.settingsArgv(root.pluginId, s.fix), s.timeout || 0)
     }
     root.startNext()
   }
@@ -221,7 +219,7 @@ Item {
     if (root.heldResults.length > 0) {
       const s = Feedback.summary(root.heldResults, null)
       root.notify(root.holdKey || root.newKey(), s.headline, s.body, s.urgency,
-                  s.setup ? root.setupCommand : [], s.timeout || 0)
+                  Feedback.settingsArgv(root.pluginId, s.fix), s.timeout || 0)
     }
     root.holdKey = 0
     root.heldResults = []

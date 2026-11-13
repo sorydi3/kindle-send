@@ -20,7 +20,7 @@ def test_one_book_copied_and_ejected_says_safe_to_unplug():
     s = call("summary", [{"name": "Atlas.pdf", "result": "copied"}], EJECTED)
 
     assert s == {"headline": "Atlas.pdf", "body": "Copied to Kindle. Kindle ejected, safe to unplug.",
-                 "urgency": "normal", "setup": False, "timeout": 5000}
+                 "urgency": "normal", "fix": None, "timeout": 5000}
 
 
 def test_eject_failure_asks_the_user_to_eject_and_stays_on_screen():
@@ -111,7 +111,9 @@ def test_after_a_book_the_send_goes_on_ejects_or_finishes(books, index, results,
 # --- Failures (spec §10, §13) ------------------------------------------------
 
 PASSWORD = {"name": "Dune.epub", "result": "failed", "reason": "Gmail rejected the app password.",
-            "fixBySetup": True}
+            "fixBySetup": True, "field": "appPassword"}
+MISSING = {"name": "Emma.epub", "result": "failed", "reason": "Not set up: kindleAddress missing.",
+           "fixBySetup": True, "field": "kindleAddress"}
 TOO_BIG = {"name": "Atlas.pdf", "result": "failed", "reason": "Too big for email (60 MB). Switch it to USB."}
 
 
@@ -129,9 +131,28 @@ def test_every_failed_book_is_listed_with_its_reason_and_stays_on_screen():
     assert s["urgency"] == "critical"
 
 
-def test_a_failure_setup_fixes_makes_a_click_open_setup():
-    assert call("summary", [PASSWORD], None)["setup"] is True
-    assert call("summary", [TOO_BIG, PASSWORD], None)["setup"] is True
+def test_a_failure_a_setting_fixes_names_that_field_and_its_reason():
+    assert call("summary", [PASSWORD], None)["fix"] == {
+        "field": "appPassword", "reason": "Gmail rejected the app password."}
+    assert call("summary", [TOO_BIG, PASSWORD], None)["fix"]["field"] == "appPassword"
+
+
+def test_with_several_fixable_failures_the_first_one_is_the_fix():
+    assert call("summary", [MISSING, PASSWORD], None)["fix"]["field"] == "kindleAddress"
+
+
+def test_a_click_on_a_fixable_failure_summons_the_picker_into_settings_on_the_field():
+    fix = {"field": "appPassword", "reason": "Gmail rejected the app password."}
+
+    argv = call("settingsArgv", "sorydi3.kindle-send", fix)
+
+    assert argv[:4] == ["omarchy-shell", "shell", "summon", "sorydi3.kindle-send"]
+    assert json.loads(argv[4]) == {"settings": "appPassword", "problem": "Gmail rejected the app password."}
+    assert len(argv) == 5
+
+
+def test_no_fix_means_no_click():
+    assert call("settingsArgv", "sorydi3.kindle-send", None) == []
 
 
 def test_a_failure_setup_cannot_fix_does_not_open_setup():
@@ -139,7 +160,7 @@ def test_a_failure_setup_cannot_fix_does_not_open_setup():
 
     assert s["headline"] == "Couldn't send Atlas.pdf"
     assert s["body"] == "Too big for email (60 MB). Switch it to USB."
-    assert s["setup"] is False
+    assert s["fix"] is None
 
 
 def test_a_successful_send_times_out_after_a_few_seconds():
@@ -153,7 +174,7 @@ def test_a_failed_send_has_no_timeout():
     assert "timeout" not in call("summary", [TOO_BIG], None)
 
 
-SETUP = ["omarchy-launch-floating-terminal-with-presentation", "kindle-send", "setup"]
+SETUP = ["omarchy-shell", "shell", "summon", "sorydi3.kindle-send", '{"settings":"appPassword"}']
 POST = ["omarchy-notification-send", "--app-name", "Send to Kindle", "-g", "\uF02D"]
 
 
@@ -164,10 +185,19 @@ def test_first_post_asks_for_the_id_and_a_done_summary_times_out():
                                                   "Dune.epub", "Sent to Amazon."]
 
 
-def test_a_failure_that_setup_fixes_replaces_in_place_and_opens_setup_on_click():
+def test_a_failure_a_setting_fixes_replaces_in_place_and_opens_settings_on_click():
     item = {"headline": "Couldn't send Dune.epub", "body": "No app password stored.",
             "urgency": "critical", "exec": SETUP}
 
     assert call("notifyArgv", item, 7) == POST + ["-u", "critical", "-r", "7",
                                                   "Couldn't send Dune.epub", "No app password stored.",
                                                   "--exec"] + SETUP
+
+
+def test_a_send_result_keeps_the_field_at_fault():
+    line = {"result": "failed", "reason": "No app password stored.", "fixBySetup": True, "field": "appPassword"}
+
+    r = call("resultFor", {"name": "Dune.epub"}, [{"stage": "sending"}, line], 0, True)
+
+    assert r == {"name": "Dune.epub", "result": "failed", "reason": "No app password stored.",
+                 "fixBySetup": True, "field": "appPassword"}

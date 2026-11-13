@@ -98,15 +98,17 @@ def build_message(book, sender, kindle):
 class SendFailed(Exception):
     """A per-Book failure, reported as a result line rather than a crash."""
 
-    def __init__(self, reason, fix_by_setup=False):
+    def __init__(self, reason, field=""):
+        """field: the Setting that fixes it (kindleAddress, senderAddress, appPassword), if any."""
         super().__init__(reason)
         self.reason = reason
-        self.fix_by_setup = fix_by_setup
+        self.field = field
 
     def result(self):
         line = {"result": "failed", "reason": self.reason}
-        if self.fix_by_setup:
+        if self.field:
             line["fixBySetup"] = True
+            line["field"] = self.field
         return line
 
 
@@ -206,11 +208,11 @@ def send_email(book):
     settings = load_settings()
     missing = missing_settings(settings)
     if missing:
-        raise SendFailed(f"Not set up: {', '.join(missing)} missing.", fix_by_setup=True)
+        raise SendFailed(f"Not set up: {', '.join(missing)} missing.", field=missing[0])
     sender, kindle = settings["senderAddress"], settings["kindleAddress"]
     password = lookup_password(sender)
     if not password:
-        raise SendFailed("No app password stored.", fix_by_setup=True)
+        raise SendFailed("No app password stored.", field="appPassword")
     emit({"stage": "sending"})
     msg = build_message(book, sender, kindle)
     too_big = SendFailed(f"Too big for email ({megabytes(book.stat().st_size)} MB). Switch it to USB.")
@@ -225,7 +227,7 @@ def send_email(book):
                     raise too_big
             server.send_message(msg)
     except smtplib.SMTPAuthenticationError:
-        raise SendFailed("Gmail rejected the app password.", fix_by_setup=True) from None
+        raise SendFailed("Gmail rejected the app password.", field="appPassword") from None
     except smtplib.SMTPResponseException as error:
         if error.smtp_code == 552:
             raise too_big from None

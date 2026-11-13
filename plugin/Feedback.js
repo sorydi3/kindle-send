@@ -55,10 +55,11 @@ function stageAt(books, index, stage) {
 // popup at least 8 s anyway; a critical one stays until dismissed (spec §10).
 const DONE_TIMEOUT = 5000
 
-// results: [{ name, result: "sent"|"copied"|"failed", reason?, fixBySetup? }]
+// results: [{ name, result: "sent"|"copied"|"failed", reason?, fixBySetup?, field? }]
 // eject: the `kindle-send eject` line after the last USB Book, or null if there was none.
-// Returns { headline, body, urgency, setup, timeout? } where setup means a click
-// should open setup, and timeout (ms) is set only when the summary should go away.
+// Returns { headline, body, urgency, fix, timeout? } where fix ({ field, reason },
+// the first failure a Setting fixes, or null) is what a click opens Settings on,
+// and timeout (ms) is set only when the summary should go away.
 function summary(results, eject) {
   const s = summaryText(results, eject)
   if (s.urgency === "normal") s.timeout = DONE_TIMEOUT
@@ -67,7 +68,8 @@ function summary(results, eject) {
 
 function summaryText(results, eject) {
   const failed = results.filter(function(r) { return r.result === "failed" })
-  const setup = failed.some(function(r) { return r.fixBySetup === true })
+  const fixable = failed.filter(function(r) { return r.fixBySetup === true && r.field })
+  const fix = fixable.length > 0 ? { field: fixable[0].field, reason: fixable[0].reason || "" } : null
   const ejectLine = eject ? (eject.ejected === true ? EJECTED : EJECT_PLEASE) : ""
   // A Kindle still mounted needs the user, so that summary stays on screen too.
   const urgency = failed.length > 0 || (eject && eject.ejected !== true) ? "critical" : "normal"
@@ -76,9 +78,9 @@ function summaryText(results, eject) {
 
   if (results.length === 1) {
     const only = results[0]
-    if (only.result === "failed") return { headline: "Couldn't send " + only.name, body: only.reason, urgency: urgency, setup: setup }
+    if (only.result === "failed") return { headline: "Couldn't send " + only.name, body: only.reason, urgency: urgency, fix: fix }
     const tail = only.result === "copied" ? ejectLine : ARRIVES
-    return { headline: only.name, body: done(only) + (tail ? " " + tail : ""), urgency: urgency, setup: setup }
+    return { headline: only.name, body: done(only) + (tail ? " " + tail : ""), urgency: urgency, fix: fix }
   }
 
   const lines = results.map(function(r) {
@@ -89,7 +91,7 @@ function summaryText(results, eject) {
   const headline = failed.length === 0 ? "Sent " + plural(results.length, "Book")
     : failed.length === results.length ? "Couldn't send " + plural(results.length, "Book")
     : plural(failed.length, "Book") + " of " + results.length + " failed"
-  return { headline: headline, body: lines.join("\n"), urgency: urgency, setup: setup }
+  return { headline: headline, body: lines.join("\n"), urgency: urgency, fix: fix }
 }
 
 // The result line of one `kindle-send send` run, or a failure when there was none.
@@ -99,12 +101,22 @@ function resultFor(book, lines, exitCode, started) {
       const r = { name: book.name, result: lines[i].result }
       if (lines[i].reason) r.reason = lines[i].reason
       if (lines[i].fixBySetup) r.fixBySetup = true
+      if (lines[i].field) r.field = String(lines[i].field)
       return r
     }
   }
   const reason = !started ? "kindle-send is not installed. Run scripts/install.sh."
     : "kindle-send stopped without a result (exit " + exitCode + ")."
   return { name: book.name, result: "failed", reason: reason }
+}
+
+// What a click on a failure a Setting fixes runs: the Picker summoned straight
+// into Settings on that field, with the reason to show there (spec §10, §13).
+// [] when there is no such failure.
+function settingsArgv(pluginId, fix) {
+  if (!fix || !fix.field) return []
+  return ["omarchy-shell", "shell", "summon", pluginId,
+          JSON.stringify({ settings: fix.field, problem: fix.reason || "" })]
 }
 
 // The omarchy-notification-send argv for one post. replaceId 0 posts a new
