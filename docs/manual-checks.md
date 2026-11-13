@@ -210,4 +210,12 @@ Sends one real email to your own Kindle. Start from section 16's state just befo
 - [ ] The notification is headed "Kindle Send Test" and reads "Sent to Amazon. Not on your Kindle in a few minutes? Check that <Gmail> is on Amazon's approved list and the Kindle address is right." Clicking it (before it goes) opens the Picker in Settings.
 - [ ] "Kindle Send Test" arrives on the Kindle. `kindle-send history` lists "Kindle Send Test.epub" by Email, sent.
 - [ ] With section 8's wrong app password stored, `Ctrl+T`: the status line says "Couldn't send the test Book.", "Gmail rejected the app password." replaces the app password's help line and the cursor is there. The critical notification's click opens Settings on that field.
-- [ ] With the network off, `Ctrl+T`: the status line says "Couldn't send the test Book." followed by the reason.
+- [ ] With the network off, `Ctrl+T`: the status line says "Couldn't send the test Book." followed by the reason. Clicking its critical notification does nothing: no Setting fixes it.
+
+## 19. Settings in a light and a dark theme (PRODUCT.md look)
+
+Settings draw with the Omarchy theme's tokens only, so they follow the theme. Switch themes from the Omarchy menu (Style → Theme); no restart is needed.
+
+- [ ] With a dark theme (e.g. Tokyo Night), open Settings with `Ctrl+,`: the title, labels, field text, placeholders, help lines, the status line and the footer are all readable on the card; the focused field and the "· needed" flag stand out in the theme's accent color.
+- [ ] Type a wrong value and save, so a problem replaces a help line: it reads in the accent color, clearly apart from the help lines.
+- [ ] Switch to a light theme (e.g. Catppuccin Latte) and repeat: nothing keeps a dark-theme color (no dark text boxes, no white-on-white text), and the same text is readable.
