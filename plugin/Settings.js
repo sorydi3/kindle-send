@@ -170,7 +170,7 @@ function status(result) {
   // A missing value is what setup is waiting for, so it's named before any typo.
   const stillNeeded = problems.filter(function(p) { return p.needed === true }).length
   if (!result.saved && stillNeeded > 0) return stillNeeded + " still needed before Books can be sent."
-  if (!result.saved) return plural(fieldsWith, "value needs", "values need") + " fixing"
+  if (!result.saved) return plural(fieldsWith, "value needs", "values need") + " fixing."
   const saved = fieldsWith > 0 ? "Saved. " + plural(fieldsWith, "value", "values") + " to check below." : "Saved."
   // The save that completed setup suggests the test send (spec §9).
   return result.firstSave === true ? saved + " Ctrl+T sends a test Book to check it all works." : saved

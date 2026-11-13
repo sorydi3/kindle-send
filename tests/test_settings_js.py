@@ -125,10 +125,10 @@ def problems(*items):
 
 def test_problems_are_shown_per_field():
     shown = form("byField(" + problems(("senderAddress", "That isn't an email address.", True),
-                                       ("bookFolders", "~/Bokos doesn't exist, so the Picker skips it", False)) + ")")
+                                       ("bookFolders", "~/Bokos doesn't exist, so the Picker skips it.", False)) + ")")
 
     assert shown == {"senderAddress": "That isn't an email address.",
-                     "bookFolders": "~/Bokos doesn't exist, so the Picker skips it"}
+                     "bookFolders": "~/Bokos doesn't exist, so the Picker skips it."}
 
 
 def test_a_problem_replaces_the_help_line():
@@ -162,8 +162,8 @@ def test_the_status_line_counts_the_values_that_need_fixing():
     two = problems(("kindleAddress", "That isn't an email address.", True),
                    ("senderAddress", "That isn't an email address.", True))
 
-    assert form(f"status({{saved: false, problems: {one}}})") == "1 value needs fixing"
-    assert form(f"status({{saved: false, problems: {two}}})") == "2 values need fixing"
+    assert form(f"status({{saved: false, problems: {one}}})") == "1 value needs fixing."
+    assert form(f"status({{saved: false, problems: {two}}})") == "2 values need fixing."
 
 
 def test_a_problem_with_the_whole_form_is_the_status_line():
@@ -174,7 +174,7 @@ def test_a_problem_with_the_whole_form_is_the_status_line():
 
 
 def test_saved_says_so_and_counts_the_warnings():
-    found = problems(("kindleAddress", "Kindle addresses usually end in @kindle.com", False))
+    found = problems(("kindleAddress", "Kindle addresses usually end in @kindle.com.", False))
 
     assert form("status({saved: true, problems: []})") == "Saved."
     assert form(f"status({{saved: true, problems: {found}}})") == "Saved. 1 value to check below."
@@ -260,14 +260,14 @@ def test_nothing_is_launched_for_a_field_without_a_link():
 def test_reopening_after_stepping_aside_returns_to_settings_with_unsaved_values():
     typed = values(kindleAddress="new@kindle.com")
     open_form = ("{values: " + typed + ", baseline: " + values() + ", focus: 'kindleAddress',"
-                 " problems: {senderAddress: 'Make sure this is a Google account'}, status: 'Saved.'}")
+                 " problems: {senderAddress: 'Make sure this is a Google account.'}, status: 'Saved.'}")
 
     back = form(f"reopened(stepAside({open_form}))")
 
     assert back["values"]["kindleAddress"] == "new@kindle.com"
     assert back["baseline"]["kindleAddress"] == KINDLE
     assert back["focus"] == "kindleAddress"
-    assert back["problems"] == {"senderAddress": "Make sure this is a Google account"}
+    assert back["problems"] == {"senderAddress": "Make sure this is a Google account."}
     assert back["status"] == "Saved."
     assert form(f"(function(b) {{ return changed(b.values, b.baseline) }})(reopened(stepAside({open_form})))") is True
 
@@ -540,7 +540,7 @@ def test_the_first_save_suggests_the_test_send():
 
 
 def test_a_first_save_with_warnings_names_them_before_the_suggestion():
-    found = json.dumps([{"field": "kindleAddress", "message": "Kindle addresses usually end in @kindle.com",
+    found = json.dumps([{"field": "kindleAddress", "message": "Kindle addresses usually end in @kindle.com.",
                          "blocking": False}])
 
     assert form(f"status({{saved: true, firstSave: true, problems: {found}}})") \

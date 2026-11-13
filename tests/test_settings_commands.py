@@ -194,7 +194,7 @@ def test_a_kindle_address_not_on_kindle_com_saves_with_a_warning(ks, home, folde
     out = save(ks, capsys, monkeypatch, kindleAddress=kindle, senderAddress=SENDER, bookFolders=folders)
 
     assert out == {"saved": True, "firstSave": True, "problems": [
-        {"field": "kindleAddress", "message": "Kindle addresses usually end in @kindle.com", "blocking": False}]}
+        {"field": "kindleAddress", "message": "Kindle addresses usually end in @kindle.com.", "blocking": False}]}
     assert entry(home)[1]["kindleAddress"] == kindle
 
 
@@ -209,7 +209,7 @@ def test_a_sender_not_on_gmail_com_saves_with_a_warning(ks, home, folders, store
                bookFolders=folders)
 
     assert out == {"saved": True, "firstSave": True, "problems": [
-        {"field": "senderAddress", "message": "Make sure this is a Google account", "blocking": False}]}
+        {"field": "senderAddress", "message": "Make sure this is a Google account.", "blocking": False}]}
     assert entry(home)[1]["senderAddress"] == "me@company.example"
 
 
@@ -219,7 +219,7 @@ def test_a_book_folder_that_doesnt_exist_saves_with_a_warning_and_isnt_created(k
                bookFolders=["~/Books", "~/Bokos"])
 
     assert out == {"saved": True, "firstSave": True, "problems": [
-        {"field": "bookFolders", "message": "~/Bokos doesn't exist, so the Picker skips it", "blocking": False}]}
+        {"field": "bookFolders", "message": "~/Bokos doesn't exist, so the Picker skips it.", "blocking": False}]}
     assert entry(home)[1]["bookFolders"] == ["~/Books", "~/Bokos"]
     assert not (home / "Bokos").exists()
 
@@ -229,7 +229,7 @@ def test_several_missing_book_folders_share_one_warning(ks, home, folders, store
                bookFolders=["~/Bokos", "~/Books", "/nowhere"])
 
     assert out["problems"] == [{"field": "bookFolders", "blocking": False,
-                                "message": "~/Bokos and /nowhere don't exist, so the Picker skips them"}]
+                                "message": "~/Bokos and /nowhere don't exist, so the Picker skips them."}]
 
 
 def test_a_file_is_not_a_book_folder(ks, home, folders, stored, capsys, monkeypatch):
@@ -322,7 +322,7 @@ def test_a_password_gmail_rejects_saves_nothing(ks, home, folders, keyring, smtp
                appPassword=PASSWORD)
 
     assert out == {"saved": False, "problems": [
-        {"field": "appPassword", "message": "Gmail rejected this app password", "blocking": True}]}
+        {"field": "appPassword", "message": "Gmail rejected this app password.", "blocking": True}]}
     assert shell_json(home).read_text() == before
     assert keyring.password() == "old password"
     assert not any(c.startswith("store") for c in keyring.calls())
@@ -378,7 +378,7 @@ def test_a_changed_gmail_address_whose_password_gmail_rejects_saves_nothing(ks, 
     out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders)
 
     assert out["saved"] is False
-    assert out["problems"] == [{"field": "appPassword", "message": "Gmail rejected this app password",
+    assert out["problems"] == [{"field": "appPassword", "message": "Gmail rejected this app password.",
                                 "blocking": True}]
     assert shell_json(home).read_text() == before
 
