@@ -284,3 +284,43 @@ def test_the_kept_form_does_not_follow_later_edits():
 
 def test_an_ordinary_open_starts_in_the_book_list():
     assert form("reopened(null)") is None
+
+
+# --- Opening from a failure notification (spec §10, §13) ---------------------
+
+def summoned(payload):
+    return form(f"summoned({json.dumps(json.dumps(payload))})")
+
+
+def test_a_rejected_password_opens_on_the_password_with_the_problem_shown():
+    opened = summoned({"settings": "appPassword", "problem": "Gmail rejected the app password."})
+
+    assert opened == {"focus": "appPassword", "problems": {"appPassword": "Gmail rejected the app password."}}
+
+
+def test_a_missing_password_opens_on_the_password_saying_so():
+    opened = summoned({"settings": "appPassword", "problem": "No app password stored."})
+
+    assert opened == {"focus": "appPassword", "problems": {"appPassword": "No app password stored."}}
+
+
+def test_a_missing_setting_opens_on_that_field_flagged_as_needed():
+    opened = summoned({"settings": "senderAddress", "problem": "Not set up: senderAddress missing."})
+
+    assert opened == {"focus": "senderAddress", "problems": {"senderAddress": "Needed before Books can be sent."}}
+
+
+def test_the_problem_shows_in_place_of_the_fields_help():
+    opened = summoned({"settings": "kindleAddress", "problem": "Not set up: kindleAddress missing."})
+    expr = f"helpLine(fields()[0], {json.dumps(opened['problems'])})"
+
+    assert form(expr) == {"text": "Needed before Books can be sent.", "problem": True}
+
+
+def test_other_summons_do_not_open_settings_on_a_field():
+    assert summoned({}) is None
+    assert summoned({"files": ["/b/Dune.epub"]}) is None
+    assert summoned({"settings": "maxEmailsPerHour", "problem": "x"}) is None
+    assert summoned({"settings": "bookFolders", "problem": "x"}) is None
+    assert form('summoned("not json")') is None
+    assert form('summoned("")') is None

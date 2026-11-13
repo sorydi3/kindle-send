@@ -92,7 +92,10 @@ Item {
     root.list()
     const back = SettingsForm.reopened(root.settingsAside)
     root.settingsAside = null
-    if (back) root.returnToSettings(back)
+    // A failure notification's click opens Settings on the field at fault (spec §10, §13).
+    const onField = SettingsForm.summoned(payloadJson)
+    if (onField) root.openSettings(onField.focus, onField.problems)
+    else if (back) root.returnToSettings(back)
     else Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -200,17 +203,20 @@ Item {
 
   // --- Settings ---------------------------------------------------------
 
-  function openSettings() {
+  // focusKey and problems (key -> message) are optional: a failure notification
+  // opens on the field at fault with its problem shown.
+  function openSettings(focusKey, problems) {
     if (root.settingsOpen) return
     root.settingsOpen = true
-    root.settingsProblems = {}
+    root.settingsProblems = problems || {}
     root.settingsStatus = ""
     root.settingsSavedSinceOpen = false
     root.settingsPasswordStored = false
     root.settingsValues = SettingsForm.fromSettings(null)
     root.settingsBaseline = root.settingsValues
     root.loadSettings(true)
-    Qt.callLater(function() { root.focusSettingsField(SettingsForm.fields()[0].key) })
+    const focus = focusKey || SettingsForm.fields()[0].key
+    Qt.callLater(function() { root.focusSettingsField(focus) })
   }
 
   // Esc: back to the Book list; unsaved edits are dropped.
