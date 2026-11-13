@@ -49,6 +49,30 @@ Item {
     if (!root.busy) root.startNext()
   }
 
+  // --- Test send (spec §9) --------------------------------------------------
+  // Settings' Ctrl+T: the bundled test Book goes by email like any Send. The
+  // Picker's status line follows testSend: null before one, then
+  // { state: "sending" }, then { state: "sent", at } or { state: "failed", at, reason, field }.
+  property var testSend: null
+
+  // sender: the saved Gmail address, named in the success summary.
+  function sendTest(sender) {
+    if (root.testSend && root.testSend.state === "sending") return
+    root.testSend = { state: "sending" }
+    root.queue = root.queue.concat([{ id: root.newKey(), books: [Feedback.testBook(sender)] }])
+    if (!root.busy) root.startNext()
+  }
+
+  function testDone(book, result) {
+    if (book.test !== true) return
+    const t = { state: result.result === "sent" ? "sent" : "failed", at: Date.now() }
+    if (t.state === "failed") {
+      t.reason = result.reason || ""
+      t.field = result.field || ""
+    }
+    root.testSend = t
+  }
+
   function startNext() {
     if (root.queue.length === 0) { root.current = null; return }
     root.current = root.queue[0]
@@ -110,6 +134,7 @@ Item {
     // A USB Book with no Kindle waits for it instead of failing (spec §7).
     if (Pending.isPending(book, result)) root.waitingNow = root.waitingNow.concat([book])
     else root.results = root.results.concat([result])
+    root.testDone(book, result)
     root.bookIndex += 1
     root.advance()
   }
@@ -121,7 +146,8 @@ Item {
       const s = Feedback.summary(root.results, root.ejectResult)
       // A fully successful summary times out; any failure stays (critical) and,
       // when a Setting is the fix, a click opens Settings on it (spec §10, §13).
-      root.notify(send.id, s.headline, s.body, s.urgency, Feedback.settingsArgv(root.pluginId, s.fix), s.timeout || 0)
+      // A test send's click always opens Settings (spec §9).
+      root.notify(send.id, s.headline, s.body, s.urgency, Feedback.clickArgv(root.pluginId, s), s.timeout || 0)
     }
     root.startNext()
   }
@@ -162,7 +188,7 @@ Item {
     function runBook(book) {
       lines = []
       didStart = false
-      command = ["kindle-send", "send", "--route", book.route, book.path]
+      command = Feedback.sendArgv(book)
       running = true
     }
     stdout: SplitParser {
@@ -219,7 +245,7 @@ Item {
     if (root.heldResults.length > 0) {
       const s = Feedback.summary(root.heldResults, null)
       root.notify(root.holdKey || root.newKey(), s.headline, s.body, s.urgency,
-                  Feedback.settingsArgv(root.pluginId, s.fix), s.timeout || 0)
+                  Feedback.clickArgv(root.pluginId, s), s.timeout || 0)
     }
     root.holdKey = 0
     root.heldResults = []
@@ -237,7 +263,9 @@ Item {
   // The email being sent stays first in `held` until it is done.
   function heldBookDone(exitCode) {
     const book = root.held[0]
-    root.heldResults = root.heldResults.concat([Feedback.resultFor(book, heldSender.lines, exitCode, heldSender.didStart)])
+    const result = Feedback.resultFor(book, heldSender.lines, exitCode, heldSender.didStart)
+    root.heldResults = root.heldResults.concat([result])
+    root.testDone(book, result)
     root.held = root.held.slice(1)
     if (root.holdKey > 0 && root.held.length > 0) root.showHold()
     root.heldNext()
