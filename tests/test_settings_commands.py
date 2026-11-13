@@ -5,6 +5,7 @@ and stdin replaced by the JSON the Picker would write.
 """
 import io
 import json
+import smtplib
 import stat
 
 import pytest
@@ -226,3 +227,145 @@ def test_a_shell_json_that_isnt_valid_json_is_left_alone(ks, home, folders, caps
     assert out["problems"] == [{"field": "", "blocking": True,
                                 "message": f"{shell_json(home)} isn't valid JSON, so it wasn't changed."}]
     assert shell_json(home).read_text() == "{ broken"
+
+
+# --- The app password (spec §9, ADR 0001) ------------------------------------
+
+PASSWORD = "abcd efgh ijkl mnop"
+
+
+def test_a_typed_app_password_is_stored_in_the_keyring_under_the_gmail_address(ks, home, folders, keyring, smtp,
+                                                                                capsys, monkeypatch):
+    out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders,
+               appPassword=PASSWORD)
+
+    assert out == {"saved": True, "problems": []}
+    assert keyring.password() == PASSWORD
+    stores = [c for c in keyring.calls() if c.startswith("store")]
+    assert len(stores) == 1 and stores[0].endswith("service kindle-send user " + SENDER)
+    assert settings(ks, capsys)["appPasswordStored"] is True
+
+
+def test_the_app_password_never_goes_on_a_command_line_or_into_shell_json(ks, home, folders, keyring, smtp,
+                                                                          capsys, monkeypatch):
+    save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders,
+         appPassword=PASSWORD)
+
+    assert keyring.calls() and not any("abcd" in c for c in keyring.calls())
+    assert "abcd" not in shell_json(home).read_text()
+
+
+def test_a_typed_app_password_is_checked_by_signing_in_to_gmail_without_sending(ks, home, folders, keyring, smtp,
+                                                                                capsys, monkeypatch):
+    save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders,
+         appPassword=PASSWORD)
+
+    [server] = smtp.instances
+    assert (server.host, server.port) == ("smtp.gmail.com", 465)
+    assert server.logins == [(SENDER, PASSWORD)]
+    assert server.sent == []
+
+
+def rejected(smtp):
+    smtp.login_error = smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted.")
+
+
+def test_a_password_gmail_rejects_saves_nothing(ks, home, folders, keyring, smtp, capsys, monkeypatch):
+    write_shell_json(home, kindleAddress="old@kindle.com", senderAddress=SENDER)
+    before = shell_json(home).read_text()
+    keyring.set_password("old password")
+    rejected(smtp)
+
+    out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders,
+               appPassword=PASSWORD)
+
+    assert out == {"saved": False, "problems": [
+        {"field": "appPassword", "message": "Gmail rejected this app password", "blocking": True}]}
+    assert shell_json(home).read_text() == before
+    assert keyring.password() == "old password"
+    assert not any(c.startswith("store") for c in keyring.calls())
+
+
+@pytest.mark.parametrize("error", [OSError("[Errno 101] Network is unreachable"), TimeoutError("timed out"),
+                                   smtplib.SMTPServerDisconnected("Connection unexpectedly closed")])
+def test_when_gmail_cant_be_reached_the_password_is_saved_anyway_with_a_warning(ks, home, folders, keyring, smtp,
+                                                                                capsys, monkeypatch, error):
+    smtp.connect_error = error
+
+    out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders,
+               appPassword=PASSWORD)
+
+    assert out == {"saved": True, "problems": [
+        {"field": "appPassword", "message": "Couldn't reach Gmail to check the password. Saved anyway.",
+         "blocking": False}]}
+    assert keyring.password() == PASSWORD
+    assert entry(home)[1]["senderAddress"] == SENDER
+
+
+def test_unchanged_address_and_password_skip_the_check(ks, home, folders, keyring, smtp, capsys, monkeypatch):
+    write_shell_json(home, kindleAddress="old@kindle.com", senderAddress=SENDER)
+    keyring.set_password(PASSWORD)
+
+    out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=" " + SENDER, bookFolders=folders)
+
+    assert out == {"saved": True, "problems": []}
+    assert smtp.instances == []
+    assert not any(c.startswith("store") for c in keyring.calls())
+
+
+def test_a_changed_gmail_address_checks_the_password_stored_for_it(ks, home, folders, keyring, smtp, capsys,
+                                                                   monkeypatch):
+    """The fake keyring holds one password whatever the user, so it stands for the new address's."""
+    write_shell_json(home, kindleAddress=KINDLE, senderAddress="old@gmail.com")
+    keyring.set_password(PASSWORD)
+
+    out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders)
+
+    assert out == {"saved": True, "problems": []}
+    assert smtp.instances[0].logins == [(SENDER, PASSWORD)]
+    assert "lookup service kindle-send user " + SENDER in keyring.calls()
+
+
+def test_a_changed_gmail_address_whose_password_gmail_rejects_saves_nothing(ks, home, folders, keyring, smtp,
+                                                                            capsys, monkeypatch):
+    write_shell_json(home, kindleAddress=KINDLE, senderAddress="old@gmail.com")
+    before = shell_json(home).read_text()
+    keyring.set_password(PASSWORD)
+    rejected(smtp)
+
+    out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders)
+
+    assert out["saved"] is False
+    assert out["problems"] == [{"field": "appPassword", "message": "Gmail rejected this app password",
+                                "blocking": True}]
+    assert shell_json(home).read_text() == before
+
+
+def test_a_changed_gmail_address_with_no_password_for_it_has_nothing_to_check(ks, home, folders, keyring, smtp,
+                                                                              capsys, monkeypatch):
+    write_shell_json(home, kindleAddress=KINDLE, senderAddress="old@gmail.com")
+
+    out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders)
+
+    assert out["saved"] is True
+    assert smtp.instances == []
+
+
+def test_a_keyring_that_stores_nothing_saves_nothing(ks, home, folders, smtp, capsys, monkeypatch):
+    """No `keyring` fixture: the guard's `secret-tool` fails every call."""
+    out = save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=folders,
+               appPassword=PASSWORD)
+
+    assert out == {"saved": False, "problems": [
+        {"field": "appPassword", "message": "Couldn't store the app password in the keyring.", "blocking": True}]}
+    assert not shell_json(home).exists()
+
+
+def test_a_rejected_password_is_never_echoed_back(ks, home, folders, keyring, smtp, capsys, monkeypatch):
+    smtp.login_error = smtplib.SMTPAuthenticationError(535, PASSWORD.encode())
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(
+        {"kindleAddress": KINDLE, "senderAddress": SENDER, "bookFolders": folders, "appPassword": PASSWORD})))
+
+    ks.main(["save"])
+
+    assert "abcd" not in capsys.readouterr().out
