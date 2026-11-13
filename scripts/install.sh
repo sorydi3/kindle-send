@@ -119,10 +119,15 @@ else
   not_added
 fi
 
-echo "==> Omarchy menu: Send to Kindle, and Send to Kindle > Setup"
+echo "==> Omarchy menu: Send to Kindle, and Send to Kindle > Settings"
+edit=add question="Add them to $menu?" done="Added to"
 if [[ -f $menu ]] && grep -qF -- "// >>> kindle-send menu" "$menu"; then
+  # An older install's block (its "Setup" entry ran the terminal wizard) is swapped in place.
+  edit=update question="Replace the older Send to Kindle entries in $menu?" done="Updated in"
+fi
+if [[ $edit == update ]] && python3 -I "${menu_block[@]}" current "$menu"; then
   echo "    Already in $menu."
-elif ask "Add them to $menu?"; then
+elif ask "$question"; then
   mkdir -p "$(dirname "$menu")"
   backup=""
   if [[ -f $menu ]]; then
@@ -130,14 +135,14 @@ elif ask "Add them to $menu?"; then
     cp -p "$menu" "$backup"
   fi
   status=0
-  python3 -I "${menu_block[@]}" add "$menu" || status=$?
+  python3 -I "${menu_block[@]}" "$edit" "$menu" || status=$?
   if ((status == 1)); then
     echo "    Warning: $menu does not parse as it is; left alone." >&2
   elif ! python3 -I "${menu_block[@]}" check "$menu"; then
     if [[ -n $backup ]]; then cp -p "$backup" "$menu"; else rm -f "$menu"; fi
     echo "    Warning: the edit broke $menu, so it was put back as it was." >&2
   else
-    echo "    Added to $menu."
+    echo "    $done $menu."
     if [[ -n $backup ]]; then echo "    Your previous file is kept as $backup."; fi
   fi
 else
@@ -210,11 +215,12 @@ case ":$PATH:" in
 esac
 
 echo "==> Setup"
+echo "    Press SUPER + SHIFT + K to set up Send to Kindle in the Picker"
+echo "    (or Omarchy menu > Send to Kindle > Settings)."
 if [[ -t 0 && -t 1 ]]; then
-  read -r -p "    Run setup now (Kindle address, Gmail, app password)? [Y/n] " answer || answer=n
-  if [[ ${answer,,} != n && ${answer,,} != no ]]; then
+  read -r -p "    Set up in the terminal instead? [y/N] " answer || answer=n
+  if [[ ${answer,,} == y || ${answer,,} == yes ]]; then
     exec "$program" setup
   fi
 fi
-echo "    Run setup when ready: kindle-send setup"
-echo "    (or Omarchy menu > Send to Kindle > Setup)"
+echo "    Or set up in the terminal instead: kindle-send setup"

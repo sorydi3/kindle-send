@@ -145,3 +145,129 @@ def test_books_released_by_a_pending_send_go_while_emails_are_held(tmp_path):
     copied = [i for i, c in enumerate(order) if c == "send --route usb /b/D.pdf"]
     assert len(copied) == 2  # once without a Kindle, once after the plug-in
     assert copied[1] < order.index("eject") < order.index("send --route email /b/E.epub")
+
+
+# --- Failure clicks (spec §10, §13) -------------------------------------------
+
+SUMMON = ["omarchy-shell", "shell", "summon", "sorydi3.kindle-send"]
+
+
+def summary_click(events):
+    """The --exec argv of the Send's last notification (its summary)."""
+    return [e for e in events if e["kind"] == "notify" and e["id"] == 100][-1]["exec"]
+
+
+@pytest.mark.parametrize("reason, field", [
+    ("Not set up: kindleAddress missing.", "kindleAddress"),
+    ("Not set up: senderAddress missing.", "senderAddress"),
+    ("No app password stored.", "appPassword"),
+    ("Gmail rejected the app password.", "appPassword"),
+])
+def test_a_failure_a_setting_fixes_opens_settings_on_that_field_when_clicked(tmp_path, reason, field):
+    failed = {"result": "failed", "reason": reason, "fixBySetup": True, "field": field}
+    events = run_service(tmp_path, f"""
+        FakeWorld.limits = [{FREE}]
+        FakeWorld.sendResults = {{ "/b/B.epub": {json.dumps(failed)} }}
+        s.enqueue([{book("B.epub", "email")}])
+    """)
+
+    click = summary_click(events)
+    assert click[:4] == SUMMON
+    assert json.loads(click[4]) == {"settings": field, "problem": reason}
+    assert len(click) == 5
+
+
+def test_a_failure_no_setting_fixes_has_no_click(tmp_path):
+    failed = {"result": "failed", "reason": "Too big for email (60 MB). Switch it to USB."}
+    events = run_service(tmp_path, f"""
+        FakeWorld.limits = [{FREE}]
+        FakeWorld.sendResults = {{ "/b/B.epub": {json.dumps(failed)} }}
+        s.enqueue([{book("B.epub", "email")}])
+    """)
+
+    assert summary_click(events) == []
+
+
+def test_a_held_email_failing_on_a_setting_opens_settings_on_that_field(tmp_path):
+    failed = {"result": "failed", "reason": "Gmail rejected the app password.", "fixBySetup": True,
+              "field": "appPassword"}
+    events = run_service(tmp_path, f"""
+        FakeWorld.limits = [{CAPPED}, {CAPPED}, {FREE}]
+        FakeWorld.sendResults = {{ "/b/B.epub": {json.dumps(failed)} }}
+        s.enqueue([{book("B.epub", "email")}])
+    """)
+
+    last = [e for e in events if e["kind"] == "notify"][-1]
+    assert last["headline"] == "Couldn't send B.epub"
+    assert last["exec"][:4] == SUMMON
+    assert json.loads(last["exec"][4])["settings"] == "appPassword"
+
+
+def test_no_notification_click_runs_the_terminal_wizard(tmp_path):
+    failed = {"result": "failed", "reason": "No app password stored.", "fixBySetup": True, "field": "appPassword"}
+    events = run_service(tmp_path, f"""
+        FakeWorld.kindle = false
+        FakeWorld.limits = [{CAPPED}, {FREE}]
+        FakeWorld.sendResults = {{ "/b/B.epub": {json.dumps(failed)} }}
+        s.enqueue([{book("B.epub", "email")}, {book("D.pdf", "usb")}])
+    """, plug_at=1000)
+
+    clicks = [e["exec"] for e in events if e["kind"] == "notify" and e["exec"]]
+    assert clicks
+    assert not any("setup" in c or "omarchy-launch-floating-terminal-with-presentation" in c for c in clicks)
+
+
+# --- The test send (spec §9, §10) ---------------------------------------------
+
+TEST_SENT = ("Sent to Amazon. Not on your Kindle in a few minutes? Check that sender@gmail.com is on "
+             "Amazon's approved list and the Kindle address is right.")
+# Logs every change of the Service's test send state, which the Picker's status line follows.
+WATCH_TEST = """
+        s.testSendChanged.connect(function() { FakeWorld.event(Object.assign({ kind: "test" }, s.testSend)) })
+"""
+
+
+def states_of_the_test_send(events):
+    return [{k: v for k, v in e.items() if k not in ("kind", "t", "at")} for e in events if e["kind"] == "test"]
+
+
+def test_a_test_send_runs_send_test_and_its_summary_lists_the_usual_causes(tmp_path):
+    events = run_service(tmp_path, f"""
+        FakeWorld.limits = [{FREE}]
+        {WATCH_TEST}
+        s.sendTest("sender@gmail.com")
+    """)
+
+    assert runs(events) == ["limit", "send --route email --test"]
+    last = [e for e in events if e["kind"] == "notify"][-1]
+    assert (last["urgency"], last["headline"], last["body"]) == ("normal", "Kindle Send Test", TEST_SENT)
+    assert last["exec"] == SUMMON + ['{"settings":""}']
+    assert states_of_the_test_send(events) == [{"state": "sending"}, {"state": "sent"}]
+    assert next(e for e in events if e["kind"] == "test" and e["state"] == "sent")["at"] > 0
+
+
+def test_a_failed_test_send_reports_its_field_and_opens_settings_on_it(tmp_path):
+    failed = {"result": "failed", "reason": "Gmail rejected the app password.", "fixBySetup": True,
+              "field": "appPassword"}
+    events = run_service(tmp_path, f"""
+        FakeWorld.limits = [{FREE}]
+        FakeWorld.sendResults = {{ "--test": {json.dumps(failed)} }}
+        {WATCH_TEST}
+        s.sendTest("sender@gmail.com")
+    """)
+
+    assert states_of_the_test_send(events)[-1] == {"state": "failed", "reason": "Gmail rejected the app password.",
+                                       "field": "appPassword"}
+    last = [e for e in events if e["kind"] == "notify"][-1]
+    assert last["headline"] == "Couldn't send Kindle Send Test"
+    assert json.loads(last["exec"][4]) == {"settings": "appPassword", "problem": "Gmail rejected the app password."}
+
+
+def test_a_second_ctrl_t_while_the_test_book_is_going_is_ignored(tmp_path):
+    events = run_service(tmp_path, f"""
+        FakeWorld.limits = [{FREE}]
+        s.sendTest("sender@gmail.com")
+        s.sendTest("sender@gmail.com")
+    """)
+
+    assert runs(events).count("send --route email --test") == 1

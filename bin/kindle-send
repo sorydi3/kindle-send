@@ -98,15 +98,17 @@ def build_message(book, sender, kindle):
 class SendFailed(Exception):
     """A per-Book failure, reported as a result line rather than a crash."""
 
-    def __init__(self, reason, fix_by_setup=False):
+    def __init__(self, reason, field=""):
+        """field: the Setting that fixes it (kindleAddress, senderAddress, appPassword), if any."""
         super().__init__(reason)
         self.reason = reason
-        self.fix_by_setup = fix_by_setup
+        self.field = field
 
     def result(self):
         line = {"result": "failed", "reason": self.reason}
-        if self.fix_by_setup:
+        if self.field:
             line["fixBySetup"] = True
+            line["field"] = self.field
         return line
 
 
@@ -206,11 +208,11 @@ def send_email(book):
     settings = load_settings()
     missing = missing_settings(settings)
     if missing:
-        raise SendFailed(f"Not set up: {', '.join(missing)} missing.", fix_by_setup=True)
+        raise SendFailed(f"Not set up: {', '.join(missing)} missing.", field=missing[0])
     sender, kindle = settings["senderAddress"], settings["kindleAddress"]
     password = lookup_password(sender)
     if not password:
-        raise SendFailed("No app password stored.", fix_by_setup=True)
+        raise SendFailed("No app password stored.", field="appPassword")
     emit({"stage": "sending"})
     msg = build_message(book, sender, kindle)
     too_big = SendFailed(f"Too big for email ({megabytes(book.stat().st_size)} MB). Switch it to USB.")
@@ -225,7 +227,7 @@ def send_email(book):
                     raise too_big
             server.send_message(msg)
     except smtplib.SMTPAuthenticationError:
-        raise SendFailed("Gmail rejected the app password.", fix_by_setup=True) from None
+        raise SendFailed("Gmail rejected the app password.", field="appPassword") from None
     except smtplib.SMTPResponseException as error:
         if error.smtp_code == 552:
             raise too_big from None
@@ -597,6 +599,14 @@ def password_step(sender):
     store_password(sender)
 
 
+class ShellJsonInvalid(SetupCancelled):
+    """shell.json exists but isn't a JSON object, so nothing writes to it."""
+
+    def __init__(self, path):
+        super().__init__(f"{path} isn't valid JSON")
+        self.path = path
+
+
 def save_settings(updates):
     """Merge `updates` into the plugin's entry in shell.json, keeping everything else."""
     path = shell_json_path()
@@ -609,8 +619,7 @@ def save_settings(updates):
     except ValueError:
         data = None
     if not isinstance(data, dict):
-        print(f"{path} isn't valid JSON, so setup won't touch it. Fix it and run setup again.")
-        raise SetupCancelled
+        raise ShellJsonInvalid(path)
     plugins = data.setdefault("plugins", [])
     entry = next((p for p in plugins if isinstance(p, dict) and p.get("id") == PLUGIN_ID), None)
     if entry is None:
@@ -654,13 +663,15 @@ def wizard():
     answer = ask("Book folders", ", ".join(folders))
     folders = [f.strip() for f in answer.split(",") if f.strip()]
 
-    save_settings({"kindleAddress": kindle, "senderAddress": sender, "bookFolders": folders})
+    try:
+        save_settings({"kindleAddress": kindle, "senderAddress": sender, "bookFolders": folders})
+    except ShellJsonInvalid as invalid:
+        print(f"{invalid.path} isn't valid JSON, so setup won't touch it. Fix it and run setup again.")
+        raise
     print(f"Settings saved to {shell_json_path()}.")
 
-    books = Path(os.path.expanduser(DEFAULT_BOOK_FOLDERS[0]))
-    if not books.is_dir():
-        books.mkdir(parents=True)
-        print(f"Created {books}.")
+    if create_books_folder():
+        print(f"Created {Path(os.path.expanduser(DEFAULT_BOOK_FOLDERS[0]))}.")
 
     print("\n7. Test send.")
     if ask_yes_no(f"Send a small test Book to {kindle} now?", True):
@@ -679,22 +690,28 @@ def test_epub_path():
     return Path(__file__).resolve().parent.parent / "assets" / "test.epub"
 
 
-def run_test_send(kindle):
-    """Email the test EPUB, named after its title (the subject), then ask whether it arrived."""
+def send_test_book():
+    """Email the test EPUB as "Kindle Send Test" (its subject) like any Send, recorded in
+    the Send history. Returns the result line; progress lines go to stdout as usual."""
     with tempfile.TemporaryDirectory(prefix="kindle-send-") as tmp:
         book = Path(tmp) / f"{TEST_BOOK_TITLE}.epub"
         try:
             shutil.copyfile(test_epub_path(), book)
-        except OSError as error:
-            print(f"Couldn't find the test Book ({error}). Reinstall kindle-send.")
-            return
-        print("Sending…")
+        except OSError:
+            return SendFailed("Couldn't find the test Book. Reinstall kindle-send.").result()
         try:
-            with contextlib.redirect_stdout(io.StringIO()):  # no JSON progress lines here
-                result = send_email(book)
+            result = send_email(book)
         except SendFailed as failure:
             result = failure.result()
         record_send(book, "email", result)
+    return result
+
+
+def run_test_send(kindle):
+    """The wizard's test send, then ask whether it arrived."""
+    print("Sending…")
+    with contextlib.redirect_stdout(io.StringIO()):  # no JSON progress lines here
+        result = send_test_book()
     if result["result"] != "sent":
         print(f"The test send failed: {result['reason']}")
         print("Fix that and run `kindle-send setup` again.")
@@ -802,13 +819,218 @@ def pick(files):
     return 0
 
 
+def sender_address(settings):
+    """The Gmail address in `settings`, trimmed; "" when none is set."""
+    return str(settings.get("senderAddress") or "").strip()
+
+
+def password_stored(settings):
+    """Whether an app password is stored for the Gmail address set (never the password itself)."""
+    sender = sender_address(settings)
+    return bool(sender and lookup_password(sender))
+
+
+def setup_missing(settings):
+    """Every value setup still needs, in form order (spec §4, Setup needed)."""
+    missing = missing_settings(settings)
+    if not password_stored(settings):
+        missing.append("appPassword")
+    return missing
+
+
+def form_settings():
+    """`kindle-send settings`: the values the Settings form shows (spec §3), and what's
+    still missing, which titles the form and flags its fields. Never the password."""
+    current = load_settings()
+    missing = setup_missing(current)
+    emit({"kindleAddress": str(current.get("kindleAddress") or "").strip(),
+          "senderAddress": sender_address(current),
+          "bookFolders": book_folder_setting(current),
+          "appPasswordStored": "appPassword" not in missing,
+          "missing": missing})
+    return 0
+
+
+def form_values(raw):
+    """The form's values from `save`'s stdin, trimmed; Book folders as a list, defaults if empty."""
+    def text(key):
+        value = raw.get(key)
+        return value.strip() if isinstance(value, str) else ""
+    folders = raw.get("bookFolders")
+    if isinstance(folders, str):
+        folders = folders.split(",")
+    if not isinstance(folders, list):
+        folders = []
+    folders = [f.strip() for f in folders if isinstance(f, str) and f.strip()]
+    return {"kindleAddress": text("kindleAddress"), "senderAddress": text("senderAddress"),
+            "bookFolders": folders or list(DEFAULT_BOOK_FOLDERS)}
+
+
+def is_email_address(text):
+    """Loosely an email address: one @, no spaces, something before it and a dotted domain after."""
+    local, at, domain = text.partition("@")
+    return (bool(at and local) and "@" not in domain and not any(c.isspace() for c in text)
+            and "." in domain and not domain.startswith(".") and not domain.endswith("."))
+
+
+# The Settings form's fields in the order it shows them, so problems come back in that order.
+FORM_FIELDS = ("kindleAddress", "senderAddress", "appPassword", "bookFolders")
+
+
+def problem(field, message, blocking):
+    return {"field": field, "message": message, "blocking": blocking}
+
+
+def needed(field):
+    """A missing value: it blocks saving, and the form counts these ("N still needed …")."""
+    return {**problem(field, "Needed before Books can be sent.", True), "needed": True}
+
+
+def blocking_problems(values, has_password):
+    """What stops saving: an empty address or one that isn't an email address, or no app
+    password, neither typed nor stored for the Gmail address (`has_password`)."""
+    problems = []
+    for field in EMAIL_SETTINGS:
+        if not values[field]:
+            problems.append(needed(field))
+        elif not is_email_address(values[field]):
+            problems.append(problem(field, "That isn't an email address.", True))
+    if not has_password:
+        problems.append(needed("appPassword"))
+    return problems
+
+
+def value_warnings(values):
+    """Unusual but valid values: they save, and the form says why they might be wrong."""
+    found = []
+    if not values["kindleAddress"].lower().endswith("@kindle.com"):
+        found.append(problem("kindleAddress", "Kindle addresses usually end in @kindle.com.", False))
+    if not values["senderAddress"].lower().endswith("@gmail.com"):
+        found.append(problem("senderAddress", "Make sure this is a Google account.", False))
+    absent = [f for f in values["bookFolders"] if not Path(os.path.expanduser(f)).is_dir()]
+    if len(absent) == 1:
+        found.append(problem("bookFolders", f"{absent[0]} doesn't exist, so the Picker skips it.", False))
+    elif absent:
+        names = ", ".join(absent[:-1]) + " and " + absent[-1]
+        found.append(problem("bookFolders", f"{names} don't exist, so the Picker skips them.", False))
+    return found
+
+
+def typed_password(raw):
+    """The app password typed into the form, or "" if none was (spaces at the ends dropped)."""
+    password = raw.get("appPassword")
+    return password.strip() if isinstance(password, str) else ""
+
+
+def check_password(sender, password):
+    """Sign in to Gmail without sending (spec §9): "accepted", "rejected" or "unreachable"."""
+    try:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
+            server.ehlo()
+            sign_in(server, sender, password)
+    except smtplib.SMTPAuthenticationError:
+        return "rejected"
+    except (smtplib.SMTPException, OSError):
+        return "unreachable"
+    return "accepted"
+
+
+def store_typed_password(sender, password):
+    """Store the app password under `sender`, handing it to `secret-tool store` on stdin,
+    never on its command line (ADR 0001). None when stored, else the problem to show."""
+    try:
+        subprocess.run(["secret-tool", "store", "--label=kindle-send Gmail",
+                        "service", "kindle-send", "user", sender],
+                       input=password, text=True, capture_output=True)
+    except OSError:
+        return problem("appPassword", "secret-tool is missing. Install libsecret, then save again.", True)
+    if lookup_password(sender) != password:
+        return problem("appPassword", "Couldn't store the app password in the keyring.", True)
+    return None
+
+
+def create_books_folder():
+    """Create ~/Books if it's missing; True if it was created. A failure is left to the
+    Book folders warning, as for any folder that doesn't exist."""
+    books = Path(os.path.expanduser(DEFAULT_BOOK_FOLDERS[0]))
+    if books.is_dir():
+        return False
+    try:
+        books.mkdir(parents=True)
+    except OSError:
+        return False
+    return True
+
+
+def save_form():
+    """`kindle-send save`: check the form's values and write them to shell.json (spec §3, §9).
+    Reads one JSON line on stdin. Prints {"saved": bool, "firstSave"?: true, "problems": [{"field", "message", "blocking"}]};
+    field "" is about the whole form."""
+    try:
+        raw = json.loads(sys.stdin.readline())  # one line, so the Picker needs no EOF
+    except ValueError:
+        raw = None
+    if not isinstance(raw, dict):
+        emit({"saved": False, "problems": [problem("", "The Settings form sent something unreadable.", True)]})
+        return 0
+    values = form_values(raw)
+    sender = values["senderAddress"]
+    typed = typed_password(raw)
+    blocking = blocking_problems(values, bool(typed or (sender and lookup_password(sender))))
+    if blocking:
+        emit({"saved": False, "problems": blocking})
+        return 0
+    password_problems = []
+    before = load_settings()
+    # The save that completes setup is the first; it creates ~/Books, as the wizard does.
+    first_save = bool(setup_missing(before))
+    address_changed = sender != sender_address(before)
+    # A changed address is checked with the password already stored for it, if any.
+    password = typed or (lookup_password(sender) if address_changed else None)
+    if password:
+        outcome = check_password(sender, password)
+        if outcome == "rejected":
+            emit({"saved": False, "problems": [problem("appPassword", "Gmail rejected this app password.", True)]})
+            return 0
+        if outcome == "unreachable":
+            password_problems.append(problem("appPassword", "Couldn't reach Gmail to check the password. Saved anyway.",
+                                   False))
+    if typed:
+        stored = store_typed_password(sender, typed)
+        if stored:
+            emit({"saved": False, "problems": [stored]})
+            return 0
+    try:
+        save_settings(values)
+    except ShellJsonInvalid as invalid:
+        message = f"{invalid.path} isn't valid JSON, so it wasn't changed."
+        emit({"saved": False, "problems": [problem("", message, True)]})
+        return 0
+    except OSError as error:
+        message = f"Couldn't write {shell_json_path()}: {error.strerror or error}."
+        emit({"saved": False, "problems": [problem("", message, True)]})
+        return 0
+    if first_save:
+        create_books_folder()
+    found = sorted(value_warnings(values) + password_problems, key=lambda p: FORM_FIELDS.index(p["field"]))
+    answer = {"saved": True, "problems": found}
+    if first_save:
+        answer["firstSave"] = True  # the Picker suggests the test send after it (spec §9)
+    emit(answer)
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="kindle-send")
     sub = parser.add_subparsers(dest="command", required=True)
     send = sub.add_parser("send", help="send one Book")
     send.add_argument("--route", choices=["email", "usb"], required=True)
-    send.add_argument("file")
+    send.add_argument("file", nargs="?")
+    send.add_argument("--test", action="store_true",
+                      help='instead of FILE: email the bundled test Book as "Kindle Send Test"')
     sub.add_parser("setup", help="interactive setup wizard (needs a terminal)")
+    sub.add_parser("settings", help="the Settings for the Picker's form (never the password)")
+    sub.add_parser("save", help="check and save the Settings form's values, read as JSON on stdin")
     plan_parser = sub.add_parser("plan", help="classify Books for the Picker")
     plan_parser.add_argument("--folders", action="store_true", help="scan the Book folders")
     plan_parser.add_argument("files", nargs="*")
@@ -820,6 +1042,11 @@ def main(argv=None):
     pick_parser = sub.add_parser("pick", help="open the Picker with just these Books (Strata's action)")
     pick_parser.add_argument("files", nargs="+")
     args = parser.parse_args(argv)
+    if args.command == "send":
+        if args.test and args.route != "email":
+            send.error("--test sends by email only: use --route email")
+        if args.test == bool(args.file):
+            send.error("give either FILE or --test")
 
     if args.command == "kindle":
         emit(kindle_status())
@@ -844,7 +1071,14 @@ def main(argv=None):
         return 0
     if args.command == "setup":
         return run_setup()
+    if args.command == "settings":
+        return form_settings()
+    if args.command == "save":
+        return save_form()
 
+    if args.command == "send" and args.test:
+        emit(send_test_book())
+        return 0
     if args.command == "send":
         book = Path(args.file)
         try:

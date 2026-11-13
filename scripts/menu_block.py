@@ -3,10 +3,12 @@
 
     menu_block.py add FILE     insert the block before the final "}" (creates FILE if missing)
     menu_block.py remove FILE  delete the block's lines
+    menu_block.py current FILE exit 0 if FILE's block is this version's
+    menu_block.py update FILE  swap an older install's block for this one, in place
     menu_block.py check FILE   exit 0 if the shell can parse FILE
 
-Exit codes: 0 done, 1 FILE does not parse (left alone), 3 add: block already there,
-remove: no block. "Parses" means by the shell's own rules (MenuModel.js stripJsonc):
+Exit codes: 0 done (current: yes), 1 FILE does not parse (left alone), 3 add: block
+already there, remove/update: no block, current: no. "Parses" means by the shell's own rules (MenuModel.js stripJsonc):
 only whole-line // comments and trailing commas are allowed.
 """
 import json
@@ -17,11 +19,12 @@ import sys
 START = "// >>> kindle-send menu (added by scripts/install.sh) >>>"
 END = "// <<< kindle-send <<<"
 PICK = "omarchy-shell shell toggle sorydi3.kindle-send"
-SETUP = "omarchy-launch-floating-terminal-with-presentation kindle-send setup"
+# Opens the Picker in Settings, on no field in particular (spec §14).
+SETTINGS = "omarchy-shell shell summon sorydi3.kindle-send '{\"settings\":\"\"}'"
 ENTRIES = [
     ("kindle-send", {"icon": "\U000F00BA", "label": "Send to Kindle", "aliases": ["kindle"]}),
     ("kindle-send.pick", {"icon": "\U000F00BA", "label": "Send to Kindle", "action": PICK}),
-    ("kindle-send.setup", {"icon": "", "label": "Setup", "action": SETUP}),
+    ("kindle-send.settings", {"icon": "", "label": "Settings", "action": SETTINGS}),
 ]
 
 
@@ -57,16 +60,32 @@ def add(text):
     return "\n".join(lines) + "\n" + block() + "\n" + text[close:]
 
 
-def remove(text):
+def swap_block(text, lines):
+    """The text with `lines` in place of the block's lines."""
     out, inside = [], False
     for line in text.split("\n"):
         if line.strip() == START:
             inside = True
+            out.extend(lines)
         elif inside:
             inside = line.strip() != END
         else:
             out.append(line)
     return "\n".join(out)
+
+
+def remove(text):
+    """The text without the block's lines."""
+    return swap_block(text, [])
+
+
+def replace(text, replacement):
+    """The text with `replacement` where the block's lines were."""
+    return swap_block(text, [replacement])
+
+
+def current(text):
+    return block() in text
 
 
 def write(path, text):
@@ -96,6 +115,15 @@ def main(argv):
         if START not in text:
             return 3
         write(path, remove(text))
+        return 0
+    if command == "current":
+        return 0 if current(text) else 3
+    if command == "update":
+        if START not in text:
+            return 3
+        if not parses(text):
+            return 1
+        write(path, replace(text, block()))
         return 0
     raise SystemExit(f"unknown command: {command}")
 
