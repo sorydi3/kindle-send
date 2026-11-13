@@ -19,10 +19,10 @@ Run `./scripts/install.sh` from the repo, in a terminal.
 - [ ] It asks `Add SUPER + SHIFT + K (open the picker) to ~/.config/hypr/bindings.lua? [y/N]`. Answer `y`. `~/.config/hypr/bindings.lua.before-kindle-send` now exists, and the binding sits between `-- >>> kindle-send keybinding …` and `-- <<< kindle-send <<<` at the end of the file.
 - [ ] It asks about the Omarchy menu. Answer `y`. `~/.config/omarchy/extensions/omarchy-menu.jsonc.before-kindle-send` now exists, and the three entries sit inside `// >>> kindle-send menu …` / `// <<< kindle-send <<<`, just before the final `}`.
 - [ ] Your existing menu items (Snip …) still show in the Omarchy menu (`SUPER + SPACE`). If they vanished, the file no longer parses: report it.
-- [ ] The Omarchy menu has **Send to Kindle**, with **Send to Kindle** (opens the Picker) and **Setup** inside it. `omarchy menu summon kindle` opens the submenu.
+- [ ] The Omarchy menu has **Send to Kindle**, with **Send to Kindle** (opens the Picker) and **Settings** (opens the Picker in Settings) inside it. `omarchy menu summon kindle` opens the submenu.
 - [ ] It prints `Enabled. Open the picker with: …`, and `omarchy plugin list` shows `sorydi3.kindle-send` as enabled.
 - [ ] Nautilus windows close (`nautilus -q`). On the next start the extension is loaded.
-- [ ] It asks `Run setup now …? [Y/n]`. Answer `n` for now. It prints `Run setup when ready: kindle-send setup`.
+- [ ] It prints `Press SUPER + SHIFT + K to set up Send to Kindle in the Picker`, then asks `Set up in the terminal instead? [y/N]`. Answer `n`. It prints `Or set up in the terminal instead: kindle-send setup`.
 - [ ] `ls -l ~/.local/bin/kindle-send` is a link to `~/.local/share/kindle-send/bin/kindle-send`, and `~/.local/share/kindle-send/assets/test.epub` exists.
 - [ ] Run the install again (and again with `--yes`). Neither file gains a second block: the script says `Already in …` for both.
 - [ ] Run `./scripts/install.sh </dev/null` (no terminal). It skips both edits and says `Not added: no terminal to ask in …`.
@@ -31,7 +31,7 @@ Run `./scripts/install.sh` from the repo, in a terminal.
 
 ## 2. Setup (§15.2)
 
-Run from the menu: Send to Kindle → Setup. It should open a floating terminal.
+Run `kindle-send setup` in a terminal (the menu's Send to Kindle → Settings opens the Picker instead; see section 17).
 
 - [ ] It asks, in order: Kindle address, Gmail address, app password (through `secret-tool store`), the Approved list step (waits for Enter), and Book folders (defaults filled in).
 - [ ] The `sorydi3.kindle-send` entry in `~/.config/omarchy/shell.json` holds `kindleAddress`, `senderAddress`, `bookFolders`, `minEmailGapSeconds: 10` and `maxEmailsPerHour: 20`. The file mode is `600`, and the other plugins and keys are unchanged.
@@ -191,7 +191,16 @@ Start from no setup: move the `sorydi3.kindle-send` keys out of `shell.json` (ke
 - [ ] `kindle-send setup` in a terminal still runs the wizard.
 - [ ] Put back your own `shell.json` keys and app password.
 
-## 17. Test send from Settings (§9 Test send, §10)
+## 17. Omarchy menu opens Settings (§14)
+
+Back up `~/.config/omarchy/extensions/omarchy-menu.jsonc` first.
+
+- [ ] Over an install from before Settings moved into the Picker (the menu shows Send to Kindle → Setup), run `./scripts/install.sh` in a terminal. It asks `Replace the older Send to Kindle entries in …? [y/N]`. Answer `y`: it says `Updated in …`, and the block sits where it was, with **Settings** in place of **Setup**.
+- [ ] Once set up, Omarchy menu → Send to Kindle → Settings opens the Picker in Settings, no field flagged, no terminal. `Esc` goes back to the Book list.
+- [ ] Run the install again: `Already in …` for the menu.
+- [ ] `./scripts/uninstall.sh` removes the block; the rest of the menu still shows.
+
+## 18. Test send from Settings (§9 Test send, §10)
 
 Sends one real email to your own Kindle. Start from section 16's state just before the first save.
 

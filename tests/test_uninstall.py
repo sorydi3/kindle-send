@@ -3,7 +3,7 @@ import json
 import os
 import subprocess
 
-from test_install import (BINDINGS_TEXT, MENU_TEXT, PLUGIN_ID, REPO, calls, config_files, env, install,  # noqa: F401
+from test_install import (BINDINGS_TEXT, MENU_TEXT, MENU_WITH_OLD_BLOCK, PLUGIN_ID, REPO, calls, config_files, env, install,  # noqa: F401
                           paths, run_tty, shell_parse, stub)
 
 UNINSTALL = REPO / "scripts" / "uninstall.sh"
@@ -70,6 +70,21 @@ def test_uninstall_removes_the_marker_blocks_and_leaves_the_rest(env):
 
     assert result.returncode == 0, result.stderr
     assert b.read_text() == BINDINGS_TEXT
+    assert "kindle-send" not in m.read_text()
+    assert shell_parse(m.read_text()) == shell_parse(MENU_TEXT)
+
+
+def test_uninstall_removes_the_settings_entry_and_an_older_installs_setup_entry(env):
+    installed(env)
+    _, m = config_files(env, bindings=None, menu=None)
+    assert "kindle-send.settings" in shell_parse(m.read_text())
+    uninstall(env)
+    assert "kindle-send" not in m.read_text()
+
+    _, m = config_files(env, bindings=None, menu=MENU_WITH_OLD_BLOCK)
+    result = uninstall(env)
+
+    assert result.returncode == 0, result.stderr
     assert "kindle-send" not in m.read_text()
     assert shell_parse(m.read_text()) == shell_parse(MENU_TEXT)
 
