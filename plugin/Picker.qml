@@ -3,6 +3,7 @@
 // Books to the Service and closes at once, Esc closes. Ctrl+, or the cog opens
 // Settings in the card (spec §9); kindle-send checks and writes them.
 import QtQuick
+import QtQuick.Dialogs
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -308,6 +309,32 @@ Item {
     if (argv.length === 0) return
     Util.execArgv(argv)
     root.stepAside()
+  }
+
+  // Ctrl+B on Book folders, or Browse…: the system folder chooser (FolderDialog,
+  // the native GTK chooser in omarchy-shell) over a closed Picker. The Picker
+  // comes back to Book folders whether a folder was picked or not.
+  function browseFolder() {
+    root.settingsFocus = "bookFolders"
+    root.stepAside()
+    folderDialog.open()
+  }
+
+  // url: the picked folder, or "" on Cancel. open() first: it restores the
+  // kept form, which the folder is then appended to.
+  function folderBrowsed(url) {
+    root.open("")
+    if (!url) return
+    const folder = SettingsForm.chosenFolder(url, Quickshell.env("HOME"))
+    root.editSetting("bookFolders", SettingsForm.withFolder(root.settingsValues.bookFolders, folder))
+  }
+
+  FolderDialog {
+    id: folderDialog
+    title: "Add a Book folder"
+    currentFolder: "file://" + Quickshell.env("HOME")
+    onAccepted: root.folderBrowsed(String(selectedFolder))
+    onRejected: root.folderBrowsed("")
   }
 
   function focusSettingsField(key) {
@@ -682,7 +709,7 @@ Item {
 
         // Settings (spec §9): one form over the Book list. Its own keys only:
         // Tab/Shift+Tab move between fields, Enter saves, Ctrl+O opens the
-        // focused field's link, Esc goes back.
+        // focused field's link, Ctrl+B on Book folders browses, Esc goes back.
         FocusScope {
           id: settingsForm
           anchors.fill: parent
@@ -697,6 +724,9 @@ Item {
             } else if (SettingsForm.opensLink(event.key, event.modifiers)) {
               event.accepted = true
               root.openLink(root.settingsFocus)
+            } else if (SettingsForm.opensBrowse(event.key, event.modifiers) && SettingsForm.browses(root.settingsFocus)) {
+              event.accepted = true
+              root.browseFolder()
             } else event.accepted = false
           }
 
@@ -734,17 +764,35 @@ Item {
                   font.family: Style.font.menuFamily
                   font.pixelSize: Style.font.body
                 }
-                TextField {
-                  id: input
+                // The field, with Browse… beside it on Book folders.
+                Item {
                   width: parent.width
-                  foreground: Color.menu.text
-                  accent: Color.menu.selectedText
-                  password: entry.modelData.masked === true
-                  text: root.settingsValues[entry.modelData.key] || ""
-                  placeholderText: SettingsForm.placeholder(entry.modelData, root.settingsPasswordStored)
-                  onTextEdited: root.editSetting(entry.modelData.key, text)
-                  onAccepted: root.saveSettings()
-                  onActiveFocusChanged: if (activeFocus) root.settingsFocus = entry.modelData.key
+                  height: input.height
+
+                  TextField {
+                    id: input
+                    width: browseButton.visible ? parent.width - browseButton.width - Style.space(8) : parent.width
+                    foreground: Color.menu.text
+                    accent: Color.menu.selectedText
+                    password: entry.modelData.masked === true
+                    text: root.settingsValues[entry.modelData.key] || ""
+                    placeholderText: SettingsForm.placeholder(entry.modelData, root.settingsPasswordStored)
+                    onTextEdited: root.editSetting(entry.modelData.key, text)
+                    onAccepted: root.saveSettings()
+                    onActiveFocusChanged: if (activeFocus) root.settingsFocus = entry.modelData.key
+                  }
+                  Button {
+                    id: browseButton
+                    visible: SettingsForm.browses(entry.modelData.key)
+                    anchors.right: parent.right
+                    anchors.verticalCenter: input.verticalCenter
+                    text: "Browse…"
+                    bordered: true
+                    foreground: Color.menu.text
+                    accent: Color.menu.selectedText
+                    fontFamily: Style.font.menuFamily
+                    onClicked: root.browseFolder()
+                  }
                 }
                 // The help line, or the field's problem in its place, in the accent color.
                 Text {

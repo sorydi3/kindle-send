@@ -196,11 +196,11 @@ def test_any_changed_field_is_an_edit():
 
 
 def test_the_footer_offers_tab_save_and_back():
-    assert form("footer('bookFolders', false)") == "Tab  Next field      Enter  Save      Esc  Back to Books"
+    assert form("footer('', false)") == "Tab  Next field      Enter  Save      Esc  Back to Books"
 
 
 def test_the_footer_warns_that_esc_discards_once_something_changed():
-    assert form("footer('bookFolders', true)") \
+    assert form("footer('', true)") \
         == "Tab  Next field      Enter  Save      Esc  Back (discard changes)"
 
 
@@ -284,3 +284,89 @@ def test_the_kept_form_does_not_follow_later_edits():
 
 def test_an_ordinary_open_starts_in_the_book_list():
     assert form("reopened(null)") is None
+
+
+# --- Browse for a Book folder (spec §9, Book folders) -------------------------
+
+QT_KEY_B = 0x42
+HOME = "/home/reader"
+
+
+def test_the_footer_offers_browse_on_book_folders():
+    assert form("footer('bookFolders', false)") \
+        == "Tab  Next field      Enter  Save      Ctrl+B  Browse      Esc  Back to Books"
+
+
+def test_the_footer_offers_browse_only_on_book_folders():
+    for key in ("kindleAddress", "senderAddress", "appPassword", ""):
+        assert "Browse" not in form(f"footer('{key}', false)")
+
+
+def test_ctrl_b_browses():
+    assert form(f"opensBrowse({QT_KEY_B}, {QT_CTRL})") is True
+
+
+def test_a_plain_or_shifted_b_is_typing():
+    assert form(f"opensBrowse({QT_KEY_B}, 0)") is False
+    assert form(f"opensBrowse({QT_KEY_B}, {QT_SHIFT})") is False
+    assert form(f"opensBrowse({QT_KEY_B}, {QT_CTRL | QT_ALT})") is False
+
+
+def test_a_folder_inside_home_is_written_with_a_tilde():
+    assert form(f"chosenFolder('file://{HOME}/Documents/Kindle books', '{HOME}')") == "~/Documents/Kindle books"
+
+
+def test_the_chooser_url_is_decoded():
+    assert form(f"chosenFolder('file://{HOME}/My%20Books/%C3%89pub', '{HOME}')") == "~/My Books/Épub"
+
+
+def test_home_itself_is_a_tilde():
+    assert form(f"chosenFolder('file://{HOME}', '{HOME}')") == "~"
+    assert form(f"chosenFolder('file://{HOME}/', '{HOME}/')") == "~"
+
+
+def test_a_folder_outside_home_keeps_its_full_path():
+    assert form(f"chosenFolder('file:///srv/library/books', '{HOME}')") == "/srv/library/books"
+
+
+def test_a_neighbour_of_home_is_not_inside_it():
+    assert form(f"chosenFolder('file://{HOME}2/Books', '{HOME}')") == f"{HOME}2/Books"
+
+
+def test_without_a_home_the_full_path_is_kept():
+    assert form(f"chosenFolder('file://{HOME}/Books', '')") == f"{HOME}/Books"
+
+
+def test_a_picked_folder_is_appended_to_the_field():
+    assert form("withFolder('~/Books, ~/Downloads', '~/Papers')") == "~/Books, ~/Downloads, ~/Papers"
+
+
+def test_a_picked_folder_fills_an_empty_field():
+    assert form("withFolder('', '~/Papers')") == "~/Papers"
+    assert form("withFolder('  ', '~/Papers')") == "~/Papers"
+
+
+def test_a_trailing_comma_does_not_leave_an_empty_entry():
+    assert form("withFolder('~/Books, ', '~/Papers')") == "~/Books, ~/Papers"
+
+
+def test_a_folder_already_listed_is_not_added_twice():
+    assert form("withFolder('~/Books, ~/Papers', '~/Papers')") == "~/Books, ~/Papers"
+
+
+def test_cancel_adds_nothing():
+    """FolderDialog's reject gives no folder."""
+    assert form("withFolder('~/Books', '')") == "~/Books"
+
+
+def test_browsing_into_the_form_keeps_the_other_unsaved_values_and_marks_an_edit():
+    expr = ("(function() { var kept = stepAside({values: " + values(kindleAddress="new@kindle.com")
+            + ", baseline: " + values() + "}); var back = reopened(kept);"
+            " back.values.bookFolders = withFolder(back.values.bookFolders,"
+            f" chosenFolder('file://{HOME}/Papers', '{HOME}'));"
+            " return [back.values, changed(back.values, back.baseline)] })()")
+
+    got, edited = form(expr)
+    assert got["kindleAddress"] == "new@kindle.com"
+    assert got["bookFolders"] == "~/Books, ~/Downloads, ~/Papers"
+    assert edited is True

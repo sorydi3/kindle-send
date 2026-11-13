@@ -156,3 +156,13 @@ These came up while building and aren't covered above.
 - [ ] Turn Wi-Fi off, type the password and save: saved anyway, with "Couldn't reach Gmail to check the password. Saved anyway." under the field.
 - [ ] Change only the Kindle address and save: the status line goes straight to "Saved." with no "Checking…".
 - [ ] Type a password, then press `Esc`: back in the Book list; reopen Settings and the field is empty again.
+
+## 14. Browse for a Book folder (§9, Book folders)
+
+- [ ] In Settings, the footer shows "Ctrl+B  Browse" on Book folders only, and a "Browse…" button sits beside the Book folders field. `Tab` skips the button (Kindle address → Gmail address → app password → Book folders).
+- [ ] On Book folders, press `Ctrl+B`: the Picker closes and the GTK folder chooser opens, titled "Add a Book folder", in the home folder. `Ctrl+B` on any other field does nothing.
+- [ ] **Round trip.** Change the Kindle address without saving, click "Browse…", pick a folder inside home (e.g. `~/Documents`) with the mouse and confirm: the Picker reopens in Settings by itself, with the changed Kindle address still there, `~/Documents` appended to Book folders (written with `~`), the cursor in Book folders, and the footer saying "Esc  Back (discard changes)". `shell.json` is unchanged until `Enter`.
+- [ ] Pick a folder outside home (e.g. `/tmp`): it's appended as its full path. Pick a folder already in the field: nothing is added twice. Pick a folder with a space or an accent in its name: it shows as typed, not `%20`.
+- [ ] Open the chooser and cancel it (Cancel, or `Esc`): the Picker reopens in Settings with the field and any unsaved values as they were.
+- [ ] Inside the chooser, `Ctrl+L` does nothing (known, spec §16); picking takes the mouse.
+- [ ] After a Browse, press `Enter`: the folder is saved and the Book list (after `Esc`) lists Books from it.
