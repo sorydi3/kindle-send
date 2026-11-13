@@ -68,7 +68,8 @@ function summary(results, eject) {
 
 function summaryText(results, eject) {
   const failed = results.filter(function(r) { return r.result === "failed" })
-  const fixable = failed.filter(function(r) { return r.fixBySetup === true && r.field })
+  // A failure naming a field is one a Setting fixes (its fixBySetup stays in the JSON for older readers).
+  const fixable = failed.filter(function(r) { return !!r.field })
   const fix = fixable.length > 0 ? { field: fixable[0].field, reason: fixable[0].reason || "" } : null
   const ejectLine = eject ? (eject.ejected === true ? EJECTED : EJECT_PLEASE) : ""
   // A Kindle still mounted needs the user, so that summary stays on screen too.
