@@ -668,10 +668,8 @@ def wizard():
         raise
     print(f"Settings saved to {shell_json_path()}.")
 
-    books = Path(os.path.expanduser(DEFAULT_BOOK_FOLDERS[0]))
-    if not books.is_dir():
-        books.mkdir(parents=True)
-        print(f"Created {books}.")
+    if create_books_folder():
+        print(f"Created {Path(os.path.expanduser(DEFAULT_BOOK_FOLDERS[0]))}.")
 
     print("\n7. Test send.")
     if ask_yes_no(f"Send a small test Book to {kindle} now?", True):
@@ -813,14 +811,30 @@ def pick(files):
     return 0
 
 
+def password_stored(settings):
+    """Whether an app password is stored for the Gmail address set (never the password itself)."""
+    sender = str(settings.get("senderAddress") or "").strip()
+    return bool(sender and lookup_password(sender))
+
+
+def setup_missing(settings):
+    """Every value setup still needs, in form order (spec §4, Setup needed)."""
+    missing = missing_settings(settings)
+    if not password_stored(settings):
+        missing.append("appPassword")
+    return missing
+
+
 def form_settings():
-    """`kindle-send settings`: the values the Settings form shows (spec §3). Never the password."""
+    """`kindle-send settings`: the values the Settings form shows (spec §3), and what's
+    still missing, which titles the form and flags its fields. Never the password."""
     current = load_settings()
-    sender = str(current.get("senderAddress") or "").strip()
+    missing = setup_missing(current)
     emit({"kindleAddress": str(current.get("kindleAddress") or "").strip(),
-          "senderAddress": sender,
+          "senderAddress": str(current.get("senderAddress") or "").strip(),
           "bookFolders": book_folder_setting(current),
-          "appPasswordStored": bool(sender and lookup_password(sender))})
+          "appPasswordStored": "appPassword" not in missing,
+          "missing": missing})
     return 0
 
 
@@ -854,14 +868,22 @@ def problem(field, message, blocking):
     return {"field": field, "message": message, "blocking": blocking}
 
 
-def blocking_problems(values):
-    """What stops saving: an empty address, or one that isn't an email address."""
+def needed(field):
+    """A missing value: it blocks saving, and the form counts these ("N still needed …")."""
+    return {**problem(field, "Needed before Books can be sent.", True), "needed": True}
+
+
+def blocking_problems(values, has_password):
+    """What stops saving: an empty address or one that isn't an email address, or no app
+    password, neither typed nor stored for the Gmail address (`has_password`)."""
     problems = []
     for field in EMAIL_SETTINGS:
         if not values[field]:
-            problems.append(problem(field, "Needed before Books can be sent.", True))
+            problems.append(needed(field))
         elif not is_email_address(values[field]):
             problems.append(problem(field, "That isn't an email address.", True))
+    if not has_password:
+        problems.append(needed("appPassword"))
     return problems
 
 
@@ -914,6 +936,19 @@ def keep_password(sender, password):
     return None
 
 
+def create_books_folder():
+    """Create ~/Books if it's missing; True if it was created. A failure is left to the
+    Book folders warning, as for any folder that doesn't exist."""
+    books = Path(os.path.expanduser(DEFAULT_BOOK_FOLDERS[0]))
+    if books.is_dir():
+        return False
+    try:
+        books.mkdir(parents=True)
+    except OSError:
+        return False
+    return True
+
+
 def save_form():
     """`kindle-send save`: check the form's values and write them to shell.json (spec §3, §9).
     Reads one JSON line on stdin. Prints {"saved": bool, "problems": [{"field", "message", "blocking"}]};
@@ -926,14 +961,17 @@ def save_form():
         emit({"saved": False, "problems": [problem("", "The Settings form sent something unreadable.", True)]})
         return 0
     values = form_values(raw)
-    blocking = blocking_problems(values)
+    sender = values["senderAddress"]
+    typed = typed_password(raw)
+    blocking = blocking_problems(values, bool(typed or (sender and lookup_password(sender))))
     if blocking:
         emit({"saved": False, "problems": blocking})
         return 0
     checked = []
-    sender = values["senderAddress"]
-    typed = typed_password(raw)
-    address_changed = sender != str(load_settings().get("senderAddress") or "").strip()
+    before = load_settings()
+    # The save that completes setup is the first; it creates ~/Books, as the wizard does.
+    first_save = bool(setup_missing(before))
+    address_changed = sender != str(before.get("senderAddress") or "").strip()
     # A changed address is checked with the password already stored for it, if any.
     password = typed or (lookup_password(sender) if address_changed else None)
     if password:
@@ -959,6 +997,8 @@ def save_form():
         message = f"Couldn't write {shell_json_path()}: {error.strerror or error}."
         emit({"saved": False, "problems": [problem("", message, True)]})
         return 0
+    if first_save:
+        create_books_folder()
     found = sorted(warnings(values) + checked, key=lambda p: FORM_FIELDS.index(p["field"]))
     emit({"saved": True, "problems": found})
     return 0
