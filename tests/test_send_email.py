@@ -4,7 +4,7 @@ import socket
 
 import pytest
 
-from conftest import write_shell_json
+from conftest import write_settings
 
 KINDLE = "reader@kindle.com"
 SENDER = "sender@gmail.com"
@@ -26,7 +26,7 @@ def book(tmp_path):
 
 @pytest.fixture
 def setup_done(home, keyring):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER)
     keyring.set_password(PASSWORD + "\n")
 
 
@@ -83,7 +83,7 @@ def test_subject_is_file_name_without_extension(ks, tmp_path):
 def test_missing_setting_fails_before_connecting(
     ks, smtp, home, keyring, book, capsys, settings, missing
 ):
-    write_shell_json(home, **settings)
+    write_settings(home, **settings)
     keyring.set_password(PASSWORD)
 
     code, lines = run(ks, capsys, "send", "--route", "email", str(book))
@@ -96,7 +96,7 @@ def test_missing_setting_fails_before_connecting(
     assert smtp.instances == []
 
 
-def test_no_shell_json_names_both_settings(ks, smtp, home, keyring, book, capsys):
+def test_no_settings_names_both_settings(ks, smtp, home, keyring, book, capsys):
     keyring.set_password(PASSWORD)
 
     _, lines = run(ks, capsys, "send", "--route", "email", str(book))
@@ -116,7 +116,7 @@ def test_no_shell_json_names_both_settings(ks, smtp, home, keyring, book, capsys
 def test_missing_or_empty_password_fails_before_connecting(
     ks, smtp, home, keyring, book, capsys, stored
 ):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER)
     if stored is not None:
         keyring.set_password(stored)
 
@@ -128,7 +128,7 @@ def test_missing_or_empty_password_fails_before_connecting(
     assert keyring.calls() == ["lookup service kindle-send user sender@gmail.com"]
 
 
-def test_settings_path_can_be_overridden(ks, smtp, home, keyring, book, capsys, tmp_path, monkeypatch):
+def test_the_old_shell_json_path_can_be_overridden_for_the_copy(ks, smtp, home, keyring, book, capsys, tmp_path, monkeypatch):
     other = tmp_path / "elsewhere.json"
     other.write_text(json.dumps({"plugins": [
         {"id": "sorydi3.kindle-send", "kindleAddress": KINDLE, "senderAddress": SENDER}]}))

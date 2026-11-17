@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from conftest import write_shell_json
+from conftest import read_settings, settings_file, write_settings
 
 KINDLE = "reader@kindle.com"
 SENDER = "sender@gmail.com"
@@ -41,13 +41,11 @@ def test_refuses_to_run_without_a_terminal(ks, keyring, home, monkeypatch, capsy
     assert code != 0
     assert "terminal" in capsys.readouterr().err
     assert keyring.calls() == []
-    assert not (home / ".config" / "omarchy" / "shell.json").exists()
+    assert not settings_file(home).exists()
 
 
 def plugin_entry(home):
-    data = json.loads((home / ".config" / "omarchy" / "shell.json").read_text())
-    [entry] = [p for p in data["plugins"] if p.get("id") == "sorydi3.kindle-send"]
-    return data, entry
+    return read_settings(home)
 
 
 def test_first_run_saves_settings_and_stores_the_password(ks, keyring, home, terminal, capsys):
@@ -57,7 +55,7 @@ def test_first_run_saves_settings_and_stores_the_password(ks, keyring, home, ter
     code = ks.main(["setup"])
 
     assert code == 0
-    _, entry = plugin_entry(home)
+    entry = plugin_entry(home)
     assert entry["kindleAddress"] == KINDLE
     assert entry["senderAddress"] == SENDER
     assert entry["bookFolders"] == ["~/Books", "~/Downloads"]
@@ -71,30 +69,23 @@ def test_first_run_saves_settings_and_stores_the_password(ks, keyring, home, ter
     assert "abcd efgh" not in out
 
 
-def test_keeps_other_keys_and_plugins_and_makes_the_file_private(ks, keyring, home, terminal):
-    path = home / ".config" / "omarchy" / "shell.json"
-    path.parent.mkdir(parents=True)
-    path.write_text(json.dumps({
-        "theme": {"accent": "blue"},
-        "plugins": [{"id": "other.plugin", "x": 1},
-                    {"id": "sorydi3.kindle-send", "enabled": True, "maxEmailsPerHour": 5}],
-    }))
+def test_keeps_other_keys_and_makes_the_file_private(ks, keyring, home, terminal):
+    path = write_settings(home, maxEmailsPerHour=5, futureKey={"x": 1})
+    path.chmod(0o644)
     keyring.will_type("pw")
     terminal(KINDLE, SENDER, "", "", "n")
 
     assert ks.main(["setup"]) == 0
 
-    data, entry = plugin_entry(home)
-    assert data["theme"] == {"accent": "blue"}
-    assert data["plugins"][0] == {"id": "other.plugin", "x": 1}
-    assert entry["enabled"] is True
+    entry = plugin_entry(home)
+    assert entry["futureKey"] == {"x": 1}
     assert entry["maxEmailsPerHour"] == 5
     assert entry["kindleAddress"] == KINDLE
     assert path.stat().st_mode & 0o777 == 0o600
 
 
-def test_refuses_to_overwrite_a_shell_json_it_cannot_parse(ks, keyring, home, terminal, capsys):
-    path = home / ".config" / "omarchy" / "shell.json"
+def test_refuses_to_overwrite_a_settings_file_it_cannot_parse(ks, keyring, home, terminal, capsys):
+    path = settings_file(home)
     path.parent.mkdir(parents=True)
     path.write_text("{ not json")
     keyring.will_type("pw")
@@ -103,7 +94,7 @@ def test_refuses_to_overwrite_a_shell_json_it_cannot_parse(ks, keyring, home, te
     assert ks.main(["setup"]) != 0
 
     assert path.read_text() == "{ not json"
-    assert "shell.json" in capsys.readouterr().out
+    assert f"{path} isn't valid JSON" in capsys.readouterr().out
 
 
 def test_creates_books_folder_when_missing(ks, keyring, home, terminal):
@@ -136,14 +127,14 @@ def test_steps_run_in_spec_order_with_help_links(ks, keyring, home, terminal, ca
 
 
 def test_rerun_shows_current_values_and_enter_keeps_everything(ks, keyring, home, terminal, capsys):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER,
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER,
                      bookFolders=["~/Books", "~/Papers"])
     keyring.set_password("old password")
     terminal("", "", "", "", "", "n")  # Kindle, Gmail, keep password, approved, folders, no test
 
     assert ks.main(["setup"]) == 0
 
-    _, entry = plugin_entry(home)
+    entry = plugin_entry(home)
     assert entry["kindleAddress"] == KINDLE
     assert entry["senderAddress"] == SENDER
     assert entry["bookFolders"] == ["~/Books", "~/Papers"]
@@ -157,7 +148,7 @@ def test_rerun_shows_current_values_and_enter_keeps_everything(ks, keyring, home
 
 
 def test_rerun_with_a_new_gmail_address_asks_for_its_password(ks, keyring, home, terminal):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER)
     keyring.will_type("new pw")
     terminal("", "other@gmail.com", "", "", "n")
 
@@ -175,7 +166,7 @@ def test_an_empty_password_is_not_accepted(ks, keyring, home, terminal, capsys):
     assert ks.main(["setup"]) != 0
 
     assert "Nothing was stored" in capsys.readouterr().out
-    assert not (home / ".config" / "omarchy" / "shell.json").exists()
+    assert not settings_file(home).exists()
 
 
 def test_test_send_emails_the_bundled_epub_and_asks_if_it_arrived(ks, keyring, smtp, home, terminal, capsys):

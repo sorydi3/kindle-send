@@ -50,24 +50,100 @@ def emit(obj):
     print(json.dumps(obj), flush=True)
 
 
+def config_home():
+    return Path(os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config"))
+
+
+def settings_path():
+    """Where Settings live (spec §9, ADR 0002). kindle-send is its only writer."""
+    return config_home() / "kindle-send" / "settings.json"
+
+
 def shell_json_path():
+    """omarchy-shell's own file, where Settings were kept before they had their own file.
+    Only ever read, for the one-time copy."""
     override = os.environ.get("KINDLE_SEND_SHELL_JSON")
     if override:
         return Path(override)
-    config = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(config) / "omarchy" / "shell.json"
+    return config_home() / "omarchy" / "shell.json"
 
 
-def load_settings():
-    """The plugin's entry from shell.json, or {} if there is none."""
+SETTING_KEYS = ("kindleAddress", "senderAddress", "bookFolders", "minEmailGapSeconds", "maxEmailsPerHour")
+
+
+def old_shell_json_settings():
+    """The Settings in the plugin's old shell.json entry, or {} if there are none."""
     try:
         data = json.loads(shell_json_path().read_text())
     except (OSError, ValueError):
         return {}
     for entry in data.get("plugins", []) if isinstance(data, dict) else []:
         if isinstance(entry, dict) and entry.get("id") == PLUGIN_ID:
-            return entry
+            return {key: entry[key] for key in SETTING_KEYS if key in entry}
     return {}
+
+
+class SettingsInvalid(Exception):
+    """The Settings file exists but isn't a JSON object, so nothing overwrites it."""
+
+    def __init__(self, path):
+        super().__init__(f"{path} isn't valid JSON")
+        self.path = path
+
+
+def read_settings_file():
+    """The Settings file's contents; None if there is no file. SettingsInvalid if unreadable."""
+    path = settings_path()
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        raise SettingsInvalid(path) from None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        raise SettingsInvalid(path)
+    return data
+
+
+def write_settings_file(settings):
+    """Write the whole Settings file atomically (temp file, then rename), mode 600."""
+    path = settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w") as out:
+            out.write(json.dumps(settings, indent=2) + "\n")
+            out.flush()
+            os.fsync(out.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
+
+
+def load_settings():
+    """The Settings, or {} if there are none.
+
+    With no Settings file yet, Settings found in the plugin's old shell.json entry
+    are copied into one, once; after that shell.json is never read again."""
+    try:
+        settings = read_settings_file()
+    except SettingsInvalid:
+        return {}
+    if settings is not None:
+        return settings
+    old = old_shell_json_settings()
+    if old:
+        with contextlib.suppress(OSError):
+            write_settings_file(old)
+    return old
 
 
 def lookup_password(sender):
@@ -599,42 +675,14 @@ def password_step(sender):
     store_password(sender)
 
 
-class ShellJsonInvalid(SetupCancelled):
-    """shell.json exists but isn't a JSON object, so nothing writes to it."""
-
-    def __init__(self, path):
-        super().__init__(f"{path} isn't valid JSON")
-        self.path = path
-
-
 def save_settings(updates):
-    """Merge `updates` into the plugin's entry in shell.json, keeping everything else."""
-    path = shell_json_path()
-    try:
-        text = path.read_text()
-    except FileNotFoundError:
-        text = ""
-    try:
-        data = json.loads(text) if text.strip() else {}
-    except ValueError:
-        data = None
-    if not isinstance(data, dict):
-        raise ShellJsonInvalid(path)
-    plugins = data.setdefault("plugins", [])
-    entry = next((p for p in plugins if isinstance(p, dict) and p.get("id") == PLUGIN_ID), None)
-    if entry is None:
-        entry = {"id": PLUGIN_ID}
-        plugins.append(entry)
-    for key, value in DEFAULT_LIMITS.items():
-        entry.setdefault(key, value)
-    entry.update(updates)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".kindle-send.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as out:
-        out.write(json.dumps(data, indent=2) + "\n")
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    """Merge `updates` into the Settings file, keeping every other key (the Send limit
+    numbers among them). SettingsInvalid if the file can't be read as JSON."""
+    current = read_settings_file()
+    if current is None:
+        current = load_settings()  # the one-time copy from shell.json, if any
+    settings = {**DEFAULT_LIMITS, **current, **updates}
+    write_settings_file(settings)
 
 
 def wizard():
@@ -665,10 +713,13 @@ def wizard():
 
     try:
         save_settings({"kindleAddress": kindle, "senderAddress": sender, "bookFolders": folders})
-    except ShellJsonInvalid as invalid:
+    except SettingsInvalid as invalid:
         print(f"{invalid.path} isn't valid JSON, so setup won't touch it. Fix it and run setup again.")
-        raise
-    print(f"Settings saved to {shell_json_path()}.")
+        raise SetupCancelled from None
+    except OSError as error:
+        print(f"Couldn't write {settings_path()}: {error.strerror or error}.")
+        raise SetupCancelled from None
+    print(f"Settings saved to {settings_path()}.")
 
     if create_books_folder():
         print(f"Created {Path(os.path.expanduser(DEFAULT_BOOK_FOLDERS[0]))}.")
@@ -963,7 +1014,7 @@ def create_books_folder():
 
 
 def save_form():
-    """`kindle-send save`: check the form's values and write them to shell.json (spec §3, §9).
+    """`kindle-send save`: check the form's values and write them to the Settings file (spec §3, §9).
     Reads one JSON line on stdin. Prints {"saved": bool, "firstSave"?: true, "problems": [{"field", "message", "blocking"}]};
     field "" is about the whole form."""
     try:
@@ -1002,12 +1053,12 @@ def save_form():
             return 0
     try:
         save_settings(values)
-    except ShellJsonInvalid as invalid:
+    except SettingsInvalid as invalid:
         message = f"{invalid.path} isn't valid JSON, so it wasn't changed."
         emit({"saved": False, "problems": [problem("", message, True)]})
         return 0
     except OSError as error:
-        message = f"Couldn't write {shell_json_path()}: {error.strerror or error}."
+        message = f"Couldn't write {settings_path()}: {error.strerror or error}."
         emit({"saved": False, "problems": [problem("", message, True)]})
         return 0
     if first_save:
