@@ -95,17 +95,46 @@ def build_message(book, sender, kindle):
     return msg
 
 
+# Every sentence the shell shows, by its stable code (spec §17, Translations). The
+# shell gets the code, its values and this English text, and may show its own text
+# for the code instead. Terminal output, the wizard and the Send history stay English.
+MESSAGES = {
+    # Send failures (spec §13)
+    "too_big_for_email": lambda v: f"Too big for email ({v['mb']} MB). Switch it to USB.",
+    "format_not_emailable": lambda v: f"{v['format']} can't be sent by email. Switch it to USB.",
+    "format_not_for_usb": lambda v: f"{v['format']} can't be read over USB. Send it by email.",
+    "file_not_found": lambda v: f"File not found: {v['name']}.",
+    "not_set_up": lambda v: f"Not set up: {', '.join(v['fields'])} missing.",
+    "no_app_password": lambda v: "No app password stored.",
+    "password_rejected": lambda v: "Gmail rejected the app password.",
+    "gmail_unreachable": lambda v: f"Couldn't reach Gmail: {v['detail']}.",
+    "kindle_not_plugged_in": lambda v: "Kindle not plugged in. Plug it in and send again.",
+    "kindle_full": lambda v: f"Not enough space on the Kindle (needs {v['mb']} MB).",
+    "copy_failed": lambda v: f"Couldn't copy to the Kindle: {v['detail']}.",
+    "calibre_missing": lambda v: "Install calibre to send EPUB over USB (sudo pacman -S calibre).",
+    "conversion_failed": lambda v: f"Couldn't convert: {v['detail']}.",
+    "test_book_missing": lambda v: "Couldn't find the test Book. Reinstall kindle-send.",
+}
+
+
+def said(code, **values):
+    """A shell-facing sentence: {"code", "values", "text"}."""
+    return {"code": code, "values": values, "text": MESSAGES[code](values)}
+
+
 class SendFailed(Exception):
     """A per-Book failure, reported as a result line rather than a crash."""
 
-    def __init__(self, reason, field=""):
+    def __init__(self, code, field="", **values):
         """field: the Setting that fixes it (kindleAddress, senderAddress, appPassword), if any."""
-        super().__init__(reason)
-        self.reason = reason
+        self.message = said(code, **values)
+        super().__init__(self.message["text"])
+        self.reason = self.message["text"]
         self.field = field
 
     def result(self):
-        line = {"result": "failed", "reason": self.reason}
+        line = {"result": "failed", "code": self.message["code"], "values": self.message["values"],
+                "reason": self.reason}
         if self.field:
             line["fixBySetup"] = True
             line["field"] = self.field
@@ -117,7 +146,7 @@ class NoKindle(SendFailed):
     isn't written to the Send history until it really goes."""
 
     def __init__(self):
-        super().__init__("Kindle not plugged in. Plug it in and send again.")
+        super().__init__("kindle_not_plugged_in")
 
 
 EMAIL_SETTINGS = ("kindleAddress", "senderAddress")
@@ -194,28 +223,28 @@ def record_send(book, route, result):
 
 def sendable(book, formats, refusal):
     """The Book's format, after checking the Route takes it and the file exists.
-    `refusal` names the format as {FMT} when the Route can't take it."""
+    `refusal`: the message code for a format the Route can't take."""
     fmt = book_format(book)
     if fmt not in formats:
-        raise SendFailed(refusal.format(FMT=fmt.upper()))
+        raise SendFailed(refusal, format=fmt.upper())
     if not book.is_file():
-        raise SendFailed(f"File not found: {book.name}.")
+        raise SendFailed("file_not_found", name=book.name)
     return fmt
 
 
 def send_email(book):
-    sendable(book, EMAIL_MIME, "{FMT} can't be sent by email. Switch it to USB.")
+    sendable(book, EMAIL_MIME, "format_not_emailable")
     settings = load_settings()
     missing = missing_settings(settings)
     if missing:
-        raise SendFailed(f"Not set up: {', '.join(missing)} missing.", field=missing[0])
+        raise SendFailed("not_set_up", field=missing[0], fields=missing)
     sender, kindle = settings["senderAddress"], settings["kindleAddress"]
     password = lookup_password(sender)
     if not password:
-        raise SendFailed("No app password stored.", field="appPassword")
+        raise SendFailed("no_app_password", field="appPassword")
     emit({"stage": "sending"})
     msg = build_message(book, sender, kindle)
-    too_big = SendFailed(f"Too big for email ({megabytes(book.stat().st_size)} MB). Switch it to USB.")
+    too_big = SendFailed("too_big_for_email", mb=megabytes(book.stat().st_size))
     try:
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
             server.ehlo()
@@ -227,7 +256,7 @@ def send_email(book):
                     raise too_big
             server.send_message(msg)
     except smtplib.SMTPAuthenticationError:
-        raise SendFailed("Gmail rejected the app password.", field="appPassword") from None
+        raise SendFailed("password_rejected", field="appPassword") from None
     except smtplib.SMTPResponseException as error:
         if error.smtp_code == 552:
             raise too_big from None
@@ -258,7 +287,7 @@ def advertised_size(server):
 
 def unreachable(error, password):
     # Never let the password leak into a reason, whatever the server echoes.
-    return SendFailed(f"Couldn't reach Gmail: {error_text(error).replace(password, '***')}.")
+    return SendFailed("gmail_unreachable", detail=error_text(error).replace(password, "***"))
 
 
 def error_text(error):
@@ -469,7 +498,7 @@ def copy_to_kindle(source, mount):
     except OSError as error:
         with contextlib.suppress(OSError):
             part.unlink()
-        raise SendFailed(f"Couldn't copy to the Kindle: {error.strerror or error}.") from None
+        raise SendFailed("copy_failed", detail=str(error.strerror or error)) from None
 
 
 def eject():
@@ -498,18 +527,18 @@ def convert_for_usb(book, workdir):
         out = subprocess.run([EBOOK_CONVERT, str(book), str(target)],
                              capture_output=True, text=True, timeout=CONVERSION_TIMEOUT)
     except FileNotFoundError:
-        raise SendFailed("Install calibre to send EPUB over USB (sudo pacman -S calibre).") from None
+        raise SendFailed("calibre_missing") from None
     except (OSError, subprocess.SubprocessError) as error:
-        raise SendFailed(f"Couldn't convert: {error}.") from None
+        raise SendFailed("conversion_failed", detail=str(error).rstrip(".")) from None
     if out.returncode != 0 or not target.is_file():
         first = next((l.strip() for l in out.stderr.splitlines() if l.strip()),
                      f"ebook-convert exited with {out.returncode}")
-        raise SendFailed(f"Couldn't convert: {first.rstrip('.')}.")
+        raise SendFailed("conversion_failed", detail=first.rstrip("."))
     return target
 
 
 def send_usb(book):
-    fmt = sendable(book, USB_FORMATS, "{FMT} can't be read over USB. Send it by email.")
+    fmt = sendable(book, USB_FORMATS, "format_not_for_usb")
     kindle = find_kindle()
     if kindle is None:
         raise NoKindle()
@@ -517,7 +546,7 @@ def send_usb(book):
         source = convert_for_usb(book, Path(workdir)) if fmt == "epub" else book
         size = source.stat().st_size
         if size > free_space(kindle["mount"]):
-            raise SendFailed(f"Not enough space on the Kindle (needs {megabytes(size)} MB).")
+            raise SendFailed("kindle_full", mb=megabytes(size))
         emit({"stage": "copying"})
         copy_to_kindle(source, kindle["mount"])
     return {"result": "copied"}
@@ -698,7 +727,7 @@ def send_test_book():
         try:
             shutil.copyfile(test_epub_path(), book)
         except OSError:
-            return SendFailed("Couldn't find the test Book. Reinstall kindle-send.").result()
+            return SendFailed("test_book_missing").result()
         try:
             result = send_email(book)
         except SendFailed as failure:
