@@ -135,8 +135,9 @@ function testBook(sender) {
 }
 
 // The `kindle-send send` argv for one Book; paths go as argv words, never through a shell.
-function sendArgv(book) {
-  return ["kindle-send", "send", "--route", book.route, book.test === true ? "--test" : book.path]
+// program: the bundled kindle-send's path (Program.js).
+function sendArgv(program, book) {
+  return [program, "send", "--route", book.route, book.test === true ? "--test" : book.path]
 }
 
 function testSent(sender) {
@@ -166,7 +167,7 @@ function clickArgv(pluginId, summary) {
 // item: { headline, body, urgency, timeout?, exec? }; exec (argv) runs on click
 // and has to come last.
 function notifyArgv(item, replaceId) {
-  let argv = ["omarchy-notification-send", "--app-name", "Send to Kindle", "-g", "\u{F02D}", "-u", item.urgency]
+  let argv = ["omarchy-notification-send", "--app-name", "Books to Kindle", "-g", "\u{F02D}", "-u", item.urgency]
   if (item.timeout > 0) argv = argv.concat(["-t", String(item.timeout)])
   argv = replaceId > 0 ? argv.concat(["-r", String(replaceId)]) : argv.concat(["-p"])
   argv = argv.concat([item.headline, item.body || ""])

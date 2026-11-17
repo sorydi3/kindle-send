@@ -182,8 +182,9 @@ function payloadFiles(payloadJson) {
 }
 
 // With files, plan just those; otherwise scan the Book folders.
-function planCommand(files) {
-  return files.length > 0 ? ["kindle-send", "plan"].concat(files) : ["kindle-send", "plan", "--folders"]
+// program: the bundled kindle-send's path (Program.js).
+function planCommand(program, files) {
+  return files.length > 0 ? [program, "plan"].concat(files) : [program, "plan", "--folders"]
 }
 
 // Every Book of a payload starts marked.

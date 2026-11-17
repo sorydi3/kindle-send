@@ -34,7 +34,7 @@ Run `./scripts/install.sh` from the repo, in a terminal.
 Run `kindle-send setup` in a terminal (the menu's Send to Kindle → Settings opens the Picker instead; see section 17).
 
 - [ ] It asks, in order: Kindle address, Gmail address, app password (through `secret-tool store`), the Approved list step (waits for Enter), and Book folders (defaults filled in).
-- [ ] The `sorydi3.kindle-send` entry in `~/.config/omarchy/shell.json` holds `kindleAddress`, `senderAddress`, `bookFolders`, `minEmailGapSeconds: 10` and `maxEmailsPerHour: 20`. The file mode is `600`, and the other plugins and keys are unchanged.
+- [ ] `~/.config/kindle-send/settings.json` holds `kindleAddress`, `senderAddress`, `bookFolders`, `minEmailGapSeconds: 10` and `maxEmailsPerHour: 20`. The file mode is `600`, and `~/.config/omarchy/shell.json` is unchanged.
 - [ ] `secret-tool lookup service kindle-send user <gmail>` prints a non-empty value. Don't paste it anywhere.
 - [ ] `~/Books` exists.
 - [ ] The test send runs, and "Kindle Send Test" appears on the Kindle within a few minutes. It was found through the installed link, so this also checks the test-EPUB path.
@@ -79,7 +79,7 @@ Run `kindle-send setup` in a terminal (the menu's Send to Kindle → Settings op
 
 ## 7. Send limit (§15.7)
 
-Uses real email to your own Kindle, so 20 deliveries. If you'd rather not, lower `maxEmailsPerHour` to 3 in `shell.json` for the test, and put it back after.
+Uses real email to your own Kindle, so 20 deliveries. If you'd rather not, lower `maxEmailsPerHour` to 3 in `settings.json` for the test, and put it back after.
 
 - [ ] Mark 25 small Books and send them. Emails go out at least 10 s apart (check the times with `kindle-send history`).
 - [ ] After the 20th (or the cap you set), the rest are held, with "Holding N Books to stay under Amazon's limit. Next in M min." The notice stays on screen (critical), its count drops as held Books go, and it ends as the summary of the held Books.
@@ -126,12 +126,12 @@ These came up while building and aren't covered above.
 - [ ] In the Book list the footer ends "Ctrl+,  Settings      Esc  Close" (or "Esc  Clear search" while searching).
 - [ ] Type a comma in the Book list: it goes into the search. `Ctrl+,` opens Settings instead.
 - [ ] Click the cog at the right end of the search line: Settings open.
-- [ ] Settings show the Kindle address, the Gmail address and the Book folders as they are in `shell.json` (`~` kept), with the cursor in the Kindle address field. Typed text goes into the fields.
+- [ ] Settings show the Kindle address, the Gmail address and the Book folders as they are in `settings.json` (`~` kept), with the cursor in the Kindle address field. Typed text goes into the fields.
 - [ ] `Tab` moves Kindle address → Gmail address → app password → Book folders; `Shift+Tab` goes back. Focus never lands on the Book list behind.
 - [ ] **Key isolation.** With Settings open, press `Enter`, `Space`, `Tab`, `Delete`, letters and arrows: no Book is sent, marked or switched, the search stays as it was, and no notification appears. Mouse clicks on the form don't mark Books either.
 - [ ] Change a field: the footer says "Esc  Back (discard changes)". Press `Esc`: back in the Book list; reopen Settings and the old value is there.
-- [ ] Clear the Gmail address and press `Enter` (from any field): "Needed before Books can be sent." replaces its help line in the accent color, focus jumps to it, the status line says "1 value needs fixing.", and `shell.json` is unchanged. Type one letter: the problem goes and the help line is back.
-- [ ] Save a Kindle address on `@kindle.cn` and a Book folder `~/Bokos`: saved (check `shell.json`), with the two warnings under their fields and "Saved. 2 values to check below.". `~/Bokos` isn't created. `shell.json` is still mode 600 and its other keys are untouched.
+- [ ] Clear the Gmail address and press `Enter` (from any field): "Needed before Books can be sent." replaces its help line in the accent color, focus jumps to it, the status line says "1 value needs fixing.", and `settings.json` is unchanged. Type one letter: the problem goes and the help line is back.
+- [ ] Save a Kindle address on `@kindle.cn` and a Book folder `~/Bokos`: saved (check `settings.json`), with the two warnings under their fields and "Saved. 2 values to check below.". `~/Bokos` isn't created. `settings.json` is still mode 600 and its other keys (the Send limit numbers) are untouched.
 - [ ] Empty the Book folders field and save: it shows "~/Books, ~/Downloads" again.
 - [ ] After a save, `Esc` returns to a Book list planned from the new folders.
 
@@ -142,7 +142,7 @@ These came up while building and aren't covered above.
 - [ ] On the Gmail address, press `Ctrl+O`: the browser shows Amazon's Personal Document Settings, where the approved list is. No "done?" question follows.
 - [ ] On the app password (once it exists), `Ctrl+O` opens myaccount.google.com/apppasswords.
 - [ ] Click the underlined help line under the Kindle address: same as `Ctrl+O`. Book folders' help line isn't underlined and does nothing on click. A problem shown in place of a help line isn't a link.
-- [ ] **Round trip.** Change the Kindle address without saving, move to the Gmail address and press `Ctrl+O`. After the browser shows, press `SUPER + SHIFT + K`: the Picker opens in Settings, the changed Kindle address is still there, the cursor is in the Gmail address, and the footer says "Esc  Back (discard changes)". `shell.json` is unchanged.
+- [ ] **Round trip.** Change the Kindle address without saving, move to the Gmail address and press `Ctrl+O`. After the browser shows, press `SUPER + SHIFT + K`: the Picker opens in Settings, the changed Kindle address is still there, the cursor is in the Gmail address, and the footer says "Esc  Back (discard changes)". `settings.json` is unchanged.
 - [ ] After that round trip, `Esc` goes back to the Book list; closing and reopening the Picker now opens the Book list, not Settings.
 - [ ] Save with a warning, then follow a link and come back: the warning and the status line are still shown.
 
@@ -150,9 +150,9 @@ These came up while building and aren't covered above.
 
 - [ ] Settings show "Gmail app password" between the Gmail address and the Book folders (so `Tab` now goes Kindle address → Gmail address → app password → Book folders). Its help line reads "Create one at myaccount.google.com/apppasswords. It needs 2-Step Verification."
 - [ ] With a password stored, the field is empty with "Stored. Type to replace it." in grey; without one, "xxxx xxxx xxxx xxxx". Typed characters show as dots.
-- [ ] Type a wrong app password and press `Enter`: the status line says "Checking the app password with Gmail…", then "Gmail rejected this app password." replaces the help line, focus jumps to the field, and `shell.json` and the keyring (`secret-tool lookup service kindle-send user <Gmail>`) are unchanged.
+- [ ] Type a wrong app password and press `Enter`: the status line says "Checking the app password with Gmail…", then "Gmail rejected this app password." replaces the help line, focus jumps to the field, and `settings.json` and the keyring (`secret-tool lookup service kindle-send user <Gmail>`) are unchanged.
 - [ ] Type the real app password and save: "Saved.", the field empties and shows "Stored. Type to replace it.", and `secret-tool lookup service kindle-send user <Gmail>` prints it.
-- [ ] While that save runs, `ps -eo args | grep kindle-send` and `ps -eo args | grep secret-tool` never show the password, and it isn't in `shell.json` or the journal (`journalctl --user -b | grep -F '<first 4 characters>'`).
+- [ ] While that save runs, `ps -eo args | grep kindle-send` and `ps -eo args | grep secret-tool` never show the password, and it isn't in `settings.json` or the journal (`journalctl --user -b | grep -F '<first 4 characters>'`).
 - [ ] Turn Wi-Fi off, type the password and save: saved anyway, with "Couldn't reach Gmail to check the password. Saved anyway." under the field.
 - [ ] Change only the Kindle address and save: the status line goes straight to "Saved." with no "Checking…".
 - [ ] Type a password, then press `Esc`: back in the Book list; reopen Settings and the field is empty again.
@@ -161,7 +161,7 @@ These came up while building and aren't covered above.
 
 - [ ] In Settings, the footer shows "Ctrl+B  Browse" on Book folders only, and a "Browse…" button sits beside the Book folders field. `Tab` skips the button (Kindle address → Gmail address → app password → Book folders).
 - [ ] On Book folders, press `Ctrl+B`: the Picker closes and the GTK folder chooser opens, titled "Add a Book folder", in the home folder. `Ctrl+B` on any other field does nothing.
-- [ ] **Round trip.** Change the Kindle address without saving, click "Browse…", pick a folder inside home (e.g. `~/Documents`) with the mouse and confirm: the Picker reopens in Settings by itself, with the changed Kindle address still there, `~/Documents` appended to Book folders (written with `~`), the cursor in Book folders, and the footer saying "Esc  Back (discard changes)". `shell.json` is unchanged until `Enter`.
+- [ ] **Round trip.** Change the Kindle address without saving, click "Browse…", pick a folder inside home (e.g. `~/Documents`) with the mouse and confirm: the Picker reopens in Settings by itself, with the changed Kindle address still there, `~/Documents` appended to Book folders (written with `~`), the cursor in Book folders, and the footer saying "Esc  Back (discard changes)". `settings.json` is unchanged until `Enter`.
 - [ ] Pick a folder outside home (e.g. `/tmp`): it's appended as its full path. Pick a folder already in the field: nothing is added twice. Pick a folder with a space or an accent in its name: it shows as typed, not `%20`.
 - [ ] Open the chooser and cancel it (Cancel, or `Esc`): the Picker reopens in Settings with the field and any unsaved values as they were.
 - [ ] Inside the chooser, `Ctrl+L` does nothing (known, spec §16); picking takes the mouse.
@@ -169,9 +169,9 @@ These came up while building and aren't covered above.
 
 ## 15. Failure notifications open Settings (§10, §13)
 
-Back up `~/.config/omarchy/shell.json` first and put it back afterwards.
+Back up `~/.config/kindle-send/settings.json` first and put it back afterwards.
 
-- [ ] Remove `kindleAddress` from the plugin's entry in `shell.json` (keep the app password stored) and send a Book by email. The critical notification says "Not set up: kindleAddress missing." Clicking it opens the Picker in Settings, the cursor in the Kindle address, "Needed before Books can be sent." in place of its help line. No terminal opens.
+- [ ] Remove `kindleAddress` from `settings.json` (keep the app password stored) and send a Book by email. The critical notification says "Not set up: kindleAddress missing." Clicking it opens the Picker in Settings, the cursor in the Kindle address, "Needed before Books can be sent." in place of its help line. No terminal opens.
 - [ ] Same with `senderAddress` removed: the click lands on the Gmail address, flagged the same way.
 - [ ] Clear the stored password (`secret-tool clear service kindle-send user <Gmail>`) and send by email: "No app password stored." Clicking it opens Settings on the app password field with "No app password stored." under it.
 - [ ] Section 8's wrong password: the click lands on the app password field with "Gmail rejected the app password." under it. Type the right one: the problem clears as you type; `Enter` saves it.
@@ -179,17 +179,17 @@ Back up `~/.config/omarchy/shell.json` first and put it back afterwards.
 
 ## 16. First run opens straight into Settings (§4 Setup needed, §9)
 
-Start from no setup: move the `sorydi3.kindle-send` keys out of `shell.json` (keep a copy) and `secret-tool clear service kindle-send user <Gmail>`, and move `~/Books` aside if it's empty.
+Start from no setup: move `~/.config/kindle-send/settings.json` aside (keep it) and `secret-tool clear service kindle-send user <Gmail>`, and move `~/Books` aside if it's empty.
 
 - [ ] `SUPER + SHIFT + K` opens straight into the form titled "Set up Send to Kindle". No Book list, no "Start setup" screen, and no terminal opens.
 - [ ] Kindle address, Gmail address and Gmail app password each show "· needed" beside their label in the accent color; Book folders doesn't. The footer ends "Esc  Close".
 - [ ] Press `Esc`: the Picker closes. Open it again: back in "Set up Send to Kindle".
-- [ ] Type a Kindle address: its "· needed" goes at once. Press `Enter` with the others still empty: the status line says "2 still needed before Books can be sent.", "Needed before Books can be sent." replaces both help lines, focus jumps to the Gmail address, and `shell.json` is unchanged.
+- [ ] Type a Kindle address: its "· needed" goes at once. Press `Enter` with the others still empty: the status line says "2 still needed before Books can be sent.", "Needed before Books can be sent." replaces both help lines, focus jumps to the Gmail address, and no `settings.json` is written.
 - [ ] Fill in the Gmail address and the real app password and press `Enter`: saved. The title changes to "Settings", no field is flagged, `~/Books` now exists, and the footer ends "Esc  Back to Books". `Esc` shows the Book list.
 - [ ] Delete `~/Books` (if empty), change only the Kindle address in Settings and save: `~/Books` is not created again.
 - [ ] With Book folders pointing at empty folders, the Picker says "No Books found in …" with "Enter  Change Book folders". `Enter` (or a click on the message) opens Settings with the cursor in Book folders.
 - [ ] `kindle-send setup` in a terminal still runs the wizard.
-- [ ] Put back your own `shell.json` keys and app password.
+- [ ] Put back your own `settings.json` and app password.
 
 ## 17. Omarchy menu opens Settings (§14)
 
@@ -228,7 +228,44 @@ The plugin's `manifest.json`, QML and JS now sit at the repo root; nothing else 
 - [ ] Run `./scripts/install.sh` in a temp `HOME` (not your own). `~/.local/share/kindle-send/omarchy-plugin` holds only `manifest.json`, the `*.qml` and the `*.js`, and the plugin link points at it.
 - [ ] After installing for real, `SUPER + SHIFT + K` opens the Picker and a Send works as before.
 
-## 21. Message codes and Route ids (#64)
+## 21. Bar widget (#62, spec §17)
+
+Add the widget to a test bar layout yourself (the Omarchy bar settings), not with `omarchy bar put`. Start with nothing waiting.
+
+- [ ] A book icon shows, with no number beside it. Hover: the tooltip reads "Books to Kindle" and, below, "Nothing waiting".
+- [ ] Left-click opens the Picker; left-click again closes it. Right-click does nothing.
+- [ ] With the Kindle unplugged, send two Books by USB: "2" shows beside the icon, and the tooltip says "2 waiting for Kindle". Plug the Kindle in: while the Send runs the icon takes the bar's active colour and the tooltip says "Sending…"; afterwards the number goes and the colour is back to normal.
+- [ ] With emails held by the Send limit (section 7), the number counts them too and the tooltip adds "N held by the Send limit" (joined with " · " to anything else).
+- [ ] With a dark theme (e.g. Tokyo Night) the icon, the number and the tooltip are readable on the bar, and the active colour stands out. Switch to a light theme (e.g. Catppuccin Latte): the same, with nothing keeping a dark-theme colour.
+
+## 22. The name is Books to Kindle (#63)
+
+The plugin shows itself as "Books to Kindle"; only the right-click action keeps the label "Send to Kindle".
+
+- [ ] `omarchy plugin validate .` passes; `manifest.json` has name "Books to Kindle", version 1.0.0, author sorydi3, license MIT and the "Unofficial: … Not created or endorsed by Amazon." description.
+- [ ] While setup is needed, the Picker opens into Settings titled "Set up Books to Kindle". The Book list's search line reads "Books to Kindle…" while empty.
+- [ ] A Send's notification shows the app name "Books to Kindle".
+- [ ] Run the extras script in a temp `HOME` with an Omarchy menu file holding a "Send to Kindle" block: it offers to replace it, and afterwards the menu shows "Books to Kindle" with "Books to Kindle" and "Settings" inside.
+- [ ] The Nautilus and Strata right-click items still read "Send to Kindle".
+
+## 23. Settings live in their own file (#61, ADR 0002)
+
+Back up `~/.config/omarchy/shell.json` and `~/.config/kindle-send/` first, and put them back afterwards.
+
+- [ ] **The one-time copy.** Move `~/.config/kindle-send/settings.json` aside and put `kindleAddress`, `senderAddress` and `bookFolders` in the plugin's old `sorydi3.kindle-send` entry in `shell.json`. Open the Picker: Settings show those values, and `~/.config/kindle-send/settings.json` now holds them, mode `600`. `shell.json` is byte for byte what it was (`cmp` against the backup).
+- [ ] Change the Kindle address in the old `shell.json` entry and reopen Settings: they still show the copied one. `shell.json` is never read again.
+- [ ] Save Settings from the Picker and run `kindle-send setup` once: `shell.json` is still unchanged, and `settings.json` keeps `minEmailGapSeconds` and `maxEmailsPerHour`.
+- [ ] **Disable and enable.** Disable the plugin in omarchy and enable it again: Settings are all still there, and saving them doesn't enable a disabled plugin.
+
+## 24. The Picker and Service run the bundled kindle-send (#60)
+
+They run `bin/kindle-send` from the plugin folder, never a `kindle-send` on PATH.
+
+- [ ] With `~/.local/bin/kindle-send` moved aside (so none is on PATH), restart the shell and press `SUPER + SHIFT + K`: the Picker lists Books, `Ctrl+,` shows Settings, and a Send by email and by USB both go through. Put it back afterwards.
+- [ ] With the plugin folder a symlink to the repo checkout, `Ctrl+T` in Settings sends "Kindle Send Test" (the test EPUB is found beside the bundled program).
+- [ ] After `./scripts/install.sh` in a temp `HOME`, the copied plugin also holds `bin/kindle-send` (executable) and `assets/test.epub` besides the files section 20 lists.
+
+## 25. Message codes and Route ids (#64)
 
 The Picker still shows the English text; only where Route labels come from changed.
 

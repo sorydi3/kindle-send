@@ -25,7 +25,10 @@ QtObject {
     t.start()
   }
 
-  function delayFor(cmd) { return cmd[0] === "kindle-send" && cmd[1] === "send" ? 50 : 5 }
+  // Any program named kindle-send answers; each run's event says which one it was.
+  function isKindleSend(cmd) { return String(cmd[0]).split("/").pop() === "kindle-send" }
+
+  function delayFor(cmd) { return w.isKindleSend(cmd) && cmd[1] === "send" ? 50 : 5 }
 
   function answer(cmd) {
     if (cmd[0] === "omarchy-notification-send") {
@@ -37,7 +40,7 @@ QtObject {
                 exec: exec >= 0 ? cmd.slice(exec + 1) : [] })
       return { lines: r >= 0 ? [] : [String(id)], code: 0 }
     }
-    w.event({ kind: "run", cmd: cmd.slice(1).join(" ") })
+    w.event({ kind: "run", program: String(cmd[0]), cmd: cmd.slice(1).join(" ") })
     if (cmd[1] === "limit") return { lines: [JSON.stringify(w.limits.length > 1 ? w.limits.shift() : w.limits[0])], code: 0 }
     if (cmd[1] === "send" && w.sendResults[cmd[4]]) return { lines: [JSON.stringify(w.sendResults[cmd[4]])], code: 0 }
     if (cmd[1] === "send" && cmd[3] === "usb") {

@@ -80,8 +80,29 @@ def ks(home):
     return load_script()
 
 
+def settings_file(home):
+    """Where kindle-send keeps Settings (spec §9, ADR 0002)."""
+    return home / ".config" / "kindle-send" / "settings.json"
+
+
+def read_settings(home):
+    return json.loads(settings_file(home).read_text())
+
+
+def write_settings(home, **settings):
+    path = settings_file(home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(settings))
+    return path
+
+
+def shell_json(home):
+    return home / ".config" / "omarchy" / "shell.json"
+
+
 def write_shell_json(home, **settings):
-    path = home / ".config" / "omarchy" / "shell.json"
+    """The plugin's old `shell.json` entry, from before Settings had their own file."""
+    path = shell_json(home)
     path.parent.mkdir(parents=True, exist_ok=True)
     entry = {"id": "sorydi3.kindle-send", **settings}
     path.write_text(json.dumps({"plugins": [{"id": "other.plugin"}, entry]}))

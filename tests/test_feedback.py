@@ -175,7 +175,7 @@ def test_a_failed_send_has_no_timeout():
 
 
 SETUP = ["omarchy-shell", "shell", "summon", "sorydi3.kindle-send", '{"settings":"appPassword"}']
-POST = ["omarchy-notification-send", "--app-name", "Send to Kindle", "-g", "\uF02D"]
+POST = ["omarchy-notification-send", "--app-name", "Books to Kindle", "-g", "\uF02D"]
 
 
 def test_first_post_asks_for_the_id_and_a_done_summary_times_out():
@@ -215,13 +215,14 @@ def test_the_test_book_runs_send_with_test_instead_of_a_file():
 
     assert book["name"] == "Kindle Send Test"
     assert book["route"] == "email"
-    assert call("sendArgv", book) == ["kindle-send", "send", "--route", "email", "--test"]
+    assert call("sendArgv", "/p/bin/kindle-send", book) == ["/p/bin/kindle-send", "send", "--route", "email", "--test"]
 
 
 def test_any_other_book_runs_send_with_its_path():
     book = {"path": "/b/Dune.epub", "name": "Dune.epub", "route": "email"}
 
-    assert call("sendArgv", book) == ["kindle-send", "send", "--route", "email", "/b/Dune.epub"]
+    assert call("sendArgv", "/p/bin/kindle-send", book) == [
+        "/p/bin/kindle-send", "send", "--route", "email", "/b/Dune.epub"]
 
 
 def test_a_sent_test_book_lists_the_usual_causes_instead_of_a_question():

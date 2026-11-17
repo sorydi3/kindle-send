@@ -48,7 +48,7 @@ def test_enter_on_the_waiting_line_sends_nothing():
 
 
 def test_a_plan_that_needs_setup_sends_the_picker_into_settings():
-    """The Picker then opens straight into Settings, titled "Set up Send to Kindle" (spec §4, §9)."""
+    """The Picker then opens straight into Settings, titled "Set up Books to Kindle" (spec §4, §9)."""
     parsed = rows("fromPlan([{setupNeeded: true, missing: ['appPassword']},"
                   f" {book(path='/b/Dune.epub')}])")
 
