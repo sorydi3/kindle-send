@@ -201,7 +201,7 @@ function status(result, tr) {
   if (!result.saved) return Catalog.count(tr, "settings.fixing", fieldsWith)
   const saved = fieldsWith > 0 ? Catalog.count(tr, "settings.savedToCheck", fieldsWith) : tr.t("settings.saved")
   // The save that completed setup suggests the test send (spec §9).
-  return result.firstSave === true ? saved + " " + tr.t("settings.suggestTest") : saved
+  return result.firstSave === true ? Catalog.say(tr, "settings.savedSuggestTest", [saved]) : saved
 }
 
 // --- Test send (spec §9) --------------------------------------------------------
@@ -240,7 +240,8 @@ function testOutcome(testSend, tr) {
     problems[t.field] = reason
     return { status: tr.t("settings.testFailed"), problems: problems }
   }
-  return { status: tr.t("settings.testFailed") + (reason ? " " + reason : ""), problems: {} }
+  return { status: reason ? Catalog.say(tr, "settings.testFailedBecause", [reason]) : tr.t("settings.testFailed"),
+           problems: {} }
 }
 
 // A key hint: the key's name as it is, then what it does.

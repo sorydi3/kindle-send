@@ -547,6 +547,21 @@ def test_a_first_save_with_warnings_names_them_before_the_suggestion():
         == "Saved. 1 value to check below. " + SUGGESTION
 
 
+def test_a_language_places_the_saved_part_of_the_suggestion_itself():
+    """One catalog string with %1, never two glued together (spec §17, Translations)."""
+    tr = "LANG({'settings.savedSuggestTest': 'Ctrl+T schickt ein Test-Buch. (%1)'})"
+
+    assert form(f"status({{saved: true, firstSave: true, problems: []}}, {tr})") \
+        == "Ctrl+T schickt ein Test-Buch. (Saved.)"
+
+
+def test_a_language_places_the_test_sends_reason_itself():
+    tr = "LANG({'settings.testFailedBecause': '%1 — Test-Buch nicht gesendet.'})"
+    failed = form(f"testOutcome({{state: 'failed', at: 1, reason: 'Kaputt.', field: ''}}, {tr})")
+
+    assert failed["status"] == "Kaputt. — Test-Buch nicht gesendet."
+
+
 def test_later_saves_do_not_suggest_the_test_send():
     assert form("status({saved: true, problems: []}, EN)") == "Saved."
 
