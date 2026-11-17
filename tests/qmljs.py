@@ -1,4 +1,4 @@
-"""Runs the plugin's QML JavaScript libraries (plugin/*.js) under node.
+"""Runs the plugin's QML JavaScript libraries (the *.js at the repo root) under node.
 
 QML-only lines are handled the way QML does: `.pragma library` is dropped and
 `.import "Other.js" as Name` loads that file and binds it to `Name`.
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-PLUGIN = Path(__file__).resolve().parent.parent / "plugin"
+PLUGIN = Path(__file__).resolve().parent.parent
 NODE = shutil.which("node")
 
 needs_node = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -35,7 +35,7 @@ process.stdout.write(JSON.stringify(vm.runInContext(process.argv[2], ctx)))
 
 
 def evaluate(library, expr):
-    """The JSON value of JS expression `expr`, evaluated inside plugin/<library>."""
+    """The JSON value of JS expression `expr`, evaluated inside <library> at the repo root."""
     out = subprocess.run([NODE, "-e", LOADER, str(PLUGIN / library), expr],
                          capture_output=True, text=True, check=True).stdout
     return json.loads(out) if out else None

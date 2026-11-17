@@ -1,4 +1,4 @@
-"""plugin/Settings.js, run under node (skipped without node): the Settings form's decisions (spec §9)."""
+"""Settings.js, run under node (skipped without node): the Settings form's decisions (spec §9)."""
 import json
 
 from qmljs import evaluate, needs_node

@@ -1,4 +1,4 @@
-"""plugin/Rows.js, run under node (skipped without node): the Picker's row text."""
+"""Rows.js, run under node (skipped without node): the Picker's row text."""
 import json
 
 from qmljs import evaluate, needs_node

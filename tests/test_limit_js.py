@@ -1,4 +1,4 @@
-"""plugin/Limit.js, run under node (skipped without node): how the Service keeps to the Send limit.
+"""Limit.js, run under node (skipped without node): how the Service keeps to the Send limit.
 
 Emails the hourly cap holds back leave their Send and wait in the Service's
 held-email line, so USB Books and later Sends don't wait for them (spec §7, §11).

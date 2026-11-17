@@ -219,3 +219,11 @@ Settings draw with the Omarchy theme's tokens only, so they follow the theme. Sw
 - [ ] With a dark theme (e.g. Tokyo Night), open Settings with `Ctrl+,`: the title, labels, field text, placeholders, help lines, the status line and the footer are all readable on the card; the focused field and the "· needed" flag stand out in the theme's accent color.
 - [ ] Type a wrong value and save, so a problem replaces a help line: it reads in the accent color, clearly apart from the help lines.
 - [ ] Switch to a light theme (e.g. Catppuccin Latte) and repeat: nothing keeps a dark-theme color (no dark text boxes, no white-on-white text), and the same text is readable.
+
+## 20. The repo root is the plugin (#59)
+
+The plugin's `manifest.json`, QML and JS now sit at the repo root; nothing else changed.
+
+- [ ] `omarchy plugin validate .` at the repo root prints no error.
+- [ ] Run `./scripts/install.sh` in a temp `HOME` (not your own). `~/.local/share/kindle-send/omarchy-plugin` holds only `manifest.json`, the `*.qml` and the `*.js`, and the plugin link points at it.
+- [ ] After installing for real, `SUPER + SHIFT + K` opens the Picker and a Send works as before.

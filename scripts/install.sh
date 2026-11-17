@@ -159,9 +159,11 @@ plugin_listed() {
   return 1
 }
 
+# The repo root is the plugin; only its plugin files are copied.
 copy_plugin() {
   rm -rf "$plugin_copy"
-  cp -r "$repo/plugin" "$plugin_copy"
+  mkdir -p "$plugin_copy"
+  cp "$repo/manifest.json" "$repo"/*.qml "$repo"/*.js "$plugin_copy/"
 }
 
 if ! command -v omarchy >/dev/null; then
