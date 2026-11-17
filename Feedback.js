@@ -166,7 +166,7 @@ function clickArgv(pluginId, summary) {
 // item: { headline, body, urgency, timeout?, exec? }; exec (argv) runs on click
 // and has to come last.
 function notifyArgv(item, replaceId) {
-  let argv = ["omarchy-notification-send", "--app-name", "Send to Kindle", "-g", "\u{F02D}", "-u", item.urgency]
+  let argv = ["omarchy-notification-send", "--app-name", "Books to Kindle", "-g", "\u{F02D}", "-u", item.urgency]
   if (item.timeout > 0) argv = argv.concat(["-t", String(item.timeout)])
   argv = replaceId > 0 ? argv.concat(["-r", String(replaceId)]) : argv.concat(["-p"])
   argv = argv.concat([item.headline, item.body || ""])
