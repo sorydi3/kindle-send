@@ -2,11 +2,13 @@
 """Write Strata's right-click "Send to Kindle" action (spec §4).
 
     strata_action.py ACTIONS_DIR FORMATS_JSON
+    strata_action.py --current ACTIONS_DIR FORMATS_JSON
 
 FORMATS_JSON is the output of `kindle-send formats`, so the format list lives
 only in kindle-send. Writes ACTIONS_DIR/kindle-send/action.toml, owner-only as
 Strata requires. A new action starts disabled, for the user to enable in
-Strata's Settings → Actions; a rerun keeps the user's choice.
+Strata's Settings → Actions; a rerun keeps the user's choice. With --current it
+writes nothing and exits 0 if the action is already what it would write, 3 if not.
 
 Strata shows an action only when every selected file matches it, so a mixed
 selection gets no item (Nautilus instead leaves the unsupported files out).
@@ -43,7 +45,7 @@ confirm = false
 """
 
 
-def main(actions_dir, formats_json):
+def main(actions_dir, formats_json, only_check=False):
     try:
         formats = json.loads(formats_json.splitlines()[0])["formats"]
     except (ValueError, KeyError, IndexError, TypeError):
@@ -54,16 +56,20 @@ def main(actions_dir, formats_json):
     enabled = "false"
     try:
         with open(path, encoding="utf-8") as f:
-            found = re.search(r"^enabled = (true|false)$", f.read(), re.M)
+            old = f.read()
+        found = re.search(r"^enabled = (true|false)$", old, re.M)
         if found:
             enabled = found.group(1)
         existed = True
     except FileNotFoundError:
-        existed = False
+        old, existed = None, False
+
+    text = TEMPLATE.format(id=ACTION_ID, enabled=enabled, extensions=json.dumps(formats))
+    if only_check:
+        return 0 if text == old else 3
 
     os.makedirs(folder, mode=0o700, exist_ok=True)
     os.chmod(folder, 0o700)
-    text = TEMPLATE.format(id=ACTION_ID, enabled=enabled, extensions=json.dumps(formats))
     tmp = path + ".kindle-send-tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -77,9 +83,14 @@ def main(actions_dir, formats_json):
         print(f"    Updated {path}.")
     else:
         print(f"    Updated {path}; still off. Turn it on in Strata: Settings → Actions.")
+    return 0
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
+    args = sys.argv[1:]
+    check = args[:1] == ["--current"]
+    if check:
+        args = args[1:]
+    if len(args) != 2:
         sys.exit(__doc__)
-    main(sys.argv[1], sys.argv[2])
+    sys.exit(main(*args, only_check=check))

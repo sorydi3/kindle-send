@@ -13,19 +13,19 @@ Before you start:
 
 ## 1. Fresh install (§15.1)
 
-Run `./scripts/install.sh` from the repo, in a terminal.
+Install the plugin (`omarchy plugin add … --enable`, or the plugin folder linked to the checkout), then run the extras script `~/.config/omarchy/plugins/sorydi3.kindle-send/scripts/install.sh` in a terminal (section 26 has the details).
 
-- [ ] The dependency check prints `python3, nautilus-python, secret-tool, udisksctl: found`. If Calibre is missing, it adds only the line `Optional: sudo pacman -S calibre to send EPUB over USB`. It never asks for a sudo password.
-- [ ] It asks `Add SUPER + SHIFT + K (open the picker) to ~/.config/hypr/bindings.lua? [y/N]`. Answer `y`. `~/.config/hypr/bindings.lua.before-kindle-send` now exists, and the binding sits between `-- >>> kindle-send keybinding …` and `-- <<< kindle-send <<<` at the end of the file.
+- [ ] The dependency check prints `python3, secret-tool: found`. If Calibre is missing, it adds only the line `Optional: sudo pacman -S calibre to send EPUB over USB`. It never asks for a sudo password.
+- [ ] It asks to link `~/.local/bin/kindle-send`, then about the Nautilus item (and the Strata action, with Strata). Answer `y` to each.
+- [ ] It asks `Add SUPER + SHIFT + K (open the Picker) to ~/.config/hypr/bindings.lua? [y/N]`. Answer `y`. `~/.config/hypr/bindings.lua.before-kindle-send` now exists, and the binding sits between `-- >>> kindle-send keybinding …` and `-- <<< kindle-send <<<` at the end of the file.
 - [ ] It asks about the Omarchy menu. Answer `y`. `~/.config/omarchy/extensions/omarchy-menu.jsonc.before-kindle-send` now exists, and the three entries sit inside `// >>> kindle-send menu …` / `// <<< kindle-send <<<`, just before the final `}`.
 - [ ] Your existing menu items (Snip …) still show in the Omarchy menu (`SUPER + SPACE`). If they vanished, the file no longer parses: report it.
-- [ ] The Omarchy menu has **Send to Kindle**, with **Send to Kindle** (opens the Picker) and **Settings** (opens the Picker in Settings) inside it. `omarchy menu summon kindle` opens the submenu.
-- [ ] It prints `Enabled. Open the picker with: …`, and `omarchy plugin list` shows `sorydi3.kindle-send` as enabled.
+- [ ] The Omarchy menu has **Books to Kindle**, with **Books to Kindle** (opens the Picker) and **Settings** (opens the Picker in Settings) inside it. `omarchy menu summon kindle` opens the submenu.
 - [ ] Nautilus windows close (`nautilus -q`). On the next start the extension is loaded.
-- [ ] It prints `Press SUPER + SHIFT + K to set up Send to Kindle in the Picker`, then asks `Set up in the terminal instead? [y/N]`. Answer `n`. It prints `Or set up in the terminal instead: kindle-send setup`.
-- [ ] `ls -l ~/.local/bin/kindle-send` is a link to `~/.local/share/kindle-send/bin/kindle-send`, and `~/.local/share/kindle-send/assets/test.epub` exists.
-- [ ] Run the install again (and again with `--yes`). Neither file gains a second block: the script says `Already in …` for both.
-- [ ] Run `./scripts/install.sh </dev/null` (no terminal). It skips both edits and says `Not added: no terminal to ask in …`.
+- [ ] It prints `Open the Picker from the Books to Kindle bar widget (or press SUPER + SHIFT + K) to set it up in Settings.`, then asks `Set up in the terminal instead? [y/N]`. Answer `n`. It prints `Or set up in the terminal instead: kindle-send setup`.
+- [ ] `ls -l ~/.local/bin/kindle-send` is a link to the plugin folder's `bin/kindle-send`.
+- [ ] Run the script again (and again with `--yes`). Nothing changes: it says `Already …` for each extra and asks only about terminal setup.
+- [ ] Run it with `</dev/null` (no terminal). It changes nothing and says `No terminal to ask in, so nothing is changed …`.
 - [ ] `SUPER + SHIFT + K` opens the Picker.
 - [ ] Before setup, the Picker shows "Set up Send to Kindle".
 
@@ -94,16 +94,15 @@ Uses real email to your own Kindle, so 20 deliveries. If you'd rather not, lower
 ## 9. History and uninstall (§15.9)
 
 - [ ] `kindle-send history` lists the Sends above, newest first, in local time, e.g. `Nov 4 23:17 · Dune.epub · Email · Sent to Amazon`, plus the USB lines and the `Failed: …` ones.
-- [ ] Run `./scripts/uninstall.sh`. Afterwards:
-  - [ ] `~/.config/omarchy/plugins/sorydi3.kindle-send`, `~/.local/bin/kindle-send`, `~/.local/share/kindle-send/` and `~/.local/share/nautilus-python/extensions/kindle-send.py` are gone.
-  - [ ] The Picker is gone from the shell: `SUPER + SHIFT + K` does nothing, and `omarchy plugin list` doesn't show the plugin as loaded.
+- [ ] Run `scripts/install.sh --remove` from the plugin folder. Afterwards:
+  - [ ] `~/.local/bin/kindle-send` and `~/.local/share/nautilus-python/extensions/kindle-send.py` are gone.
   - [ ] The binding block is gone from `bindings.lua`, and the rest of the file is as before (compare with `bindings.lua.before-kindle-send`).
   - [ ] The menu entries are gone, and your other menu items still show.
   - [ ] After Nautilus restarts, right-click has no "Send to Kindle".
   - [ ] `~/.config/strata/actions/kindle-send` is gone, and Strata's right-click has no "Send to Kindle".
-  - [ ] Kept: the plugin's entry in `shell.json` (addresses, folders), the keyring password and `~/.local/state/kindle-send/history.jsonl`.
-- [ ] Run `./scripts/install.sh` again. Your settings are still there (the Picker shows no setup line), and no block is added twice.
-- [ ] (Optional) `./scripts/uninstall.sh --purge` also removes the `shell.json` entry, the keyring password and the history folder.
+  - [ ] Kept: `~/.config/kindle-send/settings.json`, the keyring password and `~/.local/state/kindle-send/history.jsonl`. The script ends by pointing to `omarchy plugin remove sorydi3.kindle-send`.
+- [ ] Run `scripts/install.sh` again. Your settings are still there (the Picker shows no setup line), and no block is added twice.
+- [ ] (Optional) `scripts/install.sh --purge` also removes `~/.config/kindle-send/`, the keyring password and the history folder; `shell.json` is unchanged.
 
 ## 10. Things only faked in tests
 
@@ -198,7 +197,7 @@ Back up `~/.config/omarchy/extensions/omarchy-menu.jsonc` first.
 - [ ] Over an install from before Settings moved into the Picker (the menu shows Send to Kindle → Setup), run `./scripts/install.sh` in a terminal. It asks `Replace the older Send to Kindle entries in …? [y/N]`. Answer `y`: it says `Updated in …`, and the block sits where it was, with **Settings** in place of **Setup**.
 - [ ] Once set up, Omarchy menu → Send to Kindle → Settings opens the Picker in Settings, no field flagged, no terminal. `Esc` goes back to the Book list.
 - [ ] Run the install again: `Already in …` for the menu.
-- [ ] `./scripts/uninstall.sh` removes the block; the rest of the menu still shows.
+- [ ] `scripts/install.sh --remove` removes the block; the rest of the menu still shows.
 
 ## 18. Test send from Settings (§9 Test send, §10)
 
@@ -225,7 +224,7 @@ Settings draw with the Omarchy theme's tokens only, so they follow the theme. Sw
 The plugin's `manifest.json`, QML and JS now sit at the repo root; nothing else changed.
 
 - [ ] `omarchy plugin validate .` at the repo root prints no error.
-- [ ] Run `./scripts/install.sh` in a temp `HOME` (not your own). `~/.local/share/kindle-send/omarchy-plugin` holds only `manifest.json`, the `*.qml` and the `*.js`, and the plugin link points at it.
+- [ ] (Retired by #66: the extras script no longer copies the plugin; `omarchy plugin add` installs it.)
 - [ ] After installing for real, `SUPER + SHIFT + K` opens the Picker and a Send works as before.
 
 ## 21. Bar widget (#62, spec §17)
@@ -263,7 +262,7 @@ They run `bin/kindle-send` from the plugin folder, never a `kindle-send` on PATH
 
 - [ ] With `~/.local/bin/kindle-send` moved aside (so none is on PATH), restart the shell and press `SUPER + SHIFT + K`: the Picker lists Books, `Ctrl+,` shows Settings, and a Send by email and by USB both go through. Put it back afterwards.
 - [ ] With the plugin folder a symlink to the repo checkout, `Ctrl+T` in Settings sends "Kindle Send Test" (the test EPUB is found beside the bundled program).
-- [ ] After `./scripts/install.sh` in a temp `HOME`, the copied plugin also holds `bin/kindle-send` (executable) and `assets/test.epub` besides the files section 20 lists.
+- [ ] (Retired by #66: the extras script no longer copies the plugin; the link in `~/.local/bin` points at the bundled `bin/kindle-send`, section 26.)
 
 ## 25. Message codes and Route ids (#64)
 
@@ -272,3 +271,15 @@ The Picker still shows the English text; only where Route labels come from chang
 - [ ] The Picker shows "Email" and "USB" on each row, in the footer ("USB can't take 1") and in the details ("switched to USB") as before.
 - [ ] `kindle-send plan --folders` prints no `routeLabels`; each Book has `routeReasonCode` and `routeReasonValues`.
 - [ ] `kindle-send history` and `kindle-send setup` read exactly as before (English, no codes).
+
+## 26. Extras script, --remove and --purge (#66, spec §14)
+
+Run it from the plugin folder (`~/.config/omarchy/plugins/sorydi3.kindle-send/scripts/install.sh`). Try it first in a temp `HOME` (`HOME=$(mktemp -d) XDG_CONFIG_HOME= XDG_STATE_HOME= XDG_DATA_HOME= …`) before your own; back up `~/.config/hypr/bindings.lua` and `~/.config/omarchy/extensions/omarchy-menu.jsonc` first.
+
+- [ ] It never copies the plugin, never runs `omarchy plugin enable`, and `~/.local/share/kindle-send/` is not created.
+- [ ] In a terminal it asks before each extra, in order: the `~/.local/bin/kindle-send` link, the Nautilus item, the Strata action (only with Strata), the binding, the menu entries. Answer `n` to the link: it skips Nautilus and Strata without asking ("need the kindle-send link").
+- [ ] With `nautilus-python` uninstalled (or `KINDLE_SEND_NAUTILUS_PYTHON=/nonexistent`), it says `nautilus-python is not installed; skipped …` and adds the rest.
+- [ ] Over the old layout (link to `~/.local/share/kindle-send/bin/kindle-send`, a "Send to Kindle" binding block), it offers `Replace the older …` for the link and the binding; afterwards the link points at the plugin folder's `bin/kindle-send` and the binding block, in the same place, says "Books to Kindle".
+- [ ] A second run with `--yes` changes nothing and Nautilus isn't restarted.
+- [ ] `--remove` takes out the link, the Nautilus item, the Strata action and both blocks, keeps Settings, the password and the history, and ends with `omarchy plugin remove sorydi3.kindle-send`. It never touches the plugin folder.
+- [ ] `--purge` also removes `~/.config/kindle-send/` and `~/.local/state/kindle-send/` and runs `secret-tool clear service kindle-send`; `shell.json` is unchanged. The keyring is your session's, not the temp `HOME`'s: even there `--purge` deletes your real app password, so run it only when you mean to (or with a stub `secret-tool` first on `PATH`).
