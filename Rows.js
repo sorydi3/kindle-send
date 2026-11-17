@@ -1,6 +1,8 @@
 // What the Picker shows and sends, from `kindle-send plan` lines. Pure functions, no QML.
+// tr: the translator every text function takes (Catalog.js).
 .pragma library
 .import "Routes.js" as Routes
+.import "Catalog.js" as Catalog
 
 // lines: parsed JSON lines of `kindle-send plan`, already newest first.
 // Besides Books, plan says which Book folders it scans, so that default lives
@@ -32,8 +34,7 @@ function routeOf(book, overrides) {
   return (overrides && overrides[book.path]) || book.route
 }
 
-// labels: optional Route labels by id (the Picker's); else Routes.LABELS.
-function routeLabel(route, labels) { return Routes.label(route, labels) }
+function routeLabel(route, tr) { return Routes.label(route, tr) }
 
 function switchRoute(route) { return Routes.other(route) }
 
@@ -59,114 +60,122 @@ function toSend(books, marked, overrides, highlighted) {
   return chosen.map(function(b) { return { path: b.path, name: b.name, route: routeOf(b, overrides) } })
 }
 
-function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s") }
-
 // The footer's answer to "what does Enter send?". status: the marked count and,
 // before Enter, which Routes can't take some of them (they still go and fail,
 // spec §5). enter: the Enter hint, "" when Enter sends nothing.
-function footer(books, marked, overrides, highlighted, labels) {
+function footer(books, marked, overrides, highlighted, tr) {
   const chosen = books.filter(function(b) { return marked && marked[b.path] === true })
   if (chosen.length === 0) {
     const sendsOne = highlighted && !highlighted.waiting
-    return { status: "", enter: sendsOne ? "Send this Book" : "" }
+    return { status: "", enter: sendsOne ? tr.t("rows.sendThis") : "" }
   }
-  const parts = [plural(chosen.length, "Book") + " marked"]
+  const parts = [Catalog.count(tr, "rows.marked", chosen.length)]
   const routes = [Routes.EMAIL, Routes.USB]
   for (let i = 0; i < routes.length; i++) {
     const refused = chosen.filter(function(b) {
       return routeOf(b, overrides) === routes[i] && !routeTakes(b, routes[i])
     }).length
-    if (refused > 0) parts.push(routeLabel(routes[i], labels) + " can't take " + refused)
+    if (refused > 0) parts.push(Catalog.count(tr, "rows.routeRefuses", refused, [routeLabel(routes[i], tr)]))
   }
-  return { status: parts.join(" · "), enter: "Send " + plural(chosen.length, "Book") }
+  return { status: parts.join(tr.t("list.dot")), enter: Catalog.count(tr, "rows.sendCount", chosen.length) }
 }
+
+// A key hint: the key's name as it is, then what it does.
+function hint(key, action) { return key + "  " + action }
+
+// The gap between key hints.
+const HINT_GAP = "      "
 
 // Esc clears a search before it closes the Picker.
-function escHint(filterText) { return filterText ? "Esc  Clear search" : "Esc  Close" }
+function escHint(filterText, tr) { return hint("Esc", tr.t(filterText ? "keys.clearSearch" : "keys.close")) }
 
 // Every Book list footer ends with these: Ctrl+, opens Settings (spec §4, §9).
-function closingHints(filterText) { return "Ctrl+,  Settings      " + escHint(filterText) }
+function closingHints(filterText, tr) { return hint("Ctrl+,", tr.t("keys.settings")) + HINT_GAP + escHint(filterText, tr) }
 
 // The key hints for the highlighted row. enter: footer().enter.
-function hints(current, enter, filterText) {
+function hints(current, enter, filterText, tr) {
   const keys = []
-  if (current && current.waiting) keys.push("Delete  Cancel waiting")
-  else if (current) keys.push("Space  Mark", "Tab  Route")
-  if (enter) keys.push("Enter  " + enter)
-  keys.push(closingHints(filterText))
-  return keys.join("      ")
+  if (current && current.waiting) keys.push(hint("Delete", tr.t("keys.cancelWaiting")))
+  else if (current) keys.push(hint("Space", tr.t("keys.mark")), hint("Tab", tr.t("keys.route")))
+  if (enter) keys.push(hint("Enter", enter))
+  keys.push(closingHints(filterText, tr))
+  return keys.join(HINT_GAP)
 }
-
-const PLAN_HINT = "kindle-send plan --folders"
 
 // What the Picker shows instead of the list, or null when it shows the list.
 // state: {loading, failure: ""|"missing"|"failed"|"slow",
-//         payloadCount, books, rows, waiting, filterText, bookFolders}.
+//         payloadCount, books, rows, waiting, filterText, bookFolders, program}.
+// program: the bundled kindle-send's path, which the failure screens name
+// (after a plain `omarchy plugin add` it isn't on PATH).
 // A waiting line keeps the list up: it is where Delete cancels it.
 // enter: what Enter does here: "settings" (opens them on `field`), "retry", "close" or "none".
 // typing: whether typing still edits the search.
 // settings: whether Ctrl+, opens Settings here (not without kindle-send).
 // Setup needed has no screen: the Picker opens straight into Settings then (spec §4).
-function screen(state) {
+function screen(state, tr) {
   const settings = state.failure !== "missing"
+  const program = String(state.program || "")
   function make(message, detail, enter, enterLabel, typing, field) {
-    const keys = (enterLabel ? "Enter  " + enterLabel + "      " : "")
-      + (settings ? closingHints(state.filterText) : escHint(state.filterText))
+    const keys = (enterLabel ? hint("Enter", enterLabel) + HINT_GAP : "")
+      + (settings ? closingHints(state.filterText, tr) : escHint(state.filterText, tr))
     return { message: message, detail: detail, enter: enter, keys: keys, typing: typing === true,
              settings: settings, field: field || "" }
   }
   if (state.loading) {
-    const what = state.payloadCount > 0 ? "Checking " + plural(state.payloadCount, "file") + "…" : "Looking for Books…"
+    const what = state.payloadCount > 0 ? Catalog.count(tr, "rows.checkingFiles", state.payloadCount)
+      : tr.t("rows.looking")
     return make(what, "", "none", "", true)
   }
   if (state.failure === "missing")
-    return make("kindle-send isn't installed.", "Run scripts/install.sh from the kindle-send folder.", "close", "")
+    return make(tr.t("rows.missing"), Catalog.say(tr, "rows.missingDetail", [program]), "close", "")
   if (state.failure === "failed")
-    return make("Couldn't list your Books.", "To see the error, run " + PLAN_HINT + " in a terminal.",
-                "retry", "Try again")
+    return make(tr.t("rows.failed"), Catalog.say(tr, "rows.failedDetail", [program]), "retry", tr.t("keys.retry"))
   if (state.failure === "slow")
-    return make("Listing your Books took more than 10 seconds.",
-                "To see what's slow, run " + PLAN_HINT + " in a terminal.", "retry", "Try again")
+    return make(tr.t("rows.slow"), Catalog.say(tr, "rows.slowDetail", [program]), "retry", tr.t("keys.retry"))
   if (state.waiting > 0) return null
   if (state.books === 0 && state.payloadCount > 0)
-    return make("None of these files can be sent to a Kindle.", "", "close", "")
+    return make(tr.t("rows.noneSendable"), "", "close", "")
   if (state.books === 0)
-    return make(emptyMessage(state.bookFolders || []), "", "settings", "Change Book folders", false, "bookFolders")
+    return make(emptyMessage(state.bookFolders || [], tr), "", "settings", tr.t("keys.changeFolders"), false,
+                "bookFolders")
   if (state.rows === 0)
-    return make("No matches for “" + state.filterText + "”", "", "none", "", true)
+    return make(Catalog.say(tr, "rows.noMatches", [state.filterText]), "", "none", "", true)
   return null
 }
 
-function size(bytes) {
-  if (bytes < 1000) return bytes + " B"
-  if (bytes < 1000000) return Math.round(bytes / 1000) + " KB"
-  return (bytes / 1000000).toFixed(1) + " MB"
+function size(bytes, tr) {
+  if (bytes < 1000) return Catalog.say(tr, "size.bytes", [tr.num(bytes)])
+  if (bytes < 1000000) return Catalog.say(tr, "size.kilobytes", [tr.num(Math.round(bytes / 1000))])
+  return Catalog.say(tr, "size.megabytes", [tr.num(bytes / 1000000, 1)])
 }
 
-function sentAgo(iso, now) {
+function sentAgo(iso, now, tr) {
   const t = Date.parse(iso)
   if (isNaN(t)) return ""
   const minutes = Math.floor((now - t) / 60000)
-  if (minutes < 1) return "sent just now"
-  if (minutes < 60) return "sent " + minutes + " min ago"
+  if (minutes < 1) return tr.t("rows.sentJustNow")
+  if (minutes < 60) return Catalog.count(tr, "rows.sentMinutesAgo", minutes)
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return "sent " + hours + " h ago"
+  if (hours < 24) return Catalog.count(tr, "rows.sentHoursAgo", hours)
   const days = Math.floor(hours / 24)
-  return days === 1 ? "sent yesterday" : "sent " + days + " days ago"
+  return days === 1 ? tr.t("rows.sentYesterday") : Catalog.count(tr, "rows.sentDaysAgo", days)
 }
 
 // "EPUB · 1.2 MB · sent 3 days ago", plus why the chosen Route can't take it.
-function details(book, route, now, labels) {
-  const parts = [String(book.format).toUpperCase(), size(book.size)]
-  if (book.lastSent) parts.push(sentAgo(book.lastSent, now))
-  if (route === book.route && book.routeReason) parts.push(book.routeReason)
-  else if (!routeTakes(book, route)) parts.push(routeLabel(route, labels) + " can't take this Book")
-  else if (route !== book.route) parts.push("switched to " + routeLabel(route, labels))
-  return parts.filter(function(p) { return p }).join(" · ")
+// The format stays as it is: EPUB, PDF and so on are names, not words.
+function details(book, route, now, tr) {
+  const parts = [String(book.format).toUpperCase(), size(book.size, tr)]
+  if (book.lastSent) parts.push(sentAgo(book.lastSent, now, tr))
+  if (route === book.route && book.routeReason)
+    parts.push(Catalog.message(tr, book.routeReasonCode, book.routeReasonValues, book.routeReason))
+  else if (!routeTakes(book, route)) parts.push(Catalog.say(tr, "rows.routeCantTake", [routeLabel(route, tr)]))
+  else if (route !== book.route) parts.push(Catalog.say(tr, "rows.switchedTo", [routeLabel(route, tr)]))
+  return parts.filter(function(p) { return p }).join(tr.t("list.dot"))
 }
 
-function emptyMessage(folders) {
-  return "No Books found in " + (folders.length > 0 ? folders.join(", ") : "your Book folders")
+function emptyMessage(folders, tr) {
+  return folders.length > 0 ? Catalog.say(tr, "rows.noBooksIn", [folders.join(tr.t("list.separator"))])
+    : tr.t("rows.noBooks")
 }
 
 // --- Payload mode (spec §4): the Nautilus extension summons {"files": [...]} ---

@@ -168,6 +168,8 @@ copy_plugin() {
   mkdir -p "$plugin_copy/bin" "$plugin_copy/assets"
   cp "$repo/bin/kindle-send" "$plugin_copy/bin/"
   cp "$repo/assets/test.epub" "$plugin_copy/assets/"
+  # Its text comes from the catalogs in i18n/ (spec §17, Translations).
+  cp -r "$repo/i18n" "$plugin_copy/"
 }
 
 if ! command -v omarchy >/dev/null; then

@@ -15,9 +15,9 @@ def books(n):
     return [{"path": f"/b/{i}", "name": f"Book{i}.epub", "route": "usb"} for i in range(n)]
 
 
-def status(waiting=0, held=0, busy=False):
+def status(waiting=0, held=0, busy=False, tr="EN"):
     service = {"pending": books(waiting), "held": books(held), "busy": busy}
-    return evaluate("Bar.js", f"status({json.dumps(service)})")
+    return evaluate("Bar.js", f"status({json.dumps(service)}, {tr})")
 
 
 def test_nothing_waiting_shows_no_count():
@@ -52,6 +52,22 @@ def test_sending_comes_first_beside_what_waits():
         "tooltip": "Books to Kindle\nSending… · 1 waiting for Kindle"}
 
 
+def test_counts_are_plural_entries_with_formatted_numbers():
+    """A language's own digits show in the label and the tooltip (here Arabic-Indic)."""
+    got = status(waiting=1, held=2, tr="LANG({}, '\\u0660')")
+
+    assert got["label"] == "٣"
+    assert got["tooltip"] == "Books to Kindle\n١ waiting for Kindle · ٢ held by the Send limit"
+
+
+def test_the_widget_text_comes_from_the_catalog():
+    tr = "LANG({'bar.waiting': {one: '%1 wartet', other: '%1 warten'}, 'bar.idle': 'Nichts wartet'})"
+
+    assert status(waiting=2, tr=tr)["tooltip"] == "Books to Kindle\n2 warten"
+    assert status(waiting=1, tr=tr)["tooltip"] == "Books to Kindle\n1 wartet"
+    assert status(tr=tr)["tooltip"] == "Books to Kindle\nNichts wartet"
+
+
 def test_before_the_service_loads_nothing_waits():
-    assert evaluate("Bar.js", "status(null)") == {
+    assert evaluate("Bar.js", "status(null, EN)") == {
         "label": "", "active": False, "tooltip": "Books to Kindle\nNothing waiting"}

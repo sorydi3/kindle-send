@@ -13,7 +13,11 @@ BarWidget {
   // This plugin's own Service. Bar.status reads its pending, held and busy,
   // so the binding follows them.
   readonly property var service: bar && bar.shell ? bar.shell.serviceFor("sorydi3.kindle-send") : null
-  readonly property var status: Bar.status(service)
+  // The plugin's own text (i18n/), in the language picked under Setup > Language.
+  Translator {
+    id: tr
+  }
+  readonly property var status: Bar.status(service, tr)
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight

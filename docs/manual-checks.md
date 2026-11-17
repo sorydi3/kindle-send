@@ -272,3 +272,13 @@ The Picker still shows the English text; only where Route labels come from chang
 - [ ] The Picker shows "Email" and "USB" on each row, in the footer ("USB can't take 1") and in the details ("switched to USB") as before.
 - [ ] `kindle-send plan --folders` prints no `routeLabels`; each Book has `routeReasonCode` and `routeReasonValues`.
 - [ ] `kindle-send history` and `kindle-send setup` read exactly as before (English, no codes).
+
+## 26. Plugin text from the English catalog (#65, spec §17 Translations)
+
+All the plugin's own text comes from `i18n/en.json` through Omarchy's `Commons.Translations`; English should read exactly as before, apart from the fixed failure hints.
+
+- [ ] Open the Picker, mark Books, `Tab` a Route, open Settings, save with a typo, `Ctrl+T`, send by email and USB, unplug the Kindle for a Pending Send: every line reads as before, and no raw key (`rows.marked`, `message.too_big_for_email`, …) shows anywhere, including the bar-widget tooltip and the notifications.
+- [ ] **Live language switch.** Copy `i18n/en.json` to `i18n/da.json` in the plugin folder and change a few values (e.g. `keys.close`, `bar.idle`, `rows.marked`). Pick Dansk under Setup > Language: the Picker's footer and the bar-widget tooltip follow at once, with no shell restart; numbers show a decimal comma (`1,2 MB`). Switch back and delete `da.json`.
+- [ ] **Unknown code.** A failure whose `code` the catalog lacks shows kindle-send's English `reason` (e.g. temporarily delete `message.kindle_full` from `en.json` and fill the Kindle).
+- [ ] **Broken plugin folder.** Rename the plugin's `bin/kindle-send`: the Picker says "Couldn't run kindle-send." and names that path, a Send fails with "Couldn't run kindle-send from the plugin folder. Reinstall Books to Kindle." Neither mentions `scripts/install.sh`. "Couldn't list your Books" names the bundled path in its `plan --folders` hint. Put it back.
+- [ ] **Plain text.** Name a Book `<b>bold</b>.epub` and `<img src="https://example.invalid/x">.pdf`: the Picker shows the names literally, with no bold and no image request.

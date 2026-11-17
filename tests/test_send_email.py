@@ -360,7 +360,7 @@ def test_send_test_without_the_bundled_epub_fails_with_a_reason(ks, smtp, setup_
 
     assert code == 0
     assert lines == [{"result": "failed", "code": "test_book_missing", "values": {},
-                      "reason": "Couldn't find the test Book. Reinstall kindle-send."}]
+                      "reason": "Couldn't find the test Book. Reinstall Books to Kindle."}]
     assert smtp.instances == []
 
 

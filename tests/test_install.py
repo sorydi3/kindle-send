@@ -101,7 +101,9 @@ def test_install_copies_the_command_and_plugin_and_links_the_plugin(env):
     assert os.access(p["copy"] / "bin" / "kindle-send", os.X_OK)
     assert (p["copy"] / "assets" / "test.epub").read_bytes() == (REPO / "assets" / "test.epub").read_bytes()
     # The plugin files only, not the rest of the repo.
-    assert sorted(f.name for f in p["copy"].iterdir()) == sorted(plugin_files + ["bin", "assets"])
+    # The catalogs the plugin's text comes from (spec §17, Translations).
+    assert (p["copy"] / "i18n" / "en.json").read_bytes() == (REPO / "i18n" / "en.json").read_bytes()
+    assert sorted(f.name for f in p["copy"].iterdir()) == sorted(plugin_files + ["bin", "assets", "i18n"])
     assert [f.name for f in (p["copy"] / "bin").iterdir()] == ["kindle-send"]
     assert p["link"].is_symlink()
     assert Path(os.readlink(p["link"])) == p["copy"]
