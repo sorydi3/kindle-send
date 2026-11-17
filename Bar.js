@@ -3,6 +3,12 @@
 .pragma library
 .import "Catalog.js" as Catalog
 
+const LEFT_BUTTON = 0x1  // Qt.LeftButton
+
+// Whether a press of `button` (WidgetButton's pressed(button)) toggles the
+// Picker: a left-click only; middle and right clicks do nothing.
+function togglesPicker(button) { return button === LEFT_BUTTON }
+
 // service: this plugin's Service ({ pending, held, busy }), or null before it loads.
 // Returns { label, active, tooltip }: label is the count beside the icon, or ""
 // when nothing waits; active while a Send runs.

@@ -90,6 +90,11 @@ class SettingsInvalid(Exception):
         super().__init__(f"{path} isn't valid JSON")
         self.path = path
 
+    def line(self):
+        """What `plan` and `settings` print instead of their answer."""
+        message = said("settings_file_invalid", path=str(self.path))
+        return {"failed": True, "code": message["code"], "values": message["values"], "reason": message["text"]}
+
 
 def read_settings_file():
     """The Settings file's contents; None if there is no file. SettingsInvalid if unreadable."""
@@ -132,11 +137,10 @@ def load_settings():
     """The Settings, or {} if there are none.
 
     With no Settings file yet, Settings found in the plugin's old shell.json entry
-    are copied into one, once; after that shell.json is never read again."""
-    try:
-        settings = read_settings_file()
-    except SettingsInvalid:
-        return {}
+    are copied into one, once; after that shell.json is never read again.
+    SettingsInvalid if the file is there but unreadable: it is never taken for
+    missing Settings, so nothing asks for setup or writes over it."""
+    settings = read_settings_file()
     if settings is not None:
         return settings
     old = old_shell_json_settings()
@@ -336,7 +340,10 @@ def sendable(book, formats, refusal):
 
 def send_email(book):
     sendable(book, EMAIL_MIME, "format_not_emailable")
-    settings = load_settings()
+    try:
+        settings = load_settings()
+    except SettingsInvalid as invalid:
+        raise SendFailed("settings_file_invalid", path=str(invalid.path)) from None
     missing = missing_settings(settings)
     if missing:
         raise SendFailed("not_set_up", field=missing[0], fields=missing)
@@ -506,8 +513,13 @@ def classify(book, limit, sent):
 
 
 def plan(folders_wanted, files):
-    """Classify Books for the Picker (spec §3), newest first."""
-    settings = load_settings()
+    """Classify Books for the Picker (spec §3), newest first. An unreadable
+    Settings file is the one line printed: without its Book folders there is no list."""
+    try:
+        settings = load_settings()
+    except SettingsInvalid as invalid:
+        emit(invalid.line())
+        return
     missing = missing_settings(settings)
     # Without a stored app password nothing can be emailed either (spec §9).
     # Only its absence is reported, never the password itself.
@@ -755,8 +767,16 @@ def save_settings(updates):
     write_settings_file(settings)
 
 
+def invalid_settings_stop(invalid):
+    print(f"{invalid.path} isn't valid JSON, so setup won't touch it. Fix it and run setup again.")
+    raise SetupCancelled from None
+
+
 def wizard():
-    current = load_settings()
+    try:
+        current = load_settings()
+    except SettingsInvalid as invalid:
+        invalid_settings_stop(invalid)
     print("Books to Kindle setup. Press Enter to keep the value in [brackets].\n")
 
     print("1. Your Kindle's email address (…@kindle.com). Find it at")
@@ -784,8 +804,7 @@ def wizard():
     try:
         save_settings({"kindleAddress": kindle, "senderAddress": sender, "bookFolders": folders})
     except SettingsInvalid as invalid:
-        print(f"{invalid.path} isn't valid JSON, so setup won't touch it. Fix it and run setup again.")
-        raise SetupCancelled from None
+        invalid_settings_stop(invalid)
     except OSError as error:
         print(f"Couldn't write {settings_path()}: {error.strerror or error}.")
         raise SetupCancelled from None
@@ -893,8 +912,12 @@ def now():
 
 
 def limit_settings():
-    """(minEmailGapSeconds, maxEmailsPerHour) from settings; defaults for absent or unusable values."""
-    settings = load_settings()
+    """(minEmailGapSeconds, maxEmailsPerHour) from settings; defaults for absent or unusable
+    values, an unreadable Settings file among them (the Send itself says so)."""
+    try:
+        settings = load_settings()
+    except SettingsInvalid:
+        settings = {}
 
     def number(name, lowest):
         value = settings.get(name)
@@ -961,8 +984,13 @@ def setup_missing(settings):
 
 def form_settings():
     """`kindle-send settings`: the values the Settings form shows (spec §3), and what's
-    still missing, which titles the form and flags its fields. Never the password."""
-    current = load_settings()
+    still missing, which titles the form and flags its fields. Never the password.
+    An unreadable Settings file is reported instead, never taken for missing values."""
+    try:
+        current = load_settings()
+    except SettingsInvalid as invalid:
+        emit(invalid.line())
+        return 0
     missing = setup_missing(current)
     emit({"kindleAddress": str(current.get("kindleAddress") or "").strip(),
           "senderAddress": sender_address(current),
@@ -1104,7 +1132,11 @@ def save_form():
         emit({"saved": False, "problems": blocking})
         return 0
     password_problems = []
-    before = load_settings()
+    try:
+        before = load_settings()
+    except SettingsInvalid as invalid:
+        emit({"saved": False, "problems": [problem("", "settings_file_invalid", True, path=str(invalid.path))]})
+        return 0
     # The save that completes setup is the first; it creates ~/Books, as the wizard does.
     first_save = bool(setup_missing(before))
     address_changed = sender != sender_address(before)

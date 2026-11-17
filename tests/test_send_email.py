@@ -4,7 +4,7 @@ import socket
 
 import pytest
 
-from conftest import write_settings
+from conftest import settings_file, write_settings
 
 KINDLE = "reader@kindle.com"
 SENDER = "sender@gmail.com"
@@ -373,3 +373,19 @@ def test_send_takes_either_a_file_or_test_by_email(ks, argv, capsys):
     with pytest.raises(SystemExit) as exit_:
         ks.main(argv)
     assert exit_.value.code == 2
+
+
+@pytest.mark.parametrize("target", ["book", "--test"])
+def test_a_settings_file_that_isnt_valid_json_fails_the_send_and_is_left_alone(ks, smtp, home, keyring, book,
+                                                                               capsys, target):
+    settings_file(home).parent.mkdir(parents=True)
+    settings_file(home).write_text("{ broken")
+    keyring.set_password(PASSWORD)
+
+    _, lines = run(ks, capsys, "send", "--route", "email", str(book) if target == "book" else target)
+
+    path = str(settings_file(home))
+    assert lines == [{"result": "failed", "code": "settings_file_invalid", "values": {"path": path},
+                      "reason": f"{path} isn't valid JSON, so it wasn't changed."}]
+    assert smtp.instances == []
+    assert settings_file(home).read_text() == "{ broken"

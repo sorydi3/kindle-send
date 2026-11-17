@@ -1,6 +1,7 @@
 // The translator the plugin's JS text functions take (Catalog.js): the
-// plugin's own catalogs in i18n/ through Omarchy's Commons.Translations, and
-// numbers through Commons.I18n.formatNumber. It follows the language picked
+// plugin's own catalogs in i18n/ through Omarchy's Commons.Translations,
+// numbers through Commons.I18n.formatNumber and times through
+// Qt.locale(Commons.I18n.formatLocale). It follows the language picked
 // under Setup > Language; bindings that call it re-render on a switch.
 import QtQuick
 import qs.Commons as Commons
@@ -22,5 +23,11 @@ QtObject {
 
   function num(value, decimals) {
     return Commons.I18n.formatNumber(value, decimals);
+  }
+
+  // A time of day (ms since the epoch) as Omarchy's language writes it: its
+  // format locale, not the one the shell started with.
+  function time(ms) {
+    return new Date(ms).toLocaleTimeString(Qt.locale(Commons.I18n.formatLocale), Locale.ShortFormat);
   }
 }

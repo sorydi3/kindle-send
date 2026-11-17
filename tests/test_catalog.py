@@ -111,5 +111,10 @@ def test_every_key_the_plugin_reads_is_in_the_catalog():
     for path in QML + JS:
         source = path.read_text(encoding="utf-8")
         read |= set(re.findall(r"""\b(?:t|tn|say|count)\((?:tr, )?["']([a-z]+\.[A-Za-z.]+)["']""", source))
+        # Notes (Catalog.text): { key: "settings.saved", … }
+        for line in source.splitlines():
+            if re.search(r"\bkey: ", line):
+                read |= set(re.findall(r"""["']([a-z]+\.[A-Za-z]+(?:\.[A-Za-z]+)*)["']""", line))
 
+    assert "settings.savedSuggestTest" in read and "settings.saving" in read
     assert read and sorted(read - set(catalog)) == []

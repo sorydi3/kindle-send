@@ -18,6 +18,30 @@ def form(expr):
     return evaluate("Settings.js", expr)
 
 
+# The status line and field problems are notes (Catalog.text) the Picker turns
+# into text in its bindings. shown() renders every note in expr's value, as the
+# Picker does, with translator tr; a null inside becomes "" (no text).
+RENDER = """(function(value, tr) {
+  function note(v) { return 'key' in v || 'code' in v || 'time' in v }
+  function r(v) {
+    if (v === null || v === undefined) return ''
+    if (Array.isArray(v)) return v.map(r)
+    if (typeof v === 'object') {
+      if (note(v)) return text(v, tr)
+      const o = {}
+      for (const k in v) o[k] = r(v[k])
+      return o
+    }
+    return v
+  }
+  return value === null ? null : r(value)
+})(%s, %s)"""
+
+
+def shown(expr, tr="EN"):
+    return form(RENDER % (expr, tr))
+
+
 def values(**fields):
     base = {"kindleAddress": KINDLE, "senderAddress": SENDER, "bookFolders": "~/Books, ~/Downloads"}
     return json.dumps({**base, **fields})
@@ -106,16 +130,16 @@ def test_typing_a_password_is_an_edit():
 
 
 def test_saving_a_typed_password_checks_it_with_gmail():
-    assert form(f"savingStatus({values(appPassword='abcd')}, EN)") \
+    assert shown(f"savingStatus({values(appPassword='abcd')})") \
         == "Checking the app password with Gmail…"
 
 
 def test_saving_a_changed_gmail_address_without_a_typed_password_just_saves():
-    assert form(f"savingStatus({values(senderAddress='new@gmail.com ')}, EN)") == "Saving…"
+    assert shown(f"savingStatus({values(senderAddress='new@gmail.com ')})") == "Saving…"
 
 
 def test_saving_with_the_same_address_and_no_typed_password_just_saves():
-    assert form(f"savingStatus({values(kindleAddress='new@kindle.com', senderAddress=' ' + SENDER)}, EN)") \
+    assert shown(f"savingStatus({values(kindleAddress='new@kindle.com', senderAddress=' ' + SENDER)})") \
         == "Saving…"
 
 
@@ -124,10 +148,10 @@ def problems(*items):
 
 
 def test_problems_are_shown_per_field():
-    shown = form("byField(" + problems(("senderAddress", "That isn't an email address.", True),
-                                       ("bookFolders", "~/Bokos doesn't exist, so the Picker skips it.", False)) + ", EN)")
+    found = shown("byField(" + problems(("senderAddress", "That isn't an email address.", True),
+                                        ("bookFolders", "~/Bokos doesn't exist, so the Picker skips it.", False)) + ")")
 
-    assert shown == {"senderAddress": "That isn't an email address.",
+    assert found == {"senderAddress": "That isn't an email address.",
                      "bookFolders": "~/Bokos doesn't exist, so the Picker skips it."}
 
 
@@ -162,26 +186,27 @@ def test_the_status_line_counts_the_values_that_need_fixing():
     two = problems(("kindleAddress", "That isn't an email address.", True),
                    ("senderAddress", "That isn't an email address.", True))
 
-    assert form(f"status({{saved: false, problems: {one}}}, EN)") == "1 value needs fixing."
-    assert form(f"status({{saved: false, problems: {two}}}, EN)") == "2 values need fixing."
+    assert shown(f"status({{saved: false, problems: {one}}})") == "1 value needs fixing."
+    assert shown(f"status({{saved: false, problems: {two}}})") == "2 values need fixing."
 
 
 def test_a_problem_with_the_whole_form_is_the_status_line():
     found = problems(("", "/home/x/.config/omarchy/shell.json isn't valid JSON, so it wasn't changed.", True))
 
-    assert form(f"status({{saved: false, problems: {found}}}, EN)") \
+    assert shown(f"status({{saved: false, problems: {found}}})") \
         == "/home/x/.config/omarchy/shell.json isn't valid JSON, so it wasn't changed."
 
 
 def test_saved_says_so_and_counts_the_warnings():
     found = problems(("kindleAddress", "Kindle addresses usually end in @kindle.com.", False))
 
-    assert form("status({saved: true, problems: []}, EN)") == "Saved."
-    assert form(f"status({{saved: true, problems: {found}}}, EN)") == "Saved. 1 value to check below."
+    assert shown("status({saved: true, problems: []})") == "Saved."
+    assert shown(f"status({{saved: true, problems: {found}}})") == "Saved. 1 value to check below."
 
 
 def test_the_status_line_is_empty_before_saving():
-    assert form("status(null, EN)") == ""
+    assert form("status(null)") is None
+    assert form("text(status(null), EN)") == ""
 
 
 # --- Leaving and the footer ---------------------------------------------------
@@ -428,15 +453,15 @@ def test_saving_with_values_missing_says_how_many_are_still_needed():
     one = json.dumps([needed("appPassword")])
     three = json.dumps([needed("kindleAddress"), needed("senderAddress"), needed("appPassword")])
 
-    assert form(f"status({{saved: false, problems: {one}}}, EN)") == "1 still needed before Books can be sent."
-    assert form(f"status({{saved: false, problems: {three}}}, EN)") == "3 still needed before Books can be sent."
+    assert shown(f"status({{saved: false, problems: {one}}})") == "1 still needed before Books can be sent."
+    assert shown(f"status({{saved: false, problems: {three}}})") == "3 still needed before Books can be sent."
 
 
 def test_missing_values_are_counted_even_beside_one_that_needs_fixing():
     found = json.dumps([needed("kindleAddress"),
                         {"field": "senderAddress", "message": "That isn't an email address.", "blocking": True}])
 
-    assert form(f"status({{saved: false, problems: {found}}}, EN)") == "1 still needed before Books can be sent."
+    assert shown(f"status({{saved: false, problems: {found}}})") == "1 still needed before Books can be sent."
 
 
 def test_the_flag_clears_as_soon_as_the_field_is_edited():
@@ -447,7 +472,7 @@ def test_the_flag_clears_as_soon_as_the_field_is_edited():
 # --- Opening from a failure notification (spec §10, §13) ---------------------
 
 def summoned(payload):
-    return form(f"summoned({json.dumps(json.dumps(payload))}, EN)")
+    return shown(f"summoned({json.dumps(json.dumps(payload))})")
 
 
 def test_a_rejected_password_opens_on_the_password_with_the_problem_shown():
@@ -503,7 +528,7 @@ def test_other_summons_are_not_the_menus_settings_entry():
 # --- Which way open() goes -----------------------------------------------------
 
 def open_intent(payload, kept):
-    return form(f"openIntent({json.dumps(json.dumps(payload))}, {json.dumps(kept)}, EN)")
+    return shown(f"openIntent({json.dumps(json.dumps(payload))}, {json.dumps(kept)})")
 
 
 KEPT = {"settings": {"values": {"kindleAddress": "new@kindle.com"}, "focus": "senderAddress"}}
@@ -536,19 +561,34 @@ SUGGESTION = "Ctrl+T sends a test Book to check it all works."
 
 
 def test_the_first_save_suggests_the_test_send():
-    assert form("status({saved: true, firstSave: true, problems: []}, EN)") == "Saved. " + SUGGESTION
+    assert shown("status({saved: true, firstSave: true, problems: []})") == "Saved. " + SUGGESTION
 
 
 def test_a_first_save_with_warnings_names_them_before_the_suggestion():
     found = json.dumps([{"field": "kindleAddress", "message": "Kindle addresses usually end in @kindle.com.",
                          "blocking": False}])
 
-    assert form(f"status({{saved: true, firstSave: true, problems: {found}}}, EN)") \
+    assert shown(f"status({{saved: true, firstSave: true, problems: {found}}})") \
         == "Saved. 1 value to check below. " + SUGGESTION
 
 
+def test_a_language_places_the_saved_part_of_the_suggestion_itself():
+    """One catalog string with %1, never two glued together (spec §17, Translations)."""
+    tr = "LANG({'settings.savedSuggestTest': 'Ctrl+T schickt ein Test-Buch. (%1)'})"
+
+    assert shown(f"status({{saved: true, firstSave: true, problems: []}})", tr) \
+        == "Ctrl+T schickt ein Test-Buch. (Saved.)"
+
+
+def test_a_language_places_the_test_sends_reason_itself():
+    tr = "LANG({'settings.testFailedBecause': '%1 — Test-Buch nicht gesendet.'})"
+    failed = shown(f"testOutcome({{state: 'failed', at: 1, reason: 'Kaputt.', field: ''}})", tr)
+
+    assert failed["status"] == "Kaputt. — Test-Buch nicht gesendet."
+
+
 def test_later_saves_do_not_suggest_the_test_send():
-    assert form("status({saved: true, problems: []}, EN)") == "Saved."
+    assert shown("status({saved: true, problems: []})") == "Saved."
 
 
 def test_ctrl_t_is_the_test_send_key():
@@ -560,33 +600,33 @@ def test_ctrl_t_is_the_test_send_key():
 
 def test_ctrl_t_sends_only_once_everything_is_saved():
     # testKey(isSetup, isChanged, testSend)
-    assert form("testKey(false, false, null, EN)") == {"send": True, "status": ""}
-    assert form("testKey(false, false, {state: 'sent', at: 1}, EN)")["send"] is True
-    assert form("testKey(false, true, null, EN)") == {"send": False, "status": "Save first, then Ctrl+T sends a test Book."}
-    assert form("testKey(true, false, null, EN)") == {"send": False, "status": "Save first, then Ctrl+T sends a test Book."}
+    assert shown("testKey(false, false, null)") == {"send": True, "status": ""}
+    assert shown("testKey(false, false, {state: 'sent', at: 1})")["send"] is True
+    assert shown("testKey(false, true, null)") == {"send": False, "status": "Save first, then Ctrl+T sends a test Book."}
+    assert shown("testKey(true, false, null)") == {"send": False, "status": "Save first, then Ctrl+T sends a test Book."}
 
 
 def test_ctrl_t_while_the_test_book_is_going_does_nothing_more():
-    assert form("testKey(false, false, {state: 'sending'}, EN)") == {"send": False, "status": "Sending a test Book…"}
+    assert shown("testKey(false, false, {state: 'sending'})") == {"send": False, "status": "Sending a test Book…"}
 
 
 def test_the_status_line_follows_the_test_send():
-    assert form("testOutcome({state: 'sending'}, EN)") == {"status": "Sending a test Book…", "problems": {}}
-    sent = form("testOutcome({state: 'sent', at: new Date(2026, 10, 13, 9, 5).getTime()}, EN)")
+    assert shown("testOutcome({state: 'sending'})") == {"status": "Sending a test Book…", "problems": {}}
+    sent = shown("testOutcome({state: 'sent', at: new Date(2026, 10, 13, 9, 5).getTime()})")
     assert sent == {"status": "Gmail accepted the test Book at 09:05. Check your Kindle in a few minutes.",
                     "problems": {}}
 
 
 def test_a_failed_test_send_shows_next_to_its_field():
-    failed = form("testOutcome({state: 'failed', at: 1, reason: 'Gmail rejected the app password.', "
-                  "field: 'appPassword'}, EN)")
+    failed = shown("testOutcome({state: 'failed', at: 1, reason: 'Gmail rejected the app password.', "
+                   "field: 'appPassword'})")
 
     assert failed == {"status": "Couldn't send the test Book.",
                       "problems": {"appPassword": "Gmail rejected the app password."}}
 
 
 def test_a_failed_test_send_no_field_fixes_is_the_status_line():
-    failed = form("testOutcome({state: 'failed', at: 1, reason: 'Couldn\\'t reach Gmail.', field: ''}, EN)")
+    failed = shown("testOutcome({state: 'failed', at: 1, reason: 'Couldn\\'t reach Gmail.', field: ''})")
 
     assert failed == {"status": "Couldn't send the test Book. Couldn't reach Gmail.", "problems": {}}
 
@@ -612,20 +652,33 @@ def test_labels_and_help_come_from_the_catalog():
 def test_a_save_problem_reads_from_its_code():
     found = json.dumps([coded("kindleAddress", "not_an_email_address", {}, "That isn't an email address.")])
 
-    assert form(f"byField({found}, {GERMAN})") == {"kindleAddress": "Das ist keine E-Mail-Adresse."}
+    assert shown(f"byField({found})", GERMAN) == {"kindleAddress": "Das ist keine E-Mail-Adresse."}
 
 
 def test_a_save_problem_with_an_unknown_code_shows_kindle_sends_english():
     found = json.dumps([coded("kindleAddress", "brand_new", {}, "Something new is wrong.")])
 
-    assert form(f"byField({found}, {GERMAN})") == {"kindleAddress": "Something new is wrong."}
+    assert shown(f"byField({found})", GERMAN) == {"kindleAddress": "Something new is wrong."}
 
 
 def test_a_whole_form_problem_reads_from_its_code():
     found = json.dumps([coded("", "settings_file_invalid", {"path": "/x/settings.json"},
                               "/x/settings.json isn't valid JSON, so it wasn't changed.")])
 
-    assert form(f"status({{saved: false, problems: {found}}}, {GERMAN})") == "/x/settings.json ist kein gültiges JSON."
+    assert shown(f"status({{saved: false, problems: {found}}})", GERMAN) == "/x/settings.json ist kein gültiges JSON."
+
+
+def test_kept_status_and_problems_follow_a_language_switch():
+    """The Picker keeps notes, not text, so its bindings re-render them in the new language."""
+    found = json.dumps([coded("kindleAddress", "not_an_email_address", {}, "That isn't an email address."),
+                        coded("senderAddress", "not_an_email_address", {}, "That isn't an email address.")])
+    kept = f"[status({{saved: false, problems: {found}}}), byField({found})]"
+
+    assert shown(kept) == ["2 values need fixing.", {"kindleAddress": "That isn't an email address.",
+                                                     "senderAddress": "That isn't an email address."}]
+    assert shown(kept, GERMAN) == ["2 Werte müssen korrigiert werden.",
+                                   {"kindleAddress": "Das ist keine E-Mail-Adresse.",
+                                    "senderAddress": "Das ist keine E-Mail-Adresse."}]
 
 
 def test_the_status_line_counts_with_plural_entries():
@@ -633,26 +686,37 @@ def test_the_status_line_counts_with_plural_entries():
     two = json.dumps([coded("kindleAddress", "not_an_email_address", {}, "x"),
                       coded("senderAddress", "not_an_email_address", {}, "x")])
 
-    assert form(f"status({{saved: false, problems: {one}}}, {GERMAN})") == "Ein Wert muss korrigiert werden."
-    assert form(f"status({{saved: false, problems: {two}}}, {GERMAN})") == "2 Werte müssen korrigiert werden."
+    assert shown(f"status({{saved: false, problems: {one}}})", GERMAN) == "Ein Wert muss korrigiert werden."
+    assert shown(f"status({{saved: false, problems: {two}}})", GERMAN) == "2 Werte müssen korrigiert werden."
 
 
 def test_a_failed_test_send_reads_its_reason_from_its_code():
-    failed = form("testOutcome({state: 'failed', at: 1, code: 'password_rejected', values: {},"
-                  f" reason: 'Gmail rejected the app password.', field: 'appPassword'}}, {GERMAN})")
+    failed = shown("testOutcome({state: 'failed', at: 1, code: 'password_rejected', values: {},"
+                   " reason: 'Gmail rejected the app password.', field: 'appPassword'})", GERMAN)
 
     assert failed["problems"] == {"appPassword": "Gmail hat das App-Passwort abgelehnt."}
 
 
-def test_the_test_send_time_uses_the_languages_digits():
-    sent = form("testOutcome({state: 'sent', at: new Date(2026, 10, 13, 9, 5).getTime()}, LANG({}, '\\u0660'))")
+def test_the_test_send_time_is_written_the_way_omarchys_locale_writes_it():
+    """tr.time formats with Qt.locale(Commons.I18n.formatLocale) in Translator.qml."""
+    tr = "Object.assign(LANG({}), {time: function(ms) { return '9.05 Uhr (' + ms + ')' }})"
+    sent = shown(f"testOutcome({{state: 'sent', at: 42}})", tr)
 
-    assert "٠٩:٠٥" in sent["status"]
+    assert sent["status"] == "Gmail accepted the test Book at 9.05 Uhr (42). Check your Kindle in a few minutes."
 
 
 def test_failures_reading_or_saving_settings_name_the_bundled_kindle_send():
     """After a plain `omarchy plugin add` kindle-send isn't on PATH, so the hint names its path."""
-    assert form("readFailed('/p/bin/kindle-send', EN)") \
+    assert shown("readFailed('/p/bin/kindle-send')") \
         == "Couldn't read the Settings. Run /p/bin/kindle-send settings in a terminal to see why."
-    assert form("saveFailed('/p/bin/kindle-send', EN)") \
+    assert shown("saveFailed('/p/bin/kindle-send')") \
         == "Couldn't save. Run /p/bin/kindle-send save in a terminal to see why."
+
+
+def test_an_unreadable_settings_file_shows_in_the_status_line():
+    """`kindle-send settings` reports it instead of values; the form never takes it for setup."""
+    line = json.dumps({"failed": True, "code": "settings_file_invalid", "values": {"path": "/x/settings.json"},
+                       "reason": "/x/settings.json isn't valid JSON, so it wasn't changed."})
+
+    assert shown(f"readProblem({line})", GERMAN) == "/x/settings.json ist kein gültiges JSON."
+    assert form("readProblem({kindleAddress: '', missing: []})") is None

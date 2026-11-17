@@ -86,6 +86,28 @@ def test_every_code_reads_as_the_english_kindle_send_sends(ks):
         assert cat(f"message(EN, {json.dumps(code)}, {json.dumps(values)}, '')") == english, code
 
 
+class Recording(dict):
+    """Values for a MESSAGES entry that note which names it reads."""
+
+    def __init__(self):
+        super().__init__(EXAMPLE)
+        self.read = set()
+
+    def __getitem__(self, name):
+        self.read.add(name)
+        return super().__getitem__(name)
+
+
+def test_catalog_order_names_the_values_kindle_sends_messages_use(ks):
+    """Catalog.ORDER, kindle-send's MESSAGES and test_message_codes.CODES each list
+    every code's values; this keeps ORDER in step with what MESSAGES reads."""
+    order = cat("ORDER")
+    for code, english in ks.MESSAGES.items():
+        values = Recording()
+        english(values)
+        assert set(order.get(code, [])) == values.read, code
+
+
 def test_placeholders_fill_in_order_and_leave_the_rest_alone():
     assert cat("fill('%2 of %1, 100%', [3, 1])") == "1 of 3, 100%"
     assert cat("fill('%1', ['%2', 'x'])") == "%2"
@@ -94,6 +116,23 @@ def test_placeholders_fill_in_order_and_leave_the_rest_alone():
 @pytest.mark.parametrize("n, wanted", [(1, "1 Book"), (2, "2 Books"), (0, "0 Books"), (1000, "1000 Books")])
 def test_counts_read_their_plural_entry_and_format_the_number(n, wanted):
     assert cat(f"count(LANG({{'x.books': {{one: '%1 Book', other: '%1 Books'}}}}), 'x.books', {n})") == wanted
+
+
+def test_a_note_keeps_key_and_values_and_becomes_text_when_shown():
+    """Text kept in state (the Settings status line, field problems) is kept as a
+    note and turned into text in a binding, so a language switch re-renders it."""
+    tr = ("LANG({'settings.saved': 'Gespeichert.', 'x.fixing': {one: 'Ein Wert', other: '%1 Werte'},"
+          " 'x.wrap': '[%1]', 'message.file_not_found': 'Fehlt: %1.'})")
+
+    assert cat(f"text({tr}, {{key: 'settings.saved'}})") == "Gespeichert."
+    assert cat(f"text({tr}, {{key: 'x.fixing', n: 2}})") == "2 Werte"
+    assert cat(f"text({tr}, {{key: 'x.wrap', args: [{{key: 'settings.saved'}}]}})") == "[Gespeichert.]"
+    assert cat(f"text({tr}, {{key: 'x.wrap', args: ['/p/kindle-send']}})") == "[/p/kindle-send]"
+    assert cat(f"text({tr}, {{code: 'file_not_found', values: {{name: 'Dune.epub'}}, english: 'x'}})") \
+        == "Fehlt: Dune.epub."
+    assert cat(f"text({tr}, {{key: 'x.wrap', args: [{{time: 0}}]}})").startswith("[")
+    assert cat("text(EN, 'Already text.')") == "Already text."
+    assert cat("[text(EN, null), text(EN, ''), text(EN, undefined)]") == ["", "", ""]
 
 
 def test_every_catalog_entry_is_a_string_or_an_english_plural():

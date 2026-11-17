@@ -71,3 +71,11 @@ def test_the_widget_text_comes_from_the_catalog():
 def test_before_the_service_loads_nothing_waits():
     assert evaluate("Bar.js", "status(null, EN)") == {
         "label": "", "active": False, "tooltip": "Books to Kindle\nNothing waiting"}
+
+
+QT_LEFT, QT_RIGHT, QT_MIDDLE = 0x1, 0x2, 0x4
+
+
+def test_only_a_left_click_toggles_the_picker():
+    assert evaluate("Bar.js", f"[togglesPicker({QT_LEFT}), togglesPicker({QT_RIGHT}),"
+                              f" togglesPicker({QT_MIDDLE})]") == [True, False, False]

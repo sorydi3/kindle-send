@@ -27,11 +27,11 @@ Install the plugin (`omarchy plugin add … --enable`, or the plugin folder link
 - [ ] Run the script again (and again with `--yes`). Nothing changes: it says `Already …` for each extra and asks only about terminal setup.
 - [ ] Run it with `</dev/null` (no terminal). It changes nothing and says `No terminal to ask in, so nothing is changed …`.
 - [ ] `SUPER + SHIFT + K` opens the Picker.
-- [ ] Before setup, the Picker shows "Set up Send to Kindle".
+- [ ] Before setup, the Picker opens straight into Settings, titled "Set up Books to Kindle" (section 16).
 
 ## 2. Setup (§15.2)
 
-Run `kindle-send setup` in a terminal (the menu's Send to Kindle → Settings opens the Picker instead; see section 17).
+Run `kindle-send setup` in a terminal (the menu's Books to Kindle → Settings opens the Picker instead; see section 17).
 
 - [ ] It asks, in order: Kindle address, Gmail address, app password (through `secret-tool store`), the Approved list step (waits for Enter), and Book folders (defaults filled in).
 - [ ] `~/.config/kindle-send/settings.json` holds `kindleAddress`, `senderAddress`, `bookFolders`, `minEmailGapSeconds: 10` and `maxEmailsPerHour: 20`. The file mode is `600`, and `~/.config/omarchy/shell.json` is unchanged.
@@ -108,9 +108,8 @@ Uses real email to your own Kindle, so 20 deliveries. If you'd rather not, lower
 
 These came up while building and aren't covered above.
 
-- [ ] **Plugin unload without `omarchy plugin remove`.** Uninstall only removes the link and runs `omarchy-shell -q shell rescanPlugins`. It doesn't disable the plugin, because disabling deletes the plugin's `shell.json` entry and the settings with it. Check that the shell stops loading the plugin after the rescan, even though its entry stays in `plugins[]`. Check also that the shell logs nothing worse than a warning about it.
-- [ ] **Enable keeps settings.** On a reinstall, `omarchy plugin enable` finds the existing entry and leaves its settings alone (§9 above covers it).
-- [ ] **Rescan before enable.** On a fresh install, the plugin shows up in `omarchy plugin list` within about 2 s of the rescan. Otherwise install prints the warning `run: omarchy plugin enable sorydi3.kindle-send`.
+- [ ] **Plugin removal.** After `scripts/install.sh --remove`, `omarchy plugin remove sorydi3.kindle-send` stops the shell loading the plugin (the bar icon goes, `SUPER + SHIFT + K` does nothing), and the shell logs nothing worse than a warning about it.
+- [ ] **Settings survive a reinstall.** Then `omarchy plugin add https://github.com/sorydi3/kindle-send --enable` again: the Picker opens into the Book list with the old Settings, since they live in `~/.config/kindle-send/settings.json`, not in the plugin's `shell.json` entry (ADR 0002).
 - [ ] **Kindle detection on the real Paperwhite.** It is a whole-disk device with no partition table. `kindle-send kindle` prints `{"present": true, "mount": "/run/media/…", "free": N}` while plugged in and mounted by udiskie, and `{"present": false}` after unplugging.
 - [ ] **Eject.** `kindle-send eject` unmounts and powers off the Kindle (`{"ejected": true}`). The Kindle leaves USB mode.
 - [ ] **Real SMTP.** Gmail's advertised `SIZE` is cached in `~/.local/state/kindle-send/email-limit.json` after the first send, and `kindle-send plan` estimates the Email limit from it.
@@ -174,15 +173,15 @@ Back up `~/.config/kindle-send/settings.json` first and put it back afterwards.
 - [ ] Same with `senderAddress` removed: the click lands on the Gmail address, flagged the same way.
 - [ ] Clear the stored password (`secret-tool clear service kindle-send user <Gmail>`) and send by email: "No app password stored." Clicking it opens Settings on the app password field with "No app password stored." under it.
 - [ ] Section 8's wrong password: the click lands on the app password field with "Gmail rejected the app password." under it. Type the right one: the problem clears as you type; `Enter` saves it.
-- [ ] From the wrong-password case, `Esc` goes back to the Book list (not the terminal). From the missing-value cases setup is needed, so the form is titled "Set up Send to Kindle" and `Esc` closes the Picker (section 16). A failure no Setting fixes (e.g. "Too big for email") does nothing on click.
+- [ ] From the wrong-password case, `Esc` goes back to the Book list (not the terminal). From the missing-value cases setup is needed, so the form is titled "Set up Books to Kindle" and `Esc` closes the Picker (section 16). A failure no Setting fixes (e.g. "Too big for email") does nothing on click.
 
 ## 16. First run opens straight into Settings (§4 Setup needed, §9)
 
 Start from no setup: move `~/.config/kindle-send/settings.json` aside (keep it) and `secret-tool clear service kindle-send user <Gmail>`, and move `~/Books` aside if it's empty.
 
-- [ ] `SUPER + SHIFT + K` opens straight into the form titled "Set up Send to Kindle". No Book list, no "Start setup" screen, and no terminal opens.
+- [ ] `SUPER + SHIFT + K` opens straight into the form titled "Set up Books to Kindle". No Book list, no "Start setup" screen, and no terminal opens.
 - [ ] Kindle address, Gmail address and Gmail app password each show "· needed" beside their label in the accent color; Book folders doesn't. The footer ends "Esc  Close".
-- [ ] Press `Esc`: the Picker closes. Open it again: back in "Set up Send to Kindle".
+- [ ] Press `Esc`: the Picker closes. Open it again: back in "Set up Books to Kindle".
 - [ ] Type a Kindle address: its "· needed" goes at once. Press `Enter` with the others still empty: the status line says "2 still needed before Books can be sent.", "Needed before Books can be sent." replaces both help lines, focus jumps to the Gmail address, and no `settings.json` is written.
 - [ ] Fill in the Gmail address and the real app password and press `Enter`: saved. The title changes to "Settings", no field is flagged, `~/Books` now exists, and the footer ends "Esc  Back to Books". `Esc` shows the Book list.
 - [ ] Delete `~/Books` (if empty), change only the Kindle address in Settings and save: `~/Books` is not created again.
@@ -195,7 +194,7 @@ Start from no setup: move `~/.config/kindle-send/settings.json` aside (keep it) 
 Back up `~/.config/omarchy/extensions/omarchy-menu.jsonc` first.
 
 - [ ] Over an install from before Settings moved into the Picker (the menu shows Send to Kindle → Setup), run `./scripts/install.sh` in a terminal. It asks `Replace the older Send to Kindle entries in …? [y/N]`. Answer `y`: it says `Updated in …`, and the block sits where it was, with **Settings** in place of **Setup**.
-- [ ] Once set up, Omarchy menu → Send to Kindle → Settings opens the Picker in Settings, no field flagged, no terminal. `Esc` goes back to the Book list.
+- [ ] Once set up, Omarchy menu → Books to Kindle → Settings opens the Picker in Settings, no field flagged, no terminal. `Esc` goes back to the Book list.
 - [ ] Run the install again: `Already in …` for the menu.
 - [ ] `scripts/install.sh --remove` removes the block; the rest of the menu still shows.
 
@@ -232,7 +231,7 @@ The plugin's `manifest.json`, QML and JS now sit at the repo root; nothing else 
 Add the widget to a test bar layout yourself (the Omarchy bar settings), not with `omarchy bar put`. Start with nothing waiting.
 
 - [ ] A book icon shows, with no number beside it. Hover: the tooltip reads "Books to Kindle" and, below, "Nothing waiting".
-- [ ] Left-click opens the Picker; left-click again closes it. Right-click does nothing.
+- [ ] Left-click opens the Picker; left-click again closes it. Middle-click and right-click do nothing.
 - [ ] With the Kindle unplugged, send two Books by USB: "2" shows beside the icon, and the tooltip says "2 waiting for Kindle". Plug the Kindle in: while the Send runs the icon takes the bar's active colour and the tooltip says "Sending…"; afterwards the number goes and the colour is back to normal.
 - [ ] With emails held by the Send limit (section 7), the number counts them too and the tooltip adds "N held by the Send limit" (joined with " · " to anything else).
 - [ ] With a dark theme (e.g. Tokyo Night) the icon, the number and the tooltip are readable on the bar, and the active colour stands out. Switch to a light theme (e.g. Catppuccin Latte): the same, with nothing keeping a dark-theme colour.
@@ -309,3 +308,11 @@ All the plugin's own text comes from `i18n/en.json` through Omarchy's `Commons.T
 
 - [ ] Run `docs/preview/render.sh /tmp/preview.png`: nothing shows on screen, the image shows the Picker with six demo Books (Email and USB, one marked, the footer) and a "Sent to Amazon. Should appear on your Kindle within a few minutes." card; no real address, Book or path appears. `~/.config/kindle-send/` and the keyring are untouched.
 - [ ] **Theme colours in the live Picker.** Open the Picker: the scrim, card, border, highlighted row and accent text use the theme's menu colours (they were QtQuick's `Color` under Qt 6.12, so every colour binding failed). Switch theme with the Picker closed and open it again: it follows.
+
+## 30. Review fixes for publishing (#58)
+
+- [ ] **Unreadable Settings file.** Back up `~/.config/kindle-send/settings.json`, then write `{ broken` into it. Open the Picker: it says "Couldn't list your Books." with "…/settings.json isn't valid JSON, so it wasn't changed." (not Settings titled "Set up Books to Kindle"); `Enter` tries again. `Ctrl+,`: the status line says the same. A Send by email fails with that line too. The file still holds `{ broken`. Put the backup back.
+- [ ] **Someone else's Nautilus file.** In a temp `HOME`, put any other `~/.local/share/nautilus-python/extensions/kindle-send.py` there and run `scripts/install.sh --remove`: it says `… is not Books to Kindle's; left alone.` and the file is unchanged.
+- [ ] **Bar widget clicks.** Middle-click and right-click on the icon do nothing; left-click toggles the Picker.
+- [ ] **Language switch with Settings open.** With a `da.json` as in section 27, save Settings with a typo so a field problem and the status line show, then pick Dansk under Setup > Language: both change language at once, without saving again.
+- [ ] **Test-send time.** `Ctrl+T` in Settings: "Gmail accepted the test Book at …" writes the time as the language picked under Setup > Language writes it (e.g. `9:05 AM` in English, `09.05` in Danish).

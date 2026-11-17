@@ -2,6 +2,9 @@
 // Values come from `kindle-send settings` and go to `kindle-send save`, which
 // checks them; this module only maps its answer onto the form.
 // tr: the translator every text function takes (Catalog.js).
+// The status line and the field problems are kept in the Picker's state, so
+// the functions that make them return notes (Catalog.text), not text; the
+// Picker turns them into text in its bindings, and a language switch re-renders them.
 .pragma library
 .import "Catalog.js" as Catalog
 
@@ -27,11 +30,21 @@ function placeholder(field, passwordStored, tr) {
   return tr.t("settings." + field.key + ".placeholder")
 }
 
-// The status line when `kindle-send settings` or `save` gave no answer.
-// program: the bundled kindle-send's path, which isn't on PATH after a plain `omarchy plugin add`.
-function readFailed(program, tr) { return Catalog.say(tr, "settings.readFailed", [program]) }
+// A status line or field problem (a note, Catalog.text) as text.
+function text(note, tr) { return Catalog.text(tr, note) }
 
-function saveFailed(program, tr) { return Catalog.say(tr, "settings.saveFailed", [program]) }
+// The status line (a note) when `kindle-send settings` or `save` gave no answer.
+// program: the bundled kindle-send's path, which isn't on PATH after a plain `omarchy plugin add`.
+function readFailed(program) { return { key: "settings.readFailed", args: [program] } }
+
+function saveFailed(program) { return { key: "settings.saveFailed", args: [program] } }
+
+// Why `kindle-send settings` gave no values ({failed: true, code, values,
+// reason}, e.g. an unreadable Settings file), as a status-line note; null if it gave them.
+function readProblem(line) {
+  if (!line || line.failed !== true) return null
+  return { code: line.code, values: line.values || {}, english: line.reason }
+}
 
 // The page each field's help line links to (spec §9), keyed by field key,
 // apart from FIELDS. Book folders have none: they browse instead.
@@ -124,8 +137,8 @@ function toSave(values) {
 
 // The status line while save runs. Only a typed app password surely means a
 // Gmail sign-in first; without one the form can't tell, so it just says saving.
-function savingStatus(values, tr) {
-  return tr.t(String(values.appPassword || "").trim() !== "" ? "settings.checkingPassword" : "settings.saving")
+function savingStatus(values) {
+  return { key: String(values.appPassword || "").trim() !== "" ? "settings.checkingPassword" : "settings.saving" }
 }
 
 // Whether any field differs from what was loaded or last saved.
@@ -137,8 +150,8 @@ function changed(values, saved) {
   return false
 }
 
-// A save problem's text: the catalog's for its code, else save's English message.
-function problemText(p, tr) { return Catalog.message(tr, p.code, p.values, p.message) }
+// A save problem as a note: the catalog's text for its code, else save's English message.
+function problemNote(p) { return { code: p.code, values: p.values || {}, english: p.message } }
 
 // The fields save found a problem with, in the order it named them.
 function problemFields(problems) {
@@ -150,20 +163,20 @@ function problemFields(problems) {
   return keys
 }
 
-// save's problems as field key -> message (the first per field). A problem
+// save's problems as field key -> note (the first per field). A problem
 // with no field is about the whole form and goes in the status line.
-function byField(problems, tr) {
+function byField(problems) {
   const shown = {}
   for (let i = 0; i < (problems || []).length; i++) {
     const p = problems[i]
-    if (p.field && !(p.field in shown)) shown[p.field] = problemText(p, tr)
+    if (p.field && !(p.field in shown)) shown[p.field] = problemNote(p)
   }
   return shown
 }
 
-// The line under a field: its problem, in the accent color, or its help.
+// The line under a field: its problem (shown: key -> note), in the accent color, or its help.
 function helpLine(field, shown, tr) {
-  if (shown && shown[field.key]) return { text: shown[field.key], problem: true }
+  if (shown && shown[field.key]) return { text: text(shown[field.key], tr), problem: true }
   return { text: help(field, tr), problem: false }
 }
 
@@ -181,20 +194,20 @@ function edited(shown, key) {
   return next
 }
 
-// The status line above the footer after a save. result: save's answer, or null before one.
-function status(result, tr) {
-  if (!result) return ""
+// The status line (a note) above the footer after a save. result: save's answer, or null before one.
+function status(result) {
+  if (!result) return null
   const problems = result.problems || []
   const general = problems.filter(function(p) { return !p.field })
-  if (general.length > 0) return problemText(general[0], tr)
+  if (general.length > 0) return problemNote(general[0])
   const fieldsWith = problemFields(problems).length
   // A missing value is what setup is waiting for, so it's named before any typo.
   const stillNeeded = problems.filter(function(p) { return p.needed === true }).length
-  if (!result.saved && stillNeeded > 0) return Catalog.count(tr, "settings.stillNeeded", stillNeeded)
-  if (!result.saved) return Catalog.count(tr, "settings.fixing", fieldsWith)
-  const saved = fieldsWith > 0 ? Catalog.count(tr, "settings.savedToCheck", fieldsWith) : tr.t("settings.saved")
+  if (!result.saved && stillNeeded > 0) return { key: "settings.stillNeeded", n: stillNeeded }
+  if (!result.saved) return { key: "settings.fixing", n: fieldsWith }
+  const saved = fieldsWith > 0 ? { key: "settings.savedToCheck", n: fieldsWith } : { key: "settings.saved" }
   // The save that completed setup suggests the test send (spec §9).
-  return result.firstSave === true ? saved + " " + tr.t("settings.suggestTest") : saved
+  return result.firstSave === true ? { key: "settings.savedSuggestTest", args: [saved] } : saved
 }
 
 // --- Test send (spec §9) --------------------------------------------------------
@@ -206,49 +219,40 @@ const KEY_T = 0x54
 
 function opensTestSend(key, modifiers) { return ctrlOnly(key, modifiers, KEY_T) }
 
-// What Ctrl+T does: { send } to start one, else a status line saying why not.
-function testKey(isSetup, isChanged, testSend, tr) {
-  if (isSetup || isChanged) return { send: false, status: tr.t("settings.saveFirst") }
-  if (testSend && testSend.state === "sending") return { send: false, status: tr.t("settings.sendingTest") }
-  return { send: true, status: "" }
+// What Ctrl+T does: { send } to start one, else a status line (a note) saying why not.
+function testKey(isSetup, isChanged, testSend) {
+  if (isSetup || isChanged) return { send: false, status: { key: "settings.saveFirst" } }
+  if (testSend && testSend.state === "sending") return { send: false, status: { key: "settings.sendingTest" } }
+  return { send: true, status: null }
 }
 
-// "09:05", in the language's digits.
-function clock(ms, tr) {
-  const d = new Date(ms)
-  const two = function(n) { return (n < 10 ? tr.num(0) : "") + tr.num(n) }
-  return Catalog.say(tr, "settings.clock", [two(d.getHours()), two(d.getMinutes())])
-}
-
-// The status line and field problems for the test send's state. A failure a
-// Setting fixes shows next to that field, any other in the status line.
-function testOutcome(testSend, tr) {
+// The status line and field problems (notes) for the test send's state. A
+// failure a Setting fixes shows next to that field, any other in the status line.
+function testOutcome(testSend) {
   const t = testSend || {}
-  if (t.state === "sending") return { status: tr.t("settings.sendingTest"), problems: {} }
-  if (t.state === "sent") return { status: Catalog.say(tr, "settings.testAccepted", [clock(t.at, tr)]), problems: {} }
-  if (t.state !== "failed") return { status: "", problems: {} }
-  const reason = Catalog.message(tr, t.code, t.values, t.reason)
+  if (t.state === "sending") return { status: { key: "settings.sendingTest" }, problems: {} }
+  if (t.state === "sent") return { status: { key: "settings.testAccepted", args: [{ time: t.at }] }, problems: {} }
+  if (t.state !== "failed") return { status: null, problems: {} }
+  const reason = t.code || t.reason ? { code: t.code || "", values: t.values || {}, english: t.reason || "" } : null
   if (t.field && FIELDS.some(function(f) { return f.key === t.field })) {
     const problems = {}
     problems[t.field] = reason
-    return { status: tr.t("settings.testFailed"), problems: problems }
+    return { status: { key: "settings.testFailed" }, problems: problems }
   }
-  return { status: tr.t("settings.testFailed") + (reason ? " " + reason : ""), problems: {} }
+  return { status: reason ? { key: "settings.testFailedBecause", args: [reason] } : { key: "settings.testFailed" },
+           problems: {} }
 }
-
-// A key hint: the key's name as it is, then what it does.
-function hint(key, action) { return key + "  " + action }
 
 // The keys that work on the focused field. Esc warns once something changed;
 // while setup is needed it closes the Picker instead (escCloses).
 // Open link shows only on a field that has one, Browse only on Book folders.
 function footer(focusedKey, isChanged, isSetup, tr) {
-  const keys = [hint("Tab", tr.t("keys.nextField")), hint("Enter", tr.t("keys.save"))]
-  if (link(focusedKey)) keys.push(hint("Ctrl+O", tr.t("keys.openLink")))
-  if (browses(focusedKey)) keys.push(hint("Ctrl+B", tr.t("keys.browse")))
-  if (isSetup) keys.push(hint("Esc", tr.t("keys.close")))
-  else keys.push(hint("Esc", tr.t(isChanged ? "keys.discard" : "keys.backToBooks")))
-  return keys.join("      ")
+  const keys = [Catalog.hint("Tab", tr.t("keys.nextField")), Catalog.hint("Enter", tr.t("keys.save"))]
+  if (link(focusedKey)) keys.push(Catalog.hint("Ctrl+O", tr.t("keys.openLink")))
+  if (browses(focusedKey)) keys.push(Catalog.hint("Ctrl+B", tr.t("keys.browse")))
+  if (isSetup) keys.push(Catalog.hint("Esc", tr.t("keys.close")))
+  else keys.push(Catalog.hint("Esc", tr.t(isChanged ? "keys.discard" : "keys.backToBooks")))
+  return Catalog.hints(keys)
 }
 
 
@@ -282,14 +286,14 @@ function reopened(kept) { return kept && kept.settings ? copy(kept.settings) : n
 // The fields a failed Send can name (kindle-send's result `field`).
 const SEND_FIELDS = ["kindleAddress", "senderAddress", "appPassword"]
 
-function summoned(payloadJson, tr) {
+function summoned(payloadJson) {
   let p = null
   try { p = JSON.parse(payloadJson || "{}") } catch (e) { return null }
   const key = p && typeof p.settings === "string" ? p.settings : ""
   if (SEND_FIELDS.indexOf(key) < 0) return null
   const reason = typeof p.problem === "string" ? p.problem : ""
   const problems = {}
-  problems[key] = key === "appPassword" && reason ? reason : tr.t("message.value_needed")
+  problems[key] = key === "appPassword" && reason ? reason : { code: "value_needed", values: {}, english: "" }
   return { focus: key, problems: problems }
 }
 
@@ -305,9 +309,9 @@ function opensFromMenu(payloadJson) {
 // { to: "settings", focus, problems } for the menu's entry (no field) or a
 // failure notification (its field), ahead of anything kept; else
 // { to: "returned", form } back to a form that stepped aside; else { to: "list" }.
-function openIntent(payloadJson, kept, tr) {
+function openIntent(payloadJson, kept) {
   if (opensFromMenu(payloadJson)) return { to: "settings", focus: "", problems: {} }
-  const onField = summoned(payloadJson, tr)
+  const onField = summoned(payloadJson)
   if (onField) return { to: "settings", focus: onField.focus, problems: onField.problems }
   const back = reopened(kept)
   return back ? { to: "returned", form: back } : { to: "list" }

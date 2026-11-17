@@ -29,8 +29,8 @@ function load(file) {
   vm.runInContext(src, ctx)
   return ctx
 }
-// The translators the plugin's text functions take ({t, tn, num}), standing in
-// for Commons.Translations and Commons.I18n.formatNumber. EN reads i18n/en.json
+// The translators the plugin's text functions take ({t, tn, num, time}), standing in
+// for Commons.Translations, Commons.I18n.formatNumber and Qt.locale's time. EN reads i18n/en.json
 // the way Translations does in English; LANG(entries) is a made-up language
 // over it (its entries first, then English) that writes a decimal comma and,
 // given zeroDigit (e.g. "٠"), that script's digits.
@@ -55,6 +55,12 @@ function translator(entries, decimal, zeroDigit) {
       const zero = (zeroDigit || "0").charCodeAt(0)
       return text.replace(".", decimal)
         .replace(/[0-9]/g, function(d) { return String.fromCharCode(zero + d.charCodeAt(0) - 48) })
+    },
+    // Stands in for Qt.locale(formatLocale)'s short time: "09:05", local time.
+    time: function(ms) {
+      const d = new Date(ms)
+      const two = function(n) { return (n < 10 ? "0" : "") + n }
+      return two(d.getHours()) + ":" + two(d.getMinutes())
     }
   }
 }

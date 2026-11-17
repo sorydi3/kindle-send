@@ -1,6 +1,6 @@
 // The bar widget (spec §17): a book icon that toggles the Picker on left-click,
 // the count of Books waiting for the Kindle plus emails held by the Send limit
-// beside it, and the bar's active colour while a Send runs. No right-click action.
+// beside it, and the bar's active colour while a Send runs. Middle and right clicks do nothing.
 // What it shows comes from Bar.js; this file only renders it.
 import QtQuick
 import qs.Ui
@@ -31,7 +31,7 @@ BarWidget {
     active: root.status.active
     tooltipText: root.status.tooltip
     onPressed: function (pressed) {
-      if (!root.bar || pressed === Qt.RightButton)
+      if (!root.bar || !Bar.togglesPicker(pressed))
         return;
       root.bar.run("omarchy-shell shell toggle sorydi3.kindle-send");
     }

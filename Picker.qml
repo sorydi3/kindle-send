@@ -13,6 +13,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "Rows.js" as Rows
+import "Routes.js" as Routes
 import "Pending.js" as Pending
 import "Settings.js" as SettingsForm
 import "Program.js" as Program
@@ -33,8 +34,10 @@ Item {
   // From plan: a setting or the app password is missing, so the Picker opens into Settings.
   property bool setupNeeded: false
   property var setupMissing: []
-  // Why listing failed: "" | "missing" (no kindle-send) | "failed" | "slow".
+  // Why listing failed: "" | "missing" (no kindle-send) | "failed" | "slow" | "problem" (plan said why).
   property string failure: ""
+  // plan's reason for "problem" ({code, values, english}), e.g. an unreadable Settings file.
+  property var failureProblem: null
   property var books: []
   // path -> true for marked Books; path -> "email"|"usb" for Tab overrides.
   property var marked: ({})
@@ -62,9 +65,11 @@ Item {
   // What setup still needs (kindle-send settings): titles the form, flags fields, makes Esc close.
   property var settingsMissing: []
   readonly property bool settingsSetup: SettingsForm.setupNeeded(settingsMissing)
-  // field key -> problem message from the last save, cleared as each field is edited.
+  // field key -> problem from the last save, cleared as each field is edited. It and
+  // the status line are notes (Catalog.text, key and values), turned into text in
+  // the bindings that show them, so a language switch re-renders them.
   property var settingsProblems: ({})
-  property string settingsStatus: ""
+  property var settingsStatus: null
   property string settingsFocus: ""
   property bool settingsSaving: false
   // Something was saved since Settings opened, so the Book list is planned again on the way back.
@@ -92,7 +97,7 @@ Item {
   // Setup, a failure, loading, or an empty list: what shows instead of the list (null: the list).
   readonly property var screen: Rows.screen({
     loading: loading, failure: failure, payloadCount: payloadFiles.length,
-    books: books.length, rows: rows.length, waiting: pending.length, filterText: filterText,
+    problem: failureProblem, books: books.length, rows: rows.length, waiting: pending.length, filterText: filterText,
     bookFolders: bookFolders, program: kindleSend }, tr)
   onListRowsChanged: selectedIndex = Math.max(0, Math.min(selectedIndex, listRows.length - 1))
 
@@ -110,7 +115,7 @@ Item {
     // plan reruns on every open, so settings rewritten by setup show at once.
     root.list()
     // The menu's Settings entry, a failure notification's click, a form that stepped aside, or the list (spec §10, §13, §14).
-    const intent = SettingsForm.openIntent(payloadJson, root.settingsAside, tr)
+    const intent = SettingsForm.openIntent(payloadJson, root.settingsAside)
     root.settingsAside = null
     if (intent.to === "settings") root.openSettings(intent.focus, intent.problems)
     else if (intent.to === "returned") root.returnToSettings(intent.form)
@@ -149,8 +154,10 @@ Item {
     root.setupMissing = parsed.missing
     root.books = parsed.books
     root.bookFolders = parsed.bookFolders
+    root.failureProblem = parsed.problem
     if (root.payloadMode) root.marked = Rows.allMarked(parsed.books)
-    if (exitCode !== 0 && parsed.books.length === 0 && !parsed.setupNeeded)
+    if (parsed.problem) root.failure = "problem"
+    else if (exitCode !== 0 && parsed.books.length === 0 && !parsed.setupNeeded)
       root.failure = "failed"
     // No usable Book list yet: straight into Settings (spec §4, Setup needed).
     if (parsed.setupNeeded) root.openSettings("")
@@ -231,7 +238,7 @@ Item {
     if (root.settingsOpen) return
     root.settingsOpen = true
     root.settingsProblems = problems || {}
-    root.settingsStatus = ""
+    root.settingsStatus = null
     root.settingsTesting = false
     root.settingsSavedSinceOpen = false
     root.settingsPasswordStored = false
@@ -270,7 +277,13 @@ Item {
   function settingsLoaded(exitCode) {
     const line = settingsReader.line
     if (exitCode !== 0 || !line) {
-      root.settingsStatus = SettingsForm.readFailed(root.kindleSend, tr)
+      root.settingsStatus = SettingsForm.readFailed(root.kindleSend)
+      return
+    }
+    // An unreadable Settings file: said in the status line, never taken for missing values.
+    const problem = SettingsForm.readProblem(line)
+    if (problem) {
+      root.settingsStatus = problem
       return
     }
     root.settingsBaseline = SettingsForm.fromSettings(line)
@@ -290,7 +303,7 @@ Item {
   function saveSettings() {
     if (root.settingsSaving) return
     root.settingsSaving = true
-    root.settingsStatus = SettingsForm.savingStatus(root.settingsValues, tr)
+    root.settingsStatus = SettingsForm.savingStatus(root.settingsValues)
     saver.result = null
     saver.didStart = false
     saver.payload = JSON.stringify(SettingsForm.toSave(root.settingsValues))
@@ -302,11 +315,11 @@ Item {
     saver.payload = ""  // it may hold the app password if save never started
     const result = saver.result
     if (exitCode !== 0 || !result) {
-      root.settingsStatus = SettingsForm.saveFailed(root.kindleSend, tr)
+      root.settingsStatus = SettingsForm.saveFailed(root.kindleSend)
       return
     }
-    root.settingsProblems = SettingsForm.byField(result.problems, tr)
-    root.settingsStatus = SettingsForm.status(result, tr)
+    root.settingsProblems = SettingsForm.byField(result.problems)
+    root.settingsStatus = SettingsForm.status(result)
     const first = SettingsForm.firstProblem(result.problems)
     if (first) root.focusSettingsField(first)
     if (result.saved) {
@@ -334,7 +347,7 @@ Item {
     root.settingsValues = back.values
     root.settingsBaseline = back.baseline
     root.settingsProblems = back.problems || {}
-    root.settingsStatus = back.status || ""
+    root.settingsStatus = back.status || null
     root.settingsSavedSinceOpen = back.savedSinceOpen === true
     root.settingsPasswordStored = back.passwordStored === true
     root.settingsMissing = back.missing || []
@@ -350,7 +363,7 @@ Item {
 
   function sendTestBook() {
     const testSend = root.service ? root.service.testSend : null
-    const k = SettingsForm.testKey(root.settingsSetup, root.settingsChanged || root.settingsSaving, testSend, tr)
+    const k = SettingsForm.testKey(root.settingsSetup, root.settingsChanged || root.settingsSaving, testSend)
     if (!k.send || !root.service) {
       root.settingsStatus = k.status
       return
@@ -360,7 +373,7 @@ Item {
   }
 
   function showTestSend() {
-    const o = SettingsForm.testOutcome(root.service ? root.service.testSend : null, tr)
+    const o = SettingsForm.testOutcome(root.service ? root.service.testSend : null)
     root.settingsStatus = o.status
     root.settingsProblems = Object.assign({}, root.settingsProblems, o.problems)
     const first = Object.keys(o.problems)[0]
@@ -678,7 +691,7 @@ Item {
                 id: badgeText
                 anchors.centerIn: parent
                 textFormat: Text.PlainText
-                text: Rows.routeLabel(row.route, tr)
+                text: Routes.label(row.route, tr)
                 color: row.ink
                 font.family: Style.font.menuFamily
                 font.pixelSize: Style.font.caption
@@ -922,7 +935,7 @@ Item {
               horizontalAlignment: Text.AlignHCenter
               wrapMode: Text.Wrap
               textFormat: Text.PlainText
-              text: root.settingsStatus
+              text: SettingsForm.text(root.settingsStatus, tr)
               color: Commons.Color.menu.text
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body

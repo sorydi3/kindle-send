@@ -3,6 +3,7 @@
 //   tr.t(key, fallback)      a catalog string (Commons.Translations.t)
 //   tr.tn(key, count)        the plural form for count (Commons.Translations.tn)
 //   tr.num(value, decimals)  a number as the language writes it (Commons.I18n.formatNumber)
+//   tr.time(ms)              a time of day as the language writes it (Qt.locale(Commons.I18n.formatLocale))
 // The Picker, the Service and the bar widget hand in Omarchy's; the tests a
 // stand-in over i18n/en.json. Catalog strings carry %1, %2, … placeholders.
 .pragma library
@@ -27,6 +28,34 @@ function list(tr, items) {
   if (items.length < 2) return items.length ? String(items[0]) : ""
   return fill(tr.t("list.and"), [items.slice(0, -1).join(tr.t("list.separator")), items[items.length - 1]])
 }
+
+// --- Notes: text kept in state as key and values, turned into text only in a
+// binding, so a language switch re-renders it. A note is one of:
+//   { key, args? }            a catalog string, args filled in (each may be a note)
+//   { key, n, args? }         a plural entry for n (count)
+//   { code, values, english } a kindle-send message (message)
+//   { time: ms }              a time of day (tr.time)
+//   "text"                    text as it is (already in the language, or a path)
+//   null / ""                 no text
+function text(tr, note) {
+  if (note === null || note === undefined) return ""
+  if (typeof note !== "object") return String(note)
+  if ("time" in note) return tr.time(note.time)
+  if ("code" in note) return message(tr, note.code, note.values, note.english)
+  const args = (note.args || []).map(function(a) { return text(tr, a) })
+  return typeof note.n === "number" ? count(tr, note.key, note.n, args) : say(tr, note.key, args)
+}
+
+// --- Key hints (the Picker's and the Settings form's footers) ---
+
+// A key hint: the key's name as it is, then what it does.
+function hint(key, action) { return key + "  " + action }
+
+// The gap between key hints.
+const HINT_GAP = "      "
+
+// Key hints side by side.
+function hints(list) { return list.join(HINT_GAP) }
 
 // A Settings field's label, by its key (kindleAddress, …).
 function fieldLabel(tr, key) { return tr.t("settings." + key + ".label", key) }

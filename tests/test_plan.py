@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from conftest import write_settings
+from conftest import settings_file, write_settings
 
 KINDLE = "reader@kindle.com"
 SENDER = "sender@gmail.com"
@@ -307,3 +307,17 @@ def test_setup_needed_still_comes_before_the_info_line(ks, home, capsys):
     _, lines = raw(ks, capsys, "plan", "--folders")
 
     assert lines == [{"setupNeeded": True, "missing": ["kindleAddress", "senderAddress"]}, PICKER_INFO]
+
+
+def test_a_settings_file_that_isnt_valid_json_is_reported_not_taken_for_setup(ks, home, keyring, capsys):
+    settings_file(home).parent.mkdir(parents=True)
+    settings_file(home).write_text("{ broken")
+    make_book(home / "Books" / "Dune.epub")
+
+    code, lines = raw(ks, capsys, "plan", "--folders")
+
+    path = str(settings_file(home))
+    assert code == 0
+    assert lines == [{"failed": True, "code": "settings_file_invalid", "values": {"path": path},
+                      "reason": f"{path} isn't valid JSON, so it wasn't changed."}]
+    assert settings_file(home).read_text() == "{ broken"
