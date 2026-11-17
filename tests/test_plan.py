@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from conftest import write_shell_json
+from conftest import write_settings
 
 KINDLE = "reader@kindle.com"
 SENDER = "sender@gmail.com"
@@ -30,7 +30,7 @@ def make_book(path, size=10, mtime=None):
 
 @pytest.fixture
 def set_up(home, keyring):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER)
     keyring.set_password("app-password")
 
 
@@ -91,7 +91,7 @@ def test_folders_lists_newest_first_across_folders(ks, home, set_up, capsys):
 
 def test_folders_uses_the_book_folders_setting(ks, home, keyring, capsys, tmp_path):
     keyring.set_password("app-password")
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER,
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER,
                      bookFolders=["~/Library", str(tmp_path / "elsewhere")])
     make_book(home / "Books" / "NotSearched.epub")
     make_book(home / "Library" / "InLibrary.epub")
@@ -104,7 +104,7 @@ def test_folders_uses_the_book_folders_setting(ks, home, keyring, capsys, tmp_pa
 
 def test_a_book_in_overlapping_folders_is_listed_once(ks, home, keyring, capsys):
     keyring.set_password("app-password")
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER,
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER,
                      bookFolders=["~/Books", "~/Books/sub"])
     make_book(home / "Books" / "sub" / "Dune.epub")
 
@@ -208,7 +208,7 @@ def test_last_sent_is_the_latest_successful_send_of_the_same_name_and_size(ks, h
 
 
 def test_setup_needed_comes_first_and_names_the_missing_settings(ks, home, capsys):
-    write_shell_json(home, kindleAddress=KINDLE)
+    write_settings(home, kindleAddress=KINDLE)
     make_book(home / "Books" / "Dune.epub")
 
     _, lines = run(ks, capsys, "plan", "--folders")
@@ -224,7 +224,7 @@ def test_setup_needed_without_any_settings(ks, home, capsys):
 
 
 def test_a_missing_app_password_also_needs_setup(ks, home, keyring, capsys):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER)
     make_book(home / "Books" / "Dune.epub")
 
     _, lines = run(ks, capsys, "plan", "--folders")
@@ -286,7 +286,7 @@ def test_plan_tells_the_picker_the_book_folders_and_route_labels_before_the_book
 
 
 def test_the_info_line_shows_the_book_folders_setting_as_written(ks, home, keyring, capsys):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Library"])
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Library"])
     keyring.set_password("app-password")
 
     _, lines = raw(ks, capsys, "plan", "--folders")

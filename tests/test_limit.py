@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from conftest import write_shell_json
+from conftest import write_settings
 
 NOW = datetime(2026, 11, 5, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -71,14 +71,14 @@ def test_under_the_cap_only_the_gap_applies(ks, home, clock, capsys):
 
 
 def test_both_numbers_come_from_settings(ks, home, clock, capsys):
-    write_shell_json(home, minEmailGapSeconds=60, maxEmailsPerHour=2)
+    write_settings(home, minEmailGapSeconds=60, maxEmailsPerHour=2)
     write_history(home, sent(1800), sent(20))
 
     assert limit(ks, capsys) == {"canSendIn": 1800, "sentLastHour": 2, "maxEmailsPerHour": 2}
 
 
 def test_a_gap_setting_alone_still_applies(ks, home, clock, capsys):
-    write_shell_json(home, minEmailGapSeconds=60)
+    write_settings(home, minEmailGapSeconds=60)
     write_history(home, sent(20))
 
     assert limit(ks, capsys) == {"canSendIn": 40, "sentLastHour": 1, "maxEmailsPerHour": 20}
@@ -86,7 +86,7 @@ def test_a_gap_setting_alone_still_applies(ks, home, clock, capsys):
 
 @pytest.mark.parametrize("bad", ["ten", None, -5, True])
 def test_unusable_settings_fall_back_to_the_defaults(ks, home, clock, capsys, bad):
-    write_shell_json(home, minEmailGapSeconds=bad, maxEmailsPerHour=bad)
+    write_settings(home, minEmailGapSeconds=bad, maxEmailsPerHour=bad)
     write_history(home, sent(4))
 
     assert limit(ks, capsys) == {"canSendIn": 6, "sentLastHour": 1, "maxEmailsPerHour": 20}
@@ -94,7 +94,7 @@ def test_unusable_settings_fall_back_to_the_defaults(ks, home, clock, capsys, ba
 
 def test_an_email_just_sent_counts_from_the_history_it_wrote(ks, home, smtp, keyring, tmp_path, capsys):
     """The count lives in the Send history, so a fresh run (e.g. after a shell restart) sees it."""
-    write_shell_json(home, kindleAddress="reader@kindle.com", senderAddress="sender@gmail.com")
+    write_settings(home, kindleAddress="reader@kindle.com", senderAddress="sender@gmail.com")
     keyring.set_password("abcd efgh ijkl mnop\n")
     book = tmp_path / "Dune.epub"
     book.write_bytes(b"PK tiny epub")
