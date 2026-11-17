@@ -121,7 +121,26 @@ MESSAGES = {
     "eject_no_kindle": lambda v: "Kindle not plugged in.",
     "eject_failed": lambda v: v["detail"],
     "eject_step_failed": lambda v: f"{v['step']} failed.",
+    # Settings form problems (spec §3, §9)
+    "value_needed": lambda v: "Needed before Books can be sent.",
+    "not_an_email_address": lambda v: "That isn't an email address.",
+    "kindle_address_unusual": lambda v: "Kindle addresses usually end in @kindle.com.",
+    "sender_not_gmail": lambda v: "Make sure this is a Google account.",
+    "book_folder_missing": lambda v: f"{v['folder']} doesn't exist, so the Picker skips it.",
+    "book_folders_missing": lambda v: f"{and_list(v['folders'])} don't exist, so the Picker skips them.",
+    "app_password_rejected": lambda v: "Gmail rejected this app password.",
+    "password_check_unreachable": lambda v: "Couldn't reach Gmail to check the password. Saved anyway.",
+    "secret_tool_missing": lambda v: "secret-tool is missing. Install libsecret, then save again.",
+    "password_not_stored": lambda v: "Couldn't store the app password in the keyring.",
+    "form_unreadable": lambda v: "The Settings form sent something unreadable.",
+    "settings_file_invalid": lambda v: f"{v['path']} isn't valid JSON, so it wasn't changed.",
+    "settings_file_unwritable": lambda v: f"Couldn't write {v['path']}: {v['detail']}.",
 }
+
+
+def and_list(items):
+    """"a, b and c"."""
+    return ", ".join(items[:-1]) + " and " + items[-1]
 
 
 def said(code, **values):
@@ -928,13 +947,16 @@ def is_email_address(text):
 FORM_FIELDS = ("kindleAddress", "senderAddress", "appPassword", "bookFolders")
 
 
-def problem(field, message, blocking):
-    return {"field": field, "message": message, "blocking": blocking}
+def problem(field, code, blocking, **values):
+    """A Settings-form problem: its field, message code, values and English message."""
+    message = said(code, **values)
+    return {"field": field, "code": code, "values": message["values"], "message": message["text"],
+            "blocking": blocking}
 
 
 def needed(field):
     """A missing value: it blocks saving, and the form counts these ("N still needed …")."""
-    return {**problem(field, "Needed before Books can be sent.", True), "needed": True}
+    return {**problem(field, "value_needed", True), "needed": True}
 
 
 def blocking_problems(values, has_password):
@@ -945,7 +967,7 @@ def blocking_problems(values, has_password):
         if not values[field]:
             problems.append(needed(field))
         elif not is_email_address(values[field]):
-            problems.append(problem(field, "That isn't an email address.", True))
+            problems.append(problem(field, "not_an_email_address", True))
     if not has_password:
         problems.append(needed("appPassword"))
     return problems
@@ -955,15 +977,14 @@ def value_warnings(values):
     """Unusual but valid values: they save, and the form says why they might be wrong."""
     found = []
     if not values["kindleAddress"].lower().endswith("@kindle.com"):
-        found.append(problem("kindleAddress", "Kindle addresses usually end in @kindle.com.", False))
+        found.append(problem("kindleAddress", "kindle_address_unusual", False))
     if not values["senderAddress"].lower().endswith("@gmail.com"):
-        found.append(problem("senderAddress", "Make sure this is a Google account.", False))
+        found.append(problem("senderAddress", "sender_not_gmail", False))
     absent = [f for f in values["bookFolders"] if not Path(os.path.expanduser(f)).is_dir()]
     if len(absent) == 1:
-        found.append(problem("bookFolders", f"{absent[0]} doesn't exist, so the Picker skips it.", False))
+        found.append(problem("bookFolders", "book_folder_missing", False, folder=absent[0]))
     elif absent:
-        names = ", ".join(absent[:-1]) + " and " + absent[-1]
-        found.append(problem("bookFolders", f"{names} don't exist, so the Picker skips them.", False))
+        found.append(problem("bookFolders", "book_folders_missing", False, folders=absent))
     return found
 
 
@@ -994,9 +1015,9 @@ def store_typed_password(sender, password):
                         "service", "kindle-send", "user", sender],
                        input=password, text=True, capture_output=True)
     except OSError:
-        return problem("appPassword", "secret-tool is missing. Install libsecret, then save again.", True)
+        return problem("appPassword", "secret_tool_missing", True)
     if lookup_password(sender) != password:
-        return problem("appPassword", "Couldn't store the app password in the keyring.", True)
+        return problem("appPassword", "password_not_stored", True)
     return None
 
 
@@ -1015,14 +1036,14 @@ def create_books_folder():
 
 def save_form():
     """`kindle-send save`: check the form's values and write them to shell.json (spec §3, §9).
-    Reads one JSON line on stdin. Prints {"saved": bool, "firstSave"?: true, "problems": [{"field", "message", "blocking"}]};
+    Reads one JSON line on stdin. Prints {"saved": bool, "firstSave"?: true, "problems": [{"field", "code", "values", "message", "blocking"}]};
     field "" is about the whole form."""
     try:
         raw = json.loads(sys.stdin.readline())  # one line, so the Picker needs no EOF
     except ValueError:
         raw = None
     if not isinstance(raw, dict):
-        emit({"saved": False, "problems": [problem("", "The Settings form sent something unreadable.", True)]})
+        emit({"saved": False, "problems": [problem("", "form_unreadable", True)]})
         return 0
     values = form_values(raw)
     sender = values["senderAddress"]
@@ -1041,11 +1062,10 @@ def save_form():
     if password:
         outcome = check_password(sender, password)
         if outcome == "rejected":
-            emit({"saved": False, "problems": [problem("appPassword", "Gmail rejected this app password.", True)]})
+            emit({"saved": False, "problems": [problem("appPassword", "app_password_rejected", True)]})
             return 0
         if outcome == "unreachable":
-            password_problems.append(problem("appPassword", "Couldn't reach Gmail to check the password. Saved anyway.",
-                                   False))
+            password_problems.append(problem("appPassword", "password_check_unreachable", False))
     if typed:
         stored = store_typed_password(sender, typed)
         if stored:
@@ -1054,12 +1074,12 @@ def save_form():
     try:
         save_settings(values)
     except ShellJsonInvalid as invalid:
-        message = f"{invalid.path} isn't valid JSON, so it wasn't changed."
-        emit({"saved": False, "problems": [problem("", message, True)]})
+        emit({"saved": False, "problems": [problem("", "settings_file_invalid", True, path=str(invalid.path))]})
         return 0
     except OSError as error:
-        message = f"Couldn't write {shell_json_path()}: {error.strerror or error}."
-        emit({"saved": False, "problems": [problem("", message, True)]})
+        unwritable = problem("", "settings_file_unwritable", True, path=str(shell_json_path()),
+                             detail=str(error.strerror or error))
+        emit({"saved": False, "problems": [unwritable]})
         return 0
     if first_save:
         create_books_folder()

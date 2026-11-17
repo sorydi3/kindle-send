@@ -227,3 +227,11 @@ The plugin's `manifest.json`, QML and JS now sit at the repo root; nothing else 
 - [ ] `omarchy plugin validate .` at the repo root prints no error.
 - [ ] Run `./scripts/install.sh` in a temp `HOME` (not your own). `~/.local/share/kindle-send/omarchy-plugin` holds only `manifest.json`, the `*.qml` and the `*.js`, and the plugin link points at it.
 - [ ] After installing for real, `SUPER + SHIFT + K` opens the Picker and a Send works as before.
+
+## 21. Message codes and Route ids (#64)
+
+The Picker still shows the English text; only where Route labels come from changed.
+
+- [ ] The Picker shows "Email" and "USB" on each row, in the footer ("USB can't take 1") and in the details ("switched to USB") as before.
+- [ ] `kindle-send plan --folders` prints no `routeLabels`; each Book has `routeReasonCode` and `routeReasonValues`.
+- [ ] `kindle-send history` and `kindle-send setup` read exactly as before (English, no codes).

@@ -252,6 +252,16 @@ def test_a_failed_send_is_recorded_with_its_reason(ks, smtp, setup_done, book, h
     assert entry["reason"] == "Gmail rejected the app password."
 
 
+def test_the_send_history_keeps_the_english_reason_only(ks, smtp, setup_done, book, home, capsys):
+    """Message codes are for the shell; the Send history stays English (spec §17)."""
+    smtp.login_error = smtplib.SMTPAuthenticationError(535, b"no")
+
+    run(ks, capsys, "send", "--route", "email", str(book))
+
+    [entry] = history(home)
+    assert set(entry) == {"time", "name", "size", "route", "result", "reason"}
+
+
 def test_history_time_is_an_iso_timestamp_with_offset(ks, smtp, setup_done, book, home, capsys):
     from datetime import datetime
 
