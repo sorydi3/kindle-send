@@ -546,7 +546,7 @@ Item {
           width: parent.width - cog.width - Style.space(8)
           height: Style.space(34)
           textFormat: Text.PlainText
-          text: root.filterText || "Send to Kindle…"
+          text: root.filterText || "Books to Kindle…"
           color: Color.menu.text
           opacity: root.filterText ? 1 : 0.58  // the shell's own placeholder strength
           font.family: Style.font.menuFamily

@@ -228,7 +228,27 @@ The plugin's `manifest.json`, QML and JS now sit at the repo root; nothing else 
 - [ ] Run `./scripts/install.sh` in a temp `HOME` (not your own). `~/.local/share/kindle-send/omarchy-plugin` holds only `manifest.json`, the `*.qml` and the `*.js`, and the plugin link points at it.
 - [ ] After installing for real, `SUPER + SHIFT + K` opens the Picker and a Send works as before.
 
-## 21. The Picker and Service run the bundled kindle-send (#60)
+## 21. Bar widget (#62, spec §17)
+
+Add the widget to a test bar layout yourself (the Omarchy bar settings), not with `omarchy bar put`. Start with nothing waiting.
+
+- [ ] A book icon shows, with no number beside it. Hover: the tooltip reads "Books to Kindle" and, below, "Nothing waiting".
+- [ ] Left-click opens the Picker; left-click again closes it. Right-click does nothing.
+- [ ] With the Kindle unplugged, send two Books by USB: "2" shows beside the icon, and the tooltip says "2 waiting for Kindle". Plug the Kindle in: while the Send runs the icon takes the bar's active colour and the tooltip says "Sending…"; afterwards the number goes and the colour is back to normal.
+- [ ] With emails held by the Send limit (section 7), the number counts them too and the tooltip adds "N held by the Send limit" (joined with " · " to anything else).
+- [ ] With a dark theme (e.g. Tokyo Night) the icon, the number and the tooltip are readable on the bar, and the active colour stands out. Switch to a light theme (e.g. Catppuccin Latte): the same, with nothing keeping a dark-theme colour.
+
+## 22. The name is Books to Kindle (#63)
+
+The plugin shows itself as "Books to Kindle"; only the right-click action keeps the label "Send to Kindle".
+
+- [ ] `omarchy plugin validate .` passes; `manifest.json` has name "Books to Kindle", version 1.0.0, author sorydi3, license MIT and the "Unofficial: … Not created or endorsed by Amazon." description.
+- [ ] While setup is needed, the Picker opens into Settings titled "Set up Books to Kindle". The Book list's search line reads "Books to Kindle…" while empty.
+- [ ] A Send's notification shows the app name "Books to Kindle".
+- [ ] Run the extras script in a temp `HOME` with an Omarchy menu file holding a "Send to Kindle" block: it offers to replace it, and afterwards the menu shows "Books to Kindle" with "Books to Kindle" and "Settings" inside.
+- [ ] The Nautilus and Strata right-click items still read "Send to Kindle".
+
+## 23. The Picker and Service run the bundled kindle-send (#60)
 
 They run `bin/kindle-send` from the plugin folder, never a `kindle-send` on PATH.
 

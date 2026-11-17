@@ -374,7 +374,7 @@ def test_browsing_into_the_form_keeps_the_other_unsaved_values_and_marks_an_edit
 # --- Setup needed (spec §4, §9) -------------------------------------------------
 
 def test_while_something_is_missing_the_form_is_titled_set_up():
-    assert form("title(['appPassword'])") == "Set up Send to Kindle"
+    assert form("title(['appPassword'])") == "Set up Books to Kindle"
 
 
 def test_once_nothing_is_missing_the_form_is_titled_settings():

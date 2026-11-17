@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Send to Kindle into the current user's home. Needs no root.
+# Install Books to Kindle into the current user's home. Needs no root.
 #
 #   ./scripts/install.sh [--yes | --no-config]
 #
@@ -111,7 +111,7 @@ elif ask "Add SUPER + SHIFT + K (open the picker) to $bindings?"; then
   {
     echo
     echo "$bind_start"
-    echo "o.bind(\"SUPER + SHIFT + K\", \"Send to Kindle\", \"omarchy-shell shell toggle $plugin_id\")"
+    echo "o.bind(\"SUPER + SHIFT + K\", \"Books to Kindle\", \"omarchy-shell shell toggle $plugin_id\")"
     echo "$bind_end"
   } >>"$bindings"
   echo "    Added. Your previous file is kept as $bindings.before-kindle-send."
@@ -119,11 +119,11 @@ else
   not_added
 fi
 
-echo "==> Omarchy menu: Send to Kindle, and Send to Kindle > Settings"
+echo "==> Omarchy menu: Books to Kindle, and Books to Kindle > Settings"
 edit=add question="Add them to $menu?" done="Added to"
 if [[ -f $menu ]] && grep -qF -- "// >>> kindle-send menu" "$menu"; then
   # An older install's block (its "Setup" entry ran the terminal wizard) is swapped in place.
-  edit=update question="Replace the older Send to Kindle entries in $menu?" done="Updated in"
+  edit=update question="Replace the older Books to Kindle entries in $menu?" done="Updated in"
 fi
 if [[ $edit == update ]] && python3 -I "${menu_block[@]}" current "$menu"; then
   echo "    Already in $menu."
@@ -221,8 +221,8 @@ case ":$PATH:" in
 esac
 
 echo "==> Setup"
-echo "    Press SUPER + SHIFT + K to set up Send to Kindle in the Picker"
-echo "    (or Omarchy menu > Send to Kindle > Settings)."
+echo "    Press SUPER + SHIFT + K to set up Books to Kindle in the Picker"
+echo "    (or Omarchy menu > Books to Kindle > Settings)."
 if [[ -t 0 && -t 1 ]]; then
   read -r -p "    Set up in the terminal instead? [y/N] " answer || answer=n
   if [[ ${answer,,} == y || ${answer,,} == yes ]]; then
