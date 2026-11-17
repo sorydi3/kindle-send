@@ -4,7 +4,13 @@
   "name": "Send to Kindle",
   "version": "0.1.0",
   "description": "Send ebooks to your Kindle by email or USB",
-  "kinds": ["menu", "service"],
+  "kinds": ["menu", "service", "bar-widget"],
   "keepLoaded": true,
-  "entryPoints": { "menu": "Picker.qml", "service": "Service.qml" }
+  "entryPoints": { "menu": "Picker.qml", "service": "Service.qml", "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "Books to Kindle",
+    "description": "Opens the Picker; shows Books waiting for the Kindle",
+    "category": "Other",
+    "allowMultiple": false
+  }
 }
