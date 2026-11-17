@@ -3,22 +3,21 @@
 .import "Routes.js" as Routes
 
 // lines: parsed JSON lines of `kindle-send plan`, already newest first.
-// Besides Books, plan says which Book folders it scans and how Routes are
-// labelled, so those defaults live only in kindle-send.
+// Besides Books, plan says which Book folders it scans, so that default lives
+// only in kindle-send. Routes come as ids; the plugin labels them (Routes.js).
 function fromPlan(lines) {
   let setupNeeded = false
   let missing = []
   let bookFolders = []
-  let routeLabels = {}
   const books = []
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]
     if (!l) continue
     if (l.setupNeeded) { setupNeeded = true; missing = Array.isArray(l.missing) ? l.missing.map(String) : [] }
-    else if (Array.isArray(l.bookFolders)) { bookFolders = l.bookFolders.map(String); routeLabels = l.routeLabels || {} }
+    else if (Array.isArray(l.bookFolders)) bookFolders = l.bookFolders.map(String)
     else if (l.path) books.push(l)
   }
-  return { setupNeeded: setupNeeded, missing: missing, books: books, bookFolders: bookFolders, routeLabels: routeLabels }
+  return { setupNeeded: setupNeeded, missing: missing, books: books, bookFolders: bookFolders }
 }
 
 // Typing filters by file name only.
@@ -33,8 +32,8 @@ function routeOf(book, overrides) {
   return (overrides && overrides[book.path]) || book.route
 }
 
-// labels: plan's routeLabels; a Route without one shows its name.
-function routeLabel(route, labels) { return (labels && labels[route]) || route }
+// labels: optional Route labels by id (the Picker's); else Routes.LABELS.
+function routeLabel(route, labels) { return Routes.label(route, labels) }
 
 function switchRoute(route) { return Routes.other(route) }
 
