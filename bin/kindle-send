@@ -189,7 +189,7 @@ MESSAGES = {
     "copy_failed": lambda v: f"Couldn't copy to the Kindle: {v['detail']}.",
     "calibre_missing": lambda v: "Install calibre to send EPUB over USB (sudo pacman -S calibre).",
     "conversion_failed": lambda v: f"Couldn't convert: {v['detail']}.",
-    "test_book_missing": lambda v: "Couldn't find the test Book. Reinstall kindle-send.",
+    "test_book_missing": lambda v: "Couldn't find the test Book. Reinstall Books to Kindle.",
     # Why `plan` chose USB (spec §5, Route rules)
     "route_format_not_emailable": lambda v: f"{v['format']} can't be sent by email.",
     "route_too_big_for_email": lambda v: f"Too big for email ({v['mb']} MB).",

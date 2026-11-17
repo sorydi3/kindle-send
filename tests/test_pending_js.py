@@ -18,7 +18,7 @@ def j(value):
 
 ATLAS = {"path": "/b/Atlas.pdf", "name": "Atlas.pdf", "route": "usb"}
 DUNE = {"path": "/b/Dune.epub", "name": "Dune.epub", "route": "usb"}
-NO_KINDLE = {"name": "Atlas.pdf", "result": "failed",
+NO_KINDLE = {"name": "Atlas.pdf", "result": "failed", "code": "kindle_not_plugged_in", "values": {},
              "reason": "Kindle not plugged in. Plug it in and send again."}
 
 
@@ -29,10 +29,25 @@ def test_a_usb_book_failing_for_no_kindle_becomes_pending():
 @pytest.mark.parametrize("book, result", [
     (ATLAS, {"name": "Atlas.pdf", "result": "copied"}),
     (ATLAS, {"name": "Atlas.pdf", "result": "failed", "reason": "Not enough space on the Kindle."}),
+    (ATLAS, {"name": "Atlas.pdf", "result": "failed", "code": "kindle_full", "values": {"mb": 3},
+             "reason": "Not enough space on the Kindle (needs 3 MB)."}),
     ({**ATLAS, "route": "email"}, NO_KINDLE),
 ])
 def test_other_results_are_not_pending(book, result):
     assert js(f"isPending({j(book)}, {j(result)})") is False
+
+
+def test_no_kindle_is_told_by_its_code_not_its_english_text():
+    """The reason text is only for showing; a reworded sentence keeps the Book waiting."""
+    reworded = {**NO_KINDLE, "reason": "No Kindle found."}
+
+    assert js(f"isPending({j(ATLAS)}, {j(reworded)})") is True
+
+
+def test_the_waiting_text_comes_from_the_catalog():
+    tr = "LANG({'pending.waitingMany': {one: 'Wartet: %1 Buch', other: 'Wartet: %1 Bücher'}})"
+
+    assert js(f"notice([{j(ATLAS)}, {j(DUNE)}], {tr})")["headline"] == "Wartet: 2 Bücher"
 
 
 @pytest.mark.parametrize("text, found", [
@@ -46,14 +61,14 @@ def test_kindle_poll_reads_kindle_send_kindle(text, found):
 
 
 def test_one_waiting_book_gets_a_lasting_notice_that_opens_the_picker():
-    assert js(f"notice([{j(ATLAS)}])") == {
+    assert js(f"notice([{j(ATLAS)}], EN)") == {
         "headline": "Waiting for Kindle: Atlas.pdf",
         "body": "Plug it in to send. Click to manage.",
         "urgency": "critical"}
 
 
 def test_several_waiting_books_are_counted_and_named():
-    n = js(f"notice([{j(ATLAS)}, {j(DUNE)}])")
+    n = js(f"notice([{j(ATLAS)}, {j(DUNE)}], EN)")
 
     assert n["headline"] == "Waiting for Kindle: 2 Books"
     assert n["body"] == "Atlas.pdf, Dune.epub\nPlug it in to send. Click to manage."
@@ -61,7 +76,7 @@ def test_several_waiting_books_are_counted_and_named():
 
 
 def test_cancelling_replaces_the_lasting_notice_with_a_passing_one():
-    assert js(f"cancelledNotice([{j(ATLAS)}, {j(DUNE)}])") == {
+    assert js(f"cancelledNotice([{j(ATLAS)}, {j(DUNE)}], EN)") == {
         "headline": "Cancelled 2 Books waiting for Kindle", "body": "", "urgency": "normal"}
 
 
@@ -74,13 +89,13 @@ def test_adding_the_same_book_again_keeps_one_pending_send():
 def test_the_waiting_line_goes_above_the_books_only_while_something_waits():
     rows = [{"path": "/b/Other.pdf", "name": "Other.pdf"}]
 
-    assert js(f"withWaiting({j(rows)}, [])") == rows
-    listed = js(f"withWaiting({j(rows)}, [{j(ATLAS)}, {j(DUNE)}])")
+    assert js(f"withWaiting({j(rows)}, [], EN)") == rows
+    listed = js(f"withWaiting({j(rows)}, [{j(ATLAS)}, {j(DUNE)}], EN)")
     assert listed[1:] == rows
     assert listed[0]["waiting"] is True
     assert listed[0]["name"] == "2 Books waiting for Kindle"
     assert listed[0]["details"] == "Atlas.pdf, Dune.epub"
-    assert js(f"withWaiting([], [{j(ATLAS)}])")[0]["name"] == "1 Book waiting for Kindle"
+    assert js(f"withWaiting([], [{j(ATLAS)}], EN)")[0]["name"] == "1 Book waiting for Kindle"
 
 
 @pytest.mark.parametrize("pending_key, results, wanted", [

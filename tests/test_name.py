@@ -11,7 +11,8 @@ REPO = Path(__file__).resolve().parent.parent
 # The files that ship and show text, and the lines in them allowed to say "Send to Kindle":
 # the Nautilus and Strata right-click action labels, and text pointing at them.
 SHIPPED = ["manifest.json", "Picker.qml", "Service.qml", "BarWidget.qml", "Feedback.js", "Settings.js",
-           "Rows.js", "Pending.js", "Limit.js", "Routes.js", "bin/kindle-send", "nautilus/kindle-send.py",
+           "Rows.js", "Pending.js", "Limit.js", "Routes.js", "Bar.js", "Catalog.js", "Translator.qml",
+           "i18n/en.json", "bin/kindle-send", "nautilus/kindle-send.py",
            "scripts/install.sh", "scripts/menu_block.py", "scripts/strata_action.py"]
 RIGHT_CLICK = [
     'label="Send to Kindle"',                     # Nautilus menu item

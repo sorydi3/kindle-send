@@ -283,3 +283,13 @@ Run it from the plugin folder (`~/.config/omarchy/plugins/sorydi3.kindle-send/sc
 - [ ] A second run with `--yes` changes nothing and Nautilus isn't restarted.
 - [ ] `--remove` takes out the link, the Nautilus item, the Strata action and both blocks, keeps Settings, the password and the history, and ends with `omarchy plugin remove sorydi3.kindle-send`. It never touches the plugin folder.
 - [ ] `--purge` also removes `~/.config/kindle-send/` and `~/.local/state/kindle-send/` and runs `secret-tool clear service kindle-send`; `shell.json` is unchanged. The keyring is your session's, not the temp `HOME`'s: even there `--purge` deletes your real app password, so run it only when you mean to (or with a stub `secret-tool` first on `PATH`).
+
+## 27. Plugin text from the English catalog (#65, spec §17 Translations)
+
+All the plugin's own text comes from `i18n/en.json` through Omarchy's `Commons.Translations`; English should read exactly as before, apart from the fixed failure hints.
+
+- [ ] Open the Picker, mark Books, `Tab` a Route, open Settings, save with a typo, `Ctrl+T`, send by email and USB, unplug the Kindle for a Pending Send: every line reads as before, and no raw key (`rows.marked`, `message.too_big_for_email`, …) shows anywhere, including the bar-widget tooltip and the notifications.
+- [ ] **Live language switch.** Copy `i18n/en.json` to `i18n/da.json` in the plugin folder and change a few values (e.g. `keys.close`, `bar.idle`, `rows.marked`). Pick Dansk under Setup > Language: the Picker's footer and the bar-widget tooltip follow at once, with no shell restart; numbers show a decimal comma (`1,2 MB`). Switch back and delete `da.json`.
+- [ ] **Unknown code.** A failure whose `code` the catalog lacks shows kindle-send's English `reason` (e.g. temporarily delete `message.kindle_full` from `en.json` and fill the Kindle).
+- [ ] **Broken plugin folder.** Rename the plugin's `bin/kindle-send`: the Picker says "Couldn't run kindle-send." and names that path, a Send fails with "Couldn't run kindle-send from the plugin folder. Reinstall Books to Kindle." Neither mentions `scripts/install.sh`. "Couldn't list your Books" names the bundled path in its `plan --folders` hint. Put it back.
+- [ ] **Plain text.** Name a Book `<b>bold</b>.epub` and `<img src="https://example.invalid/x">.pdf`: the Picker shows the names literally, with no bold and no image request.

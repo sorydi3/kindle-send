@@ -44,7 +44,7 @@ QtObject {
     if (cmd[1] === "limit") return { lines: [JSON.stringify(w.limits.length > 1 ? w.limits.shift() : w.limits[0])], code: 0 }
     if (cmd[1] === "send" && w.sendResults[cmd[4]]) return { lines: [JSON.stringify(w.sendResults[cmd[4]])], code: 0 }
     if (cmd[1] === "send" && cmd[3] === "usb") {
-      if (!w.kindle) return { lines: ['{"result":"failed","reason":"Kindle not plugged in. Plug it in and send again."}'], code: 0 }
+      if (!w.kindle) return { lines: ['{"result":"failed","code":"kindle_not_plugged_in","values":{},"reason":"Kindle not plugged in. Plug it in and send again."}'], code: 0 }
       return { lines: ['{"stage":"copying"}', '{"result":"copied"}'], code: 0 }
     }
     if (cmd[1] === "send") return { lines: ['{"stage":"sending"}', '{"result":"sent"}'], code: 0 }

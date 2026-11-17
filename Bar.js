@@ -1,24 +1,23 @@
 // What the bar widget shows (spec §17). Pure functions, no QML.
-// The text moves into the i18n catalog later (#65).
+// tr: the translator (Catalog.js).
 .pragma library
-
-const NAME = "Books to Kindle"
+.import "Catalog.js" as Catalog
 
 // service: this plugin's Service ({ pending, held, busy }), or null before it loads.
 // Returns { label, active, tooltip }: label is the count beside the icon, or ""
 // when nothing waits; active while a Send runs.
-function status(service) {
+function status(service, tr) {
   const waiting = service && service.pending ? service.pending.length : 0
   const held = service && service.held ? service.held.length : 0
   const count = waiting + held
   const sending = !!service && service.busy === true
   const parts = []
-  if (sending) parts.push("Sending…")
-  if (waiting > 0) parts.push(waiting + " waiting for Kindle")
-  if (held > 0) parts.push(held + " held by the Send limit")
+  if (sending) parts.push(tr.t("bar.sending"))
+  if (waiting > 0) parts.push(Catalog.count(tr, "bar.waiting", waiting))
+  if (held > 0) parts.push(Catalog.count(tr, "bar.held", held))
   return {
-    label: count > 0 ? String(count) : "",
+    label: count > 0 ? tr.num(count) : "",
     active: sending,
-    tooltip: NAME + "\n" + (parts.length ? parts.join(" · ") : "Nothing waiting")
+    tooltip: tr.t("app.name") + "\n" + (parts.length ? parts.join(tr.t("list.dot")) : tr.t("bar.idle"))
   }
 }

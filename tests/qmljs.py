@@ -29,7 +29,38 @@ function load(file) {
   vm.runInContext(src, ctx)
   return ctx
 }
+// The translators the plugin's text functions take ({t, tn, num}), standing in
+// for Commons.Translations and Commons.I18n.formatNumber. EN reads i18n/en.json
+// the way Translations does in English; LANG(entries) is a made-up language
+// over it (its entries first, then English) that writes a decimal comma and,
+// given zeroDigit (e.g. "٠"), that script's digits.
+const catalogFile = path.join(path.dirname(process.argv[1]), "i18n", "en.json")
+const english = fs.existsSync(catalogFile) ? JSON.parse(fs.readFileSync(catalogFile, "utf8")) : {}
+function translator(entries, decimal, zeroDigit) {
+  const strings = Object.assign({}, english, entries)
+  return {
+    t: function(key, fallback) {
+      let v = strings[key]
+      if (v && typeof v === "object") v = v.other
+      return typeof v === "string" && v.length > 0 ? v : (fallback !== undefined ? fallback : key)
+    },
+    tn: function(key, count, fallback) {
+      let v = strings[key]
+      if (v && typeof v === "object") v = count === 1 && v.one ? v.one : v.other
+      return typeof v === "string" && v.length > 0 ? v : (fallback !== undefined ? fallback : key)
+    },
+    num: function(value, decimals) {
+      const n = Number(value)
+      const text = decimals === undefined ? String(n) : n.toFixed(decimals)
+      const zero = (zeroDigit || "0").charCodeAt(0)
+      return text.replace(".", decimal)
+        .replace(/[0-9]/g, function(d) { return String.fromCharCode(zero + d.charCodeAt(0) - 48) })
+    }
+  }
+}
 const ctx = load(process.argv[1])
+ctx.EN = translator({}, ".")
+ctx.LANG = function(entries, zeroDigit) { return translator(entries || {}, ",", zeroDigit) }
 process.stdout.write(JSON.stringify(vm.runInContext(process.argv[2], ctx)))
 """
 

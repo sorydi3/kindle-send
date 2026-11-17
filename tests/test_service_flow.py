@@ -59,9 +59,15 @@ def run_service(tmp_path, body, plug_at=0):
     service = (ROOT / "Service.qml").read_text()
     service = service.replace("import Quickshell.Io\n", "import FakeIo\n").replace("import Quickshell\n", "")
     (plugin / "Service.qml").write_text(service)
+    # The notification text comes from the plugin's catalog, through an English stand-in for qs.Commons.
+    shutil.copytree(ROOT / "i18n", plugin / "i18n")
+    translator = (ROOT / "Translator.qml").read_text()
+    (plugin / "Translator.qml").write_text(translator.replace("import qs.Commons as Commons\n",
+                                                              "import FakeCommons as Commons\n"))
     scenario = tmp_path / "scenario.qml"
     scenario.write_text(SCENARIO.replace("BODY", body).replace("PLUG_AT", str(plug_at)))
-    env = {**os.environ, "QT_QPA_PLATFORM": "offscreen", "QT_FORCE_STDERR_LOGGING": "1"}
+    env = {**os.environ, "QT_QPA_PLATFORM": "offscreen", "QT_FORCE_STDERR_LOGGING": "1",
+           "QML_XHR_ALLOW_FILE_READ": "1"}
     out = subprocess.run([QML, "-I", str(FAKE), str(scenario)], capture_output=True, text=True,
                          env=env, timeout=60)
     events = [json.loads(line.split("EVENT ", 1)[1]) for line in out.stderr.splitlines() if "EVENT " in line]
@@ -257,8 +263,8 @@ def test_a_test_send_runs_send_test_and_its_summary_lists_the_usual_causes(tmp_p
 
 
 def test_a_failed_test_send_reports_its_field_and_opens_settings_on_it(tmp_path):
-    failed = {"result": "failed", "reason": "Gmail rejected the app password.", "fixBySetup": True,
-              "field": "appPassword"}
+    failed = {"result": "failed", "code": "password_rejected", "values": {}, "reason": "Gmail rejected the app password.",
+              "fixBySetup": True, "field": "appPassword"}
     events = run_service(tmp_path, f"""
         FakeWorld.limits = [{FREE}]
         FakeWorld.sendResults = {{ "--test": {json.dumps(failed)} }}
@@ -266,8 +272,8 @@ def test_a_failed_test_send_reports_its_field_and_opens_settings_on_it(tmp_path)
         s.sendTest("sender@gmail.com")
     """)
 
-    assert states_of_the_test_send(events)[-1] == {"state": "failed", "reason": "Gmail rejected the app password.",
-                                       "field": "appPassword"}
+    assert states_of_the_test_send(events)[-1] == {"state": "failed", "code": "password_rejected", "values": {},
+                                                   "reason": "Gmail rejected the app password.", "field": "appPassword"}
     last = [e for e in events if e["kind"] == "notify"][-1]
     assert last["headline"] == "Couldn't send Kindle Send Test"
     assert json.loads(last["exec"][4]) == {"settings": "appPassword", "problem": "Gmail rejected the app password."}
