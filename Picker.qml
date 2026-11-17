@@ -64,9 +64,11 @@ Item {
   // What setup still needs (kindle-send settings): titles the form, flags fields, makes Esc close.
   property var settingsMissing: []
   readonly property bool settingsSetup: SettingsForm.setupNeeded(settingsMissing)
-  // field key -> problem message from the last save, cleared as each field is edited.
+  // field key -> problem from the last save, cleared as each field is edited. It and
+  // the status line are notes (Catalog.text, key and values), turned into text in
+  // the bindings that show them, so a language switch re-renders them.
   property var settingsProblems: ({})
-  property string settingsStatus: ""
+  property var settingsStatus: null
   property string settingsFocus: ""
   property bool settingsSaving: false
   // Something was saved since Settings opened, so the Book list is planned again on the way back.
@@ -112,7 +114,7 @@ Item {
     // plan reruns on every open, so settings rewritten by setup show at once.
     root.list()
     // The menu's Settings entry, a failure notification's click, a form that stepped aside, or the list (spec §10, §13, §14).
-    const intent = SettingsForm.openIntent(payloadJson, root.settingsAside, tr)
+    const intent = SettingsForm.openIntent(payloadJson, root.settingsAside)
     root.settingsAside = null
     if (intent.to === "settings") root.openSettings(intent.focus, intent.problems)
     else if (intent.to === "returned") root.returnToSettings(intent.form)
@@ -235,7 +237,7 @@ Item {
     if (root.settingsOpen) return
     root.settingsOpen = true
     root.settingsProblems = problems || {}
-    root.settingsStatus = ""
+    root.settingsStatus = null
     root.settingsTesting = false
     root.settingsSavedSinceOpen = false
     root.settingsPasswordStored = false
@@ -274,11 +276,11 @@ Item {
   function settingsLoaded(exitCode) {
     const line = settingsReader.line
     if (exitCode !== 0 || !line) {
-      root.settingsStatus = SettingsForm.readFailed(root.kindleSend, tr)
+      root.settingsStatus = SettingsForm.readFailed(root.kindleSend)
       return
     }
     // An unreadable Settings file: said in the status line, never taken for missing values.
-    const problem = SettingsForm.readProblem(line, tr)
+    const problem = SettingsForm.readProblem(line)
     if (problem) {
       root.settingsStatus = problem
       return
@@ -300,7 +302,7 @@ Item {
   function saveSettings() {
     if (root.settingsSaving) return
     root.settingsSaving = true
-    root.settingsStatus = SettingsForm.savingStatus(root.settingsValues, tr)
+    root.settingsStatus = SettingsForm.savingStatus(root.settingsValues)
     saver.result = null
     saver.didStart = false
     saver.payload = JSON.stringify(SettingsForm.toSave(root.settingsValues))
@@ -312,11 +314,11 @@ Item {
     saver.payload = ""  // it may hold the app password if save never started
     const result = saver.result
     if (exitCode !== 0 || !result) {
-      root.settingsStatus = SettingsForm.saveFailed(root.kindleSend, tr)
+      root.settingsStatus = SettingsForm.saveFailed(root.kindleSend)
       return
     }
-    root.settingsProblems = SettingsForm.byField(result.problems, tr)
-    root.settingsStatus = SettingsForm.status(result, tr)
+    root.settingsProblems = SettingsForm.byField(result.problems)
+    root.settingsStatus = SettingsForm.status(result)
     const first = SettingsForm.firstProblem(result.problems)
     if (first) root.focusSettingsField(first)
     if (result.saved) {
@@ -344,7 +346,7 @@ Item {
     root.settingsValues = back.values
     root.settingsBaseline = back.baseline
     root.settingsProblems = back.problems || {}
-    root.settingsStatus = back.status || ""
+    root.settingsStatus = back.status || null
     root.settingsSavedSinceOpen = back.savedSinceOpen === true
     root.settingsPasswordStored = back.passwordStored === true
     root.settingsMissing = back.missing || []
@@ -360,7 +362,7 @@ Item {
 
   function sendTestBook() {
     const testSend = root.service ? root.service.testSend : null
-    const k = SettingsForm.testKey(root.settingsSetup, root.settingsChanged || root.settingsSaving, testSend, tr)
+    const k = SettingsForm.testKey(root.settingsSetup, root.settingsChanged || root.settingsSaving, testSend)
     if (!k.send || !root.service) {
       root.settingsStatus = k.status
       return
@@ -370,7 +372,7 @@ Item {
   }
 
   function showTestSend() {
-    const o = SettingsForm.testOutcome(root.service ? root.service.testSend : null, tr)
+    const o = SettingsForm.testOutcome(root.service ? root.service.testSend : null)
     root.settingsStatus = o.status
     root.settingsProblems = Object.assign({}, root.settingsProblems, o.problems)
     const first = Object.keys(o.problems)[0]
@@ -932,7 +934,7 @@ Item {
               horizontalAlignment: Text.AlignHCenter
               wrapMode: Text.Wrap
               textFormat: Text.PlainText
-              text: root.settingsStatus
+              text: SettingsForm.text(root.settingsStatus, tr)
               color: Commons.Color.menu.text
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body

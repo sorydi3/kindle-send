@@ -29,6 +29,23 @@ function list(tr, items) {
   return fill(tr.t("list.and"), [items.slice(0, -1).join(tr.t("list.separator")), items[items.length - 1]])
 }
 
+// --- Notes: text kept in state as key and values, turned into text only in a
+// binding, so a language switch re-renders it. A note is one of:
+//   { key, args? }            a catalog string, args filled in (each may be a note)
+//   { key, n, args? }         a plural entry for n (count)
+//   { code, values, english } a kindle-send message (message)
+//   { time: ms }              a time of day (tr.time)
+//   "text"                    text as it is (already in the language, or a path)
+//   null / ""                 no text
+function text(tr, note) {
+  if (note === null || note === undefined) return ""
+  if (typeof note !== "object") return String(note)
+  if ("time" in note) return tr.time(note.time)
+  if ("code" in note) return message(tr, note.code, note.values, note.english)
+  const args = (note.args || []).map(function(a) { return text(tr, a) })
+  return typeof note.n === "number" ? count(tr, note.key, note.n, args) : say(tr, note.key, args)
+}
+
 // A Settings field's label, by its key (kindleAddress, …).
 function fieldLabel(tr, key) { return tr.t("settings." + key + ".label", key) }
 

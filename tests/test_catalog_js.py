@@ -96,6 +96,23 @@ def test_counts_read_their_plural_entry_and_format_the_number(n, wanted):
     assert cat(f"count(LANG({{'x.books': {{one: '%1 Book', other: '%1 Books'}}}}), 'x.books', {n})") == wanted
 
 
+def test_a_note_keeps_key_and_values_and_becomes_text_when_shown():
+    """Text kept in state (the Settings status line, field problems) is kept as a
+    note and turned into text in a binding, so a language switch re-renders it."""
+    tr = ("LANG({'settings.saved': 'Gespeichert.', 'x.fixing': {one: 'Ein Wert', other: '%1 Werte'},"
+          " 'x.wrap': '[%1]', 'message.file_not_found': 'Fehlt: %1.'})")
+
+    assert cat(f"text({tr}, {{key: 'settings.saved'}})") == "Gespeichert."
+    assert cat(f"text({tr}, {{key: 'x.fixing', n: 2}})") == "2 Werte"
+    assert cat(f"text({tr}, {{key: 'x.wrap', args: [{{key: 'settings.saved'}}]}})") == "[Gespeichert.]"
+    assert cat(f"text({tr}, {{key: 'x.wrap', args: ['/p/kindle-send']}})") == "[/p/kindle-send]"
+    assert cat(f"text({tr}, {{code: 'file_not_found', values: {{name: 'Dune.epub'}}, english: 'x'}})") \
+        == "Fehlt: Dune.epub."
+    assert cat(f"text({tr}, {{key: 'x.wrap', args: [{{time: 0}}]}})").startswith("[")
+    assert cat("text(EN, 'Already text.')") == "Already text."
+    assert cat("[text(EN, null), text(EN, ''), text(EN, undefined)]") == ["", "", ""]
+
+
 def test_every_catalog_entry_is_a_string_or_an_english_plural():
     for key, value in CATALOG.items():
         if isinstance(value, dict):
