@@ -6,7 +6,13 @@
   "author": "sorydi3",
   "license": "MIT",
   "description": "Unofficial: send ebooks to your Kindle by email or USB. Not created or endorsed by Amazon.",
-  "kinds": ["menu", "service"],
+  "kinds": ["menu", "service", "bar-widget"],
   "keepLoaded": true,
-  "entryPoints": { "menu": "Picker.qml", "service": "Service.qml" }
+  "entryPoints": { "menu": "Picker.qml", "service": "Service.qml", "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "Books to Kindle",
+    "description": "Opens the Picker; shows Books waiting for the Kindle",
+    "category": "Other",
+    "allowMultiple": false
+  }
 }

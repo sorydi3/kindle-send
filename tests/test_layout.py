@@ -18,6 +18,16 @@ def test_the_manifest_and_its_entry_points_are_at_the_repo_root():
     assert not (REPO / "plugin").exists()
 
 
+def test_the_manifest_declares_the_bar_widget():
+    # The bar-widget kind makes `omarchy plugin add --enable` enough on its own (spec §17).
+    manifest = json.loads((REPO / "manifest.json").read_text())
+
+    assert "bar-widget" in manifest["kinds"]
+    assert manifest["entryPoints"]["barWidget"] == "BarWidget.qml"
+    assert manifest["barWidget"]["displayName"] == "Books to Kindle"
+    assert manifest["barWidget"]["allowMultiple"] is False
+
+
 @pytest.mark.skipif(shutil.which("git") is None or not (REPO / ".git").exists(), reason="not a git checkout")
 def test_the_repo_tracks_no_symlinks():
     # What `omarchy plugin add` clones is what git tracks; its validator forbids symlinks inside.
