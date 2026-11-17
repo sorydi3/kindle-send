@@ -92,8 +92,12 @@ def test_install_copies_the_command_and_plugin_and_links_the_plugin(env):
     p = paths(env)
     assert p["bin"].read_bytes() == (REPO / "bin" / "kindle-send").read_bytes()
     assert os.access(p["bin"], os.X_OK)
-    for name in ("manifest.json", "Picker.qml", "Service.qml"):
-        assert (p["copy"] / name).read_bytes() == (REPO / "plugin" / name).read_bytes()
+    plugin_files = ["manifest.json", *[f.name for f in REPO.glob("*.qml")], *[f.name for f in REPO.glob("*.js")]]
+    assert {"Picker.qml", "Service.qml", "Rows.js"} <= set(plugin_files)
+    for name in plugin_files:
+        assert (p["copy"] / name).read_bytes() == (REPO / name).read_bytes()
+    # The plugin files only, not the rest of the repo.
+    assert sorted(f.name for f in p["copy"].iterdir()) == sorted(plugin_files)
     assert p["link"].is_symlink()
     assert Path(os.readlink(p["link"])) == p["copy"]
 

@@ -1,4 +1,4 @@
-"""plugin/Feedback.js: what the Send notification says (spec §10). Run with node."""
+"""Feedback.js: what the Send notification says (spec §10). Run with node."""
 import json
 
 import pytest

@@ -1,4 +1,4 @@
-"""plugin/Service.qml end to end, under Qt's `qml` runtime with a fake
+"""Service.qml end to end, under Qt's `qml` runtime with a fake
 Quickshell.Io (tests/qmlfake/FakeIo): no command really runs, FakeWorld answers
 for kindle-send and omarchy-notification-send and logs every call.
 
@@ -48,10 +48,10 @@ Item {
 def run_service(tmp_path, body, plug_at=0):
     plugin = tmp_path / "plugin"
     plugin.mkdir()
-    for js in (ROOT / "plugin").glob("*.js"):
+    for js in ROOT.glob("*.js"):
         shutil.copy(js, plugin)
     # Swap the real Quickshell imports for the fake, so nothing can really run.
-    service = (ROOT / "plugin" / "Service.qml").read_text()
+    service = (ROOT / "Service.qml").read_text()
     service = service.replace("import Quickshell.Io\n", "import FakeIo\n").replace("import Quickshell\n", "")
     (plugin / "Service.qml").write_text(service)
     scenario = tmp_path / "scenario.qml"

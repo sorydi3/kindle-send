@@ -1,4 +1,4 @@
-"""plugin/Pending.js: Pending Sends (spec §7, §10), run under node (skipped without node)."""
+"""Pending.js: Pending Sends (spec §7, §10), run under node (skipped without node)."""
 import json
 
 import pytest

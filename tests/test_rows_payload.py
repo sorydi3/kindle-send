@@ -1,4 +1,4 @@
-"""Picker payload mode (spec §4): plugin/Rows.js run under node.
+"""Picker payload mode (spec §4): Rows.js run under node.
 
 The Nautilus extension summons the Picker with {"files": [...]}; the Picker then
 plans just those files and marks them all.
