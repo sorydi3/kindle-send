@@ -293,3 +293,12 @@ All the plugin's own text comes from `i18n/en.json` through Omarchy's `Commons.T
 - [ ] **Unknown code.** A failure whose `code` the catalog lacks shows kindle-send's English `reason` (e.g. temporarily delete `message.kindle_full` from `en.json` and fill the Kindle).
 - [ ] **Broken plugin folder.** Rename the plugin's `bin/kindle-send`: the Picker says "Couldn't run kindle-send." and names that path, a Send fails with "Couldn't run kindle-send from the plugin folder. Reinstall Books to Kindle." Neither mentions `scripts/install.sh`. "Couldn't list your Books" names the bundled path in its `plan --folders` hint. Put it back.
 - [ ] **Plain text.** Name a Book `<b>bold</b>.epub` and `<img src="https://example.invalid/x">.pdf`: the Picker shows the names literally, with no bold and no image request.
+
+## 28. README, LICENSE, a fresh install and moving the author's install (#67, spec §17)
+
+`omarchy plugin validate .` at the root is automated (`tests/test_layout.py`); the README and LICENSE are pinned by `tests/test_readme.py`.
+
+- [ ] **Fresh install from GitHub.** As a clean user (no `~/.config/kindle-send/`, no plugin folder), run `omarchy plugin add https://github.com/sorydi3/kindle-send --enable`. The book icon appears in the bar; a click opens the Picker straight into Settings. Fill them in with test addresses, `Ctrl+T`: the test Book reaches the Kindle. Nothing else was run.
+- [ ] Follow the README top to bottom on that user: Install, the extras script, Configure, Use, Update, Remove. Every command works as written, every key does what the table says, and `--purge` plus `omarchy plugin remove sorydi3.kindle-send` leave only the `.before-kindle-send` backups.
+- [ ] The README shows on GitHub with the not-affiliated line under the title, `preview.png` renders (once captured, #68) and the LICENSE is detected as MIT.
+- [ ] **Moving the author's install** (spec §17). Check nothing is waiting for the Kindle. Point `~/.config/omarchy/plugins/sorydi3.kindle-send` at the checkout's root and remove `~/.local/share/kindle-send/`. Run `scripts/install.sh`: it offers to replace the old link and binding block; afterwards `~/.local/bin/kindle-send` points at the checkout's `bin/kindle-send` and `SUPER + SHIFT + K` says "Books to Kindle". Run `kindle-send` once: `~/.config/kindle-send/settings.json` holds the old Settings; the app password and the `~/.local/state/kindle-send/` history are unchanged. Restart the shell: the bar icon and the Picker work, and a Send goes out.
