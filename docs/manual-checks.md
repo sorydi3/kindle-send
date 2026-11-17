@@ -264,3 +264,11 @@ They run `bin/kindle-send` from the plugin folder, never a `kindle-send` on PATH
 - [ ] With `~/.local/bin/kindle-send` moved aside (so none is on PATH), restart the shell and press `SUPER + SHIFT + K`: the Picker lists Books, `Ctrl+,` shows Settings, and a Send by email and by USB both go through. Put it back afterwards.
 - [ ] With the plugin folder a symlink to the repo checkout, `Ctrl+T` in Settings sends "Kindle Send Test" (the test EPUB is found beside the bundled program).
 - [ ] After `./scripts/install.sh` in a temp `HOME`, the copied plugin also holds `bin/kindle-send` (executable) and `assets/test.epub` besides the files section 20 lists.
+
+## 25. Message codes and Route ids (#64)
+
+The Picker still shows the English text; only where Route labels come from changed.
+
+- [ ] The Picker shows "Email" and "USB" on each row, in the footer ("USB can't take 1") and in the details ("switched to USB") as before.
+- [ ] `kindle-send plan --folders` prints no `routeLabels`; each Book has `routeReasonCode` and `routeReasonValues`.
+- [ ] `kindle-send history` and `kindle-send setup` read exactly as before (English, no codes).
