@@ -75,6 +75,12 @@ ours_command() {
   [[ -f $link ]] && grep -qF "PLUGIN_ID = \"$plugin_id\"" "$link"
 }
 
+# ours_nautilus_ext: whether the Nautilus extension file is this plugin's (every
+# version of it names the plugin), not someone else's kindle-send.py.
+ours_nautilus_ext() {
+  [[ -f $nautilus_ext ]] && grep -qF "PLUGIN_ID = \"$plugin_id\"" "$nautilus_ext"
+}
+
 ours_strata_action() {
   [[ -f $strata_action/action.toml ]] && grep -qF 'args = ["pick", "{paths}"]' "$strata_action/action.toml"
 }
@@ -155,12 +161,14 @@ if [[ $mode != add ]]; then
   fi
 
   echo "==> Right-click items"
-  if [[ -f $nautilus_ext ]]; then
+  if ours_nautilus_ext; then
     rm -f "$nautilus_ext"
     echo "    Removed $nautilus_ext."
     if command -v nautilus >/dev/null; then
       nautilus -q 2>/dev/null || true
     fi
+  elif [[ -e $nautilus_ext || -L $nautilus_ext ]]; then
+    echo "    $nautilus_ext is not Books to Kindle's; left alone."
   fi
   if ours_strata_action; then
     rm -rf "$strata_action"

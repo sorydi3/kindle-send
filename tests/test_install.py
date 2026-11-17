@@ -695,6 +695,31 @@ def test_remove_leaves_someone_elses_kindle_send_and_strata_action_alone(env):
     assert "left alone" in result.stdout
 
 
+@pytest.mark.parametrize("mode", ["--remove", "--purge"])
+def test_remove_leaves_someone_elses_nautilus_extension_alone(env, mode):
+    p = paths(env)
+    p["nautilus"].parent.mkdir(parents=True)
+    p["nautilus"].write_text("# someone else's kindle-send.py\n")
+
+    result = install(env, mode)
+
+    assert result.returncode == 0, result.stderr
+    assert p["nautilus"].read_text() == "# someone else's kindle-send.py\n"
+    assert f"{p['nautilus']} is not Books to Kindle's; left alone." in result.stdout
+    assert "nautilus -q" not in calls(env)
+
+
+def test_remove_takes_out_an_older_nautilus_extension_of_ours(env):
+    p = paths(env)
+    p["nautilus"].parent.mkdir(parents=True)
+    p["nautilus"].write_text(f'"""Nautilus right-click "Send to Kindle"."""\nPLUGIN_ID = "{PLUGIN_ID}"\n')
+
+    result = install(env, "--remove")
+
+    assert result.returncode == 0, result.stderr
+    assert not p["nautilus"].exists()
+
+
 def test_remove_on_a_clean_home_succeeds_and_changes_nothing(env):
     before = snapshot(env)
 
