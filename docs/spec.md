@@ -1,8 +1,8 @@
-# Send to Kindle: spec
+# Books to Kindle: spec
 
-An omarchy-shell plugin that sends ebooks on this machine to the user's Kindle, by email (through Gmail) or over USB.
+An omarchy-shell plugin, **Books to Kindle** (id `sorydi3.kindle-send`), that sends ebooks on this machine to the user's Kindle, by email (through Gmail) or over USB. Unofficial: not created or endorsed by Amazon.
 
-- Status: ready to build. Every decision below comes from the wayfinder map, [issue #1](https://github.com/sorydi3/kindle-send/issues/1), and, for Settings in the Picker, the map [issue #29](https://github.com/sorydi3/kindle-send/issues/29). Each section links the ticket that holds the full reasoning.
+- Status: ready to build. Every decision below comes from the wayfinder map, [issue #1](https://github.com/sorydi3/kindle-send/issues/1), for Settings in the Picker, the map [issue #29](https://github.com/sorydi3/kindle-send/issues/29), and for publishing, the map [issue #46](https://github.com/sorydi3/kindle-send/issues/46) (Section 17). Each section links the ticket that holds the full reasoning.
 - Vocabulary (Book, Route, Send, Pending Send, Email limit, Conversion, Book folders, Send limit, Send history, Settings, Setup): see [`GLOSSARY.md`](../GLOSSARY.md).
 - Sections marked **Proposed** were not decided in a ticket. They fill gaps between decisions and may change during the build without reopening the map.
 
@@ -13,8 +13,8 @@ An omarchy-shell plugin that sends ebooks on this machine to the user's Kindle, 
 - Local Books only: files already on disk.
 - One Kindle address.
 - Two Routes: Email (Gmail SMTP with an app password) and USB (drive-style Kindles).
-- Three ways in: a picker opened by `SUPER + SHIFT + K` or the Omarchy menu; a right-click entry in Nautilus or Strata; the `kindle-send` command.
-- Built and tested on the author's machine, but designed for any Omarchy user: first-run, setup and failure messages must make sense to a stranger, and nothing may assume the author's machine, Kindle model or folders. No personal details or secrets in the code.
+- Ways in: the bar widget; a picker opened by `SUPER + SHIFT + K` or the Omarchy menu (optional extras); a right-click entry in Nautilus or Strata (optional extras); the `kindle-send` command.
+- Published for any Omarchy user through `omarchy plugin add` and plugins.omarchy.org (Section 17). Built and tested on the author's machine, but designed for any Omarchy user: first-run, setup and failure messages must make sense to a stranger, and nothing may assume the author's machine, Kindle model or folders. No personal details or secrets in the code.
 
 **Out of scope**
 
@@ -22,23 +22,28 @@ An omarchy-shell plugin that sends ebooks on this machine to the user's Kindle, 
 - More than one Kindle address.
 - Formats neither Route accepts: CBZ/CBR, FB2, DjVu, LIT ([#7](https://github.com/sorydi3/kindle-send/issues/7)).
 - MTP Kindles (2024+ models, Scribe) ([#13](https://github.com/sorydi3/kindle-send/issues/13)).
-- Publishing for other Omarchy users (packaging, announcing, supporting them). The design keeps it possible.
+- An AUR or other system package; translations beyond the English catalog; support promises (response times, compatibility guarantees).
 - Amazon's "Send to Kindle for Web" (no API) and USB over MTP.
 
 **Target machine** (verified 2026-11-04): Omarchy with omarchy-shell plugins, Nautilus 51 with `nautilus-python` 4.2, `udiskie --automount` running, GNOME Keyring running as the Secret Service, `python3`. The Kindle is a Paperwhite 5 (2021), firmware 5.19.2, USB id `1949:0324`, mass storage ([#12](https://github.com/sorydi3/kindle-send/issues/12)).
 
 ## 2. Components
 
+The repo root is the plugin (Section 17), so `omarchy plugin add` installs all of it:
+
 ```
-plugin/            omarchy-shell plugin  sorydi3.kindle-send  (kinds: menu + service)
-  manifest.json
-  Picker.qml       the menu: lists Books, marks, Route override, Settings
-  Service.qml      background: runs Sends, queues, notifications, Kindle detection
-bin/kindle-send    Python 3, standard library only: does the actual work
-nautilus/kindle-send.py   nautilus-python extension: right-click "Send to Kindle"
-scripts/strata_action.py  writes Strata's right-click "Send to Kindle" action
+manifest.json      omarchy-shell plugin  sorydi3.kindle-send  (kinds: menu + service + bar-widget)
+Picker.qml         the menu: lists Books, marks, Route override, Settings
+Service.qml        background: runs Sends, queues, notifications, Kindle detection
+BarWidget.qml      the bar icon: opens the Picker, shows the waiting count
+*.js               pure decision logic (rows, settings form, feedback, …), tested under node
+i18n/en.json       the plugin's own text (Section 17)
+bin/kindle-send    Python 3, standard library only: does the actual work; bundled, called by its path in the plugin folder
 assets/test.epub   tiny EPUB for the test send
-scripts/install.sh, scripts/uninstall.sh
+nautilus/kindle-send.py   nautilus-python extension: right-click "Send to Kindle" (optional extra)
+scripts/strata_action.py  writes Strata's right-click "Send to Kindle" action (optional extra)
+scripts/install.sh the optional extras script, with --remove and --purge (Section 14)
+README.md, LICENSE, preview.png, tests/, docs/
 ```
 
 Who does what:
@@ -46,8 +51,9 @@ Who does what:
 | Piece | Responsibilities |
 |---|---|
 | **Picker** (QML) | Show Books, marks and Routes; keys; closes on send and hands the Send to the Service. Shows the Settings form (Section 9). Sees the app password only while it is typed into Settings' masked field, hands it to `kindle-send save` on stdin and forgets it ([ADR 0001](adr/0001-picker-takes-the-app-password.md)). |
+| **Bar widget** (QML) | A book icon; click opens the Picker; shows the count of Books waiting for the Kindle plus emails held, when not zero; highlighted while a Send runs; tooltip with the state (Section 17). |
 | **Service** (QML) | Owns everything held in memory: the Send queue, Pending Sends, Books held by the Send limit. Runs `kindle-send` per Book, polls for the Kindle while something is pending, posts and updates notifications. |
-| **`kindle-send`** (Python) | Reads settings and the keyring itself. Classifies Books, picks Routes, converts, emails, copies, ejects, writes the Send history, validates and saves Settings (the only writer of `shell.json` and the keyring entry), runs the terminal setup and prints history. Testable without the shell. |
+| **`kindle-send`** (Python) | Reads settings and the keyring itself. Classifies Books, picks Routes, converts, emails, copies, ejects, writes the Send history, validates and saves Settings (the only writer of the Settings file and the keyring entry), runs the terminal setup and prints history. Testable without the shell. |
 | **Nautilus extension**, **Strata action** | Add the right-click item for supported files; summon the Picker with those files. |
 
 Plugin manifest (shape per [#4](https://github.com/sorydi3/kindle-send/issues/4)):
@@ -56,12 +62,15 @@ Plugin manifest (shape per [#4](https://github.com/sorydi3/kindle-send/issues/4)
 {
   "schemaVersion": 1,
   "id": "sorydi3.kindle-send",
-  "name": "Send to Kindle",
-  "version": "0.1.0",
-  "description": "Send ebooks to your Kindle by email or USB",
-  "kinds": ["menu", "service"],
+  "name": "Books to Kindle",
+  "version": "1.0.0",
+  "author": "sorydi3",
+  "license": "MIT",
+  "description": "Unofficial: send ebooks to your Kindle by email or USB. Not created or endorsed by Amazon.",
+  "kinds": ["menu", "service", "bar-widget"],
   "keepLoaded": true,
-  "entryPoints": { "menu": "Picker.qml", "service": "Service.qml" }
+  "entryPoints": { "menu": "Picker.qml", "service": "Service.qml", "barWidget": "BarWidget.qml" },
+  "barWidget": { "displayName": "Books to Kindle", "description": "Opens the Picker; shows Books waiting for the Kindle", "allowMultiple": false }
 }
 ```
 
@@ -77,7 +86,7 @@ All subcommands that the Service calls print **one JSON object per line** on std
 | `kindle-send eject` | Unmount and power off the Kindle: `{"ejected": true}` or `{"ejected": false, "reason": "..."}`. |
 | `kindle-send limit` | Send limit state from the Send history: `{"canSendIn": seconds, "sentLastHour": N, "maxEmailsPerHour": N}` (only `sent` email entries count; `maxEmailsPerHour` tells the Service whether a wait is the gap or the hourly cap). |
 | `kindle-send settings` | The Settings for the form: `{"kindleAddress","senderAddress","bookFolders","appPasswordStored","missing"}` (`bookFolders` as written, `~` unexpanded, defaults if unset; `missing`: what setup still needs, in form order, `"appPassword"` for the password). The password itself is never printed. |
-| `kindle-send save` | Reads one JSON object, on one line, on stdin: `{"kindleAddress","senderAddress","bookFolders","appPassword"?}` (`appPassword` only when one was typed). Checks the values and, when the Gmail address or app password changed, signs in to Gmail without sending (Section 9). Saves only if nothing blocks: writes `shell.json`, stores the password in the keyring, creates `~/Books` on the first save. Prints `{"saved": bool, "firstSave"?: true, "problems": [{"field", "message", "blocking": bool, "needed"?: true}]}`; `firstSave` marks the save that completed setup; `needed` marks a missing value (the app password counts when none is typed or stored for the Gmail address). The password never appears on a command line. |
+| `kindle-send save` | Reads one JSON object, on one line, on stdin: `{"kindleAddress","senderAddress","bookFolders","appPassword"?}` (`appPassword` only when one was typed). Checks the values and, when the Gmail address or app password changed, signs in to Gmail without sending (Section 9). Saves only if nothing blocks: writes the Settings file, stores the password in the keyring, creates `~/Books` on the first save. Prints `{"saved": bool, "firstSave"?: true, "problems": [{"field", "message", "blocking": bool, "needed"?: true}]}`; `firstSave` marks the save that completed setup; `needed` marks a missing value (the app password counts when none is typed or stored for the Gmail address). The password never appears on a command line. |
 | `kindle-send setup` | Interactive terminal wizard (Section 9), the fallback to Settings in the Picker. Needs a TTY. |
 | `kindle-send history` | Prints the last 20 Sends, human-readable. |
 | `kindle-send formats` | The supported formats (Section 5), lowercase without the dot: `{"formats": ["azw", ...]}`. The one list; the Nautilus extension and the Strata action read it instead of keeping their own. |
@@ -89,7 +98,7 @@ The Service keeps the ordering: it decides which Book goes next, waits for `limi
 
 ### Picker ([#8](https://github.com/sorydi3/kindle-send/issues/8))
 
-- **Opened by** `SUPER + SHIFT + K` (`omarchy-shell shell toggle sorydi3.kindle-send`) or the Omarchy menu entry "Send to Kindle". While setup is needed it opens straight into Settings (Section 9).
+- **Opened by** `SUPER + SHIFT + K` (`omarchy-shell shell toggle sorydi3.kindle-send`) or the Omarchy menu entry "Books to Kindle" (both optional extras), or a click on the bar widget. While setup is needed it opens straight into Settings (Section 9).
 - **Lists** supported Books from the Book folders (default `~/Books`, `~/Downloads`; editable), up to 3 levels deep, skipping hidden folders. Newest file first.
 - **Typing** filters by file name.
 - **Each row** shows name, format, size and Route (Email or USB), plus "sent N days ago" if the Send history has the same name and size ([#16](https://github.com/sorydi3/kindle-send/issues/16)). A Book the chosen Route can't take is dimmed.
@@ -109,7 +118,7 @@ The Service keeps the ordering: it decides which Book goes next, waits for `limi
 - **Footer:** the keys that work on the highlighted row, with `Enter` saying what it sends ("Send this Book", "Send 3 Books"), always ending "Ctrl+,  Settings      Esc  Close". With Books marked, a status line above gives the count and any Route that can't take some of them ("3 Books marked · USB can't take 1").
 - **Mouse:** click a row to mark or unmark it; double-click to send just that Book. A small cog at the right end of the search line opens Settings.
 - **Empty:** "No Books found in ~/Books, ~/Downloads"; `Enter` opens Settings on the Book folders field.
-- **Setup needed:** if a setting or the app password is missing, the Picker opens straight into Settings, titled "Set up Send to Kindle" ([#14](https://github.com/sorydi3/kindle-send/issues/14), [#32](https://github.com/sorydi3/kindle-send/issues/32)). The Book list is reachable once setup is saved.
+- **Setup needed:** if a setting or the app password is missing, the Picker opens straight into Settings, titled "Set up Books to Kindle" ([#14](https://github.com/sorydi3/kindle-send/issues/14), [#32](https://github.com/sorydi3/kindle-send/issues/32)). The Book list is reachable once setup is saved.
 - **Loading and failures:** after a short wait, "Looking for Books…". If listing fails or takes over 10 seconds, the picker says how to see why (`kindle-send plan --folders` in a terminal) and `Enter` tries again.
 - **Pending Sends:** if any exist, a "N Books waiting for Kindle" line sits at the top ([#15](https://github.com/sorydi3/kindle-send/issues/15)).
 - No "browse elsewhere" option.
@@ -179,11 +188,10 @@ Route rules, per Book:
 
 ## 9. Settings, secrets and setup ([#9](https://github.com/sorydi3/kindle-send/issues/9), [#14](https://github.com/sorydi3/kindle-send/issues/14), map [#29](https://github.com/sorydi3/kindle-send/issues/29))
 
-**Settings** live inline on the plugin's entry in `~/.config/omarchy/shell.json` (mode 600):
+**Settings** live in their own file, `~/.config/kindle-send/settings.json` (`$XDG_CONFIG_HOME`, mode 600), written only by `kindle-send` ([ADR 0002](adr/0002-settings-in-their-own-file.md), [#54](https://github.com/sorydi3/kindle-send/issues/54)). Omarchy deletes a plugin's `shell.json` entry on disable or remove, and writing that entry re-enables the plugin, so Settings are not kept there. The first time `kindle-send` finds no `settings.json` but finds Settings in the plugin's old `shell.json` entry, it copies them over once; it never writes `shell.json` again.
 
 ```json
-{ "id": "sorydi3.kindle-send",
-  "kindleAddress": "…@kindle.com",
+{ "kindleAddress": "…@kindle.com",
   "senderAddress": "…@gmail.com",
   "bookFolders": ["~/Books", "~/Downloads"],
   "minEmailGapSeconds": 10,
@@ -192,15 +200,15 @@ Route rules, per Book:
 
 The two Send limit numbers are not in the Settings form; they are changed in this file only.
 
-**App password:** GNOME Keyring, attributes `service=kindle-send user=<senderAddress>`. Read by `kindle-send` with `secret-tool lookup`. It is typed only into the Settings form's masked field and handed to `kindle-send save` on stdin: never on a command line, in `shell.json`, a log or a file the Picker writes, and the field is cleared once it is stored ([ADR 0001](adr/0001-picker-takes-the-app-password.md)). The terminal wizard keeps `secret-tool store`'s own prompt. An empty stored value counts as missing.
+**App password:** GNOME Keyring, attributes `service=kindle-send user=<senderAddress>`. Read by `kindle-send` with `secret-tool lookup`. It is typed only into the Settings form's masked field and handed to `kindle-send save` on stdin: never on a command line, in the Settings file, a log or a file the Picker writes, and the field is cleared once it is stored ([ADR 0001](adr/0001-picker-takes-the-app-password.md)). The terminal wizard keeps `secret-tool store`'s own prompt. An empty stored value counts as missing.
 
 **Missing setting or password:** the Send fails before anything is sent. The notification names what's missing, and clicking it opens the Picker in Settings on that field.
 
-**One writer:** `kindle-send` is the only program that writes Settings (`kindle-send save` for the form, the wizard in a terminal). It merges into `shell.json` keeping all other keys intact. **Proposed:** the Service picks the change up through its `FileView`.
+**One writer:** `kindle-send` is the only program that writes Settings (`kindle-send save` for the form, the wizard in a terminal). It writes the whole Settings file atomically (temp file, then rename), mode 600.
 
 ### Settings in the Picker ([#30](https://github.com/sorydi3/kindle-send/issues/30) to [#35](https://github.com/sorydi3/kindle-send/issues/35))
 
-Settings replace the Book list inside the Picker card. They open with `Ctrl+,` or the cog, and on their own while setup is needed. One form serves both setup and later changes: titled "Set up Send to Kindle" while something is missing, "Settings" otherwise. Its values come from `kindle-send settings`.
+Settings replace the Book list inside the Picker card. They open with `Ctrl+,` or the cog, and on their own while setup is needed. One form serves both setup and later changes: titled "Set up Books to Kindle" while something is missing, "Settings" otherwise. Its values come from `kindle-send settings`.
 
 | Field | Help line under it | `Ctrl+O` opens |
 |---|---|---|
@@ -289,32 +297,29 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 | Network or SMTP error | "Couldn't reach Gmail: <error>." | no |
 | Eject failed | Books copied; "Please eject the Kindle." | no |
 
-## 14. Install and uninstall ([#17](https://github.com/sorydi3/kindle-send/issues/17))
+## 14. Install, extras and removal ([#17](https://github.com/sorydi3/kindle-send/issues/17), [#55](https://github.com/sorydi3/kindle-send/issues/55))
 
-Modelled on `~/Projects/omarchy-window-restore/scripts/install.sh`.
+**Install** is Omarchy's own: `omarchy plugin add https://github.com/sorydi3/kindle-send --enable`. It clones the repo into `~/.config/omarchy/plugins/sorydi3.kindle-send/` and puts the bar widget on the bar, which is enough to use the plugin: the Picker opens from the widget and `kindle-send` is called from the plugin folder. Nothing else is required. **Update:** `omarchy plugin update sorydi3.kindle-send`.
 
-`scripts/install.sh`:
+**Optional extras:** `~/.config/omarchy/plugins/sorydi3.kindle-send/scripts/install.sh`, run by hand, asks before each change and is safe to re-run:
 
-1. **Check dependencies:** `python3`, `nautilus-python`, `secret-tool`, `udisksctl`. If one is missing, stop with a clear message. For Calibre, only print "Optional: `sudo pacman -S calibre` to send EPUB over USB". Never run `sudo`.
-2. **Copy files:**
-   - `bin/kindle-send` → `~/.local/share/kindle-send/bin/kindle-send`, linked from `~/.local/bin/kindle-send`, plus `assets/` beside it in `~/.local/share/kindle-send/` (so `<realpath>/../assets/test.epub` resolves)
-   - `plugin/` → `~/.local/share/kindle-send/omarchy-plugin`, symlinked as `~/.config/omarchy/plugins/sorydi3.kindle-send`
-   - `nautilus/kindle-send.py` → `~/.local/share/nautilus-python/extensions/`
-   - if Strata is installed, its action → `~/.config/strata/actions/kindle-send/` (Section 4)
-3. **Edit config, after asking for each edit, each backed up first and wrapped in `>>> kindle-send … >>>` / `<<< kindle-send <<<` markers:**
+1. **Check dependencies:** `python3` and `secret-tool` required; `nautilus-python`, Strata and Calibre optional. A missing optional one only skips its extra (for Calibre, print "Optional: `sudo pacman -S calibre` to send EPUB over USB"). Never run `sudo`.
+2. **Link:** `~/.local/bin/kindle-send` → the bundled `bin/kindle-send`, so the terminal and the right-click extras find it. Without the link the right-click extras aren't installed.
+3. **Right-click:** `nautilus/kindle-send.py` → `~/.local/share/nautilus-python/extensions/` if `nautilus-python` is installed; the Strata action → `~/.config/strata/actions/kindle-send/` if Strata is installed (Section 4).
+4. **Edit config, each backed up first and wrapped in `>>> kindle-send … >>>` / `<<< kindle-send <<<` markers:**
    - `~/.config/hypr/bindings.lua`: `SUPER + SHIFT + K` → `omarchy-shell shell toggle sorydi3.kindle-send`
-   - `~/.config/omarchy/extensions/omarchy-menu.jsonc`: "Send to Kindle" (toggle the picker) and "Send to Kindle → Settings" (`omarchy-shell shell summon sorydi3.kindle-send '{"settings":""}'`: opens the Picker in Settings on no field). An older install's block, whose "Setup" entry ran `kindle-send setup` in a floating terminal, is replaced in place (asked like any edit); an up-to-date block is left as it is.
-4. **Enable and reload:** `omarchy plugin enable sorydi3.kindle-send` (it has no bar widget, so nothing else enables it), `omarchy-shell -q shell rescanPlugins`, `nautilus -q`.
-5. **Finish:** say that `SUPER + SHIFT + K` (or the menu's Settings) opens setup in the Picker. On a terminal, ask "Set up in the terminal instead? [y/N]" and run `kindle-send setup` on yes; otherwise print `kindle-send setup` as the terminal alternative.
+   - `~/.config/omarchy/extensions/omarchy-menu.jsonc`: "Books to Kindle" (toggle the Picker) and "Books to Kindle → Settings" (`omarchy-shell shell summon sorydi3.kindle-send '{"settings":""}'`). An older block is replaced in place (asked like any edit); an up-to-date block is left as it is.
+5. **Reload:** `nautilus -q` only if the Nautilus extension changed.
+6. **Finish:** say the Picker opens from the bar widget (and `SUPER + SHIFT + K` if added). On a terminal, ask "Set up in the terminal instead? [y/N]" and run `kindle-send setup` on yes.
 
-Rerun install to update. Asking needs a terminal: without one, install makes no config edits and says so. `--yes` makes them without asking, `--no-config` skips them. Each block goes in only once. The menu block goes before the final `}`. After the edit, install checks the file with the shell's own parsing rules and restores the backup if that fails. A menu file that already fails to parse is left alone. Backups: `<file>.before-kindle-send`.
+Asking needs a terminal: without one the script makes no edits and says so. `--yes` makes them without asking. Each block goes in only once; the menu block goes before the final `}`; after an edit the script checks the file with the shell's own parsing rules and restores the backup if that fails; a menu file that already fails to parse is left alone. Backups: `<file>.before-kindle-send`.
 
-`scripts/uninstall.sh` removes everything install added: files, the symlink, the Strata action and the marker blocks. It keeps the settings in `shell.json`, the keyring password and the Send history, unless `--purge` is given. It removes the link and rescans instead of running `omarchy plugin remove`, because disabling a plugin deletes its `shell.json` entry, settings included.
+**Remove:** `scripts/install.sh --remove` removes the extras (binding and menu blocks, the link, the Nautilus extension, the Strata action); `--purge` also deletes `~/.config/kindle-send/`, the keyring password (`secret-tool clear service kindle-send`) and the Send history (`~/.local/state/kindle-send/`). Then `omarchy plugin remove sorydi3.kindle-send` removes the plugin itself; without `--purge`, Settings, the password and the Send history survive it.
 
 ## 15. Acceptance checks
 
-1. Fresh install on this machine: dependency check passes, config edits are asked about, the keybinding opens the Picker, and the Picker opens straight into Settings titled "Set up Send to Kindle".
-2. Setup in the Picker's Settings stores settings in `shell.json` and the password in the keyring (non-empty; never on a command line), creates `~/Books`, and `Ctrl+T` sends the test EPUB, which arrives on the Kindle. A wrong app password is refused on save with "Gmail rejected this app password."; a Book folder that doesn't exist is saved and flagged.
+1. Fresh install with `omarchy plugin add … --enable` on a plain Omarchy: the bar widget appears, clicking it opens the Picker straight into Settings titled "Set up Books to Kindle". The extras script then asks about each extra, and `SUPER + SHIFT + K` opens the Picker.
+2. Setup in the Picker's Settings stores settings in `~/.config/kindle-send/settings.json` and the password in the keyring (non-empty; never on a command line), creates `~/Books`, and `Ctrl+T` sends the test EPUB, which arrives on the Kindle. A wrong app password is refused on save with "Gmail rejected this app password."; a Book folder that doesn't exist is saved and flagged.
 3. A small EPUB in `~/Downloads` shows Route Email. Sending it gives "Sent to Amazon…", it appears on the Kindle, and the Picker then marks it "sent just now".
 4. A PDF over the Email limit shows Route USB. With the Kindle unplugged, it becomes a Pending Send; clicking its notification opens the Picker, where `Delete` cancels. Plugging in copies it into `documents/`, ejects the Kindle, and it shows in the Kindle library.
 5. An EPUB switched to USB with `Tab` fails with the Calibre message when Calibre isn't installed, and converts and copies when it is.
@@ -332,3 +337,52 @@ Rerun install to update. Asking needs a terminal: without one, install makes no 
 - Gmail app passwords need 2-Step Verification and are revoked when the Google account password changes ([#5](https://github.com/sorydi3/kindle-send/issues/5)).
 - In the folder chooser Browse opens, `Ctrl+L` (type a location) does nothing, so picking a folder there takes the mouse; typing paths into the Book folders field is the keyboard way ([#35](https://github.com/sorydi3/kindle-send/issues/35)).
 - Research notes live on unmerged branches: `research/email-route`, `research/usb-route`, `research/plugin-api`, `research/smtp-secrets`.
+
+## 17. Publishing (map [#46](https://github.com/sorydi3/kindle-send/issues/46))
+
+Books to Kindle is published as a public git repo installed with `omarchy plugin add` and listed on plugins.omarchy.org.
+
+### Repo and runtime ([#47](https://github.com/sorydi3/kindle-send/issues/47), [#50](https://github.com/sorydi3/kindle-send/issues/50))
+
+- **The repo root is the plugin:** `manifest.json`, the QML and the JS move up from `plugin/`; `bin/`, `assets/`, `nautilus/`, `scripts/`, `tests/` and `docs/` stay alongside and ride along into users' plugin folders (git can't exclude them; Omarchy's validator only forbids symlinks inside). `omarchy plugin validate .` must pass at the root.
+- **`kindle-send` is bundled** at `bin/kindle-send` (tracked executable) and the Picker, Service and bar widget call it by its path in the plugin folder (`Qt.resolvedUrl("bin/kindle-send")` with `file://` stripped, or `manifest.__sourceDir`), never from PATH. `assets/test.epub` is found beside it.
+- **Bar widget** ([#56](https://github.com/sorydi3/kindle-send/issues/56)): the `bar-widget` kind makes `omarchy plugin add --enable` enough on its own. A book icon; left-click toggles the Picker; beside it the count of Books waiting for the Kindle plus emails held by the Send limit, only when non-zero; the bar's active colour while a Send runs; tooltip "Books to Kindle" plus the state ("Sending…", "N waiting for Kindle", "N held by the Send limit", "Nothing waiting"). No right-click action. It reads its own Service through `bar.shell.serviceFor("sorydi3.kindle-send")` (`pending`, `held`, `busy`). Prototype: branch `prototype/bar-widget`.
+- **Settings** in `~/.config/kindle-send/settings.json` (Section 9, ADR 0002), so disabling or removing the plugin never loses them.
+- **Versions:** `1.0.0` at the first public release; minor for features, patch for fixes. `omarchy plugin update` shows users the diff.
+
+### Translations ([#51](https://github.com/sorydi3/kindle-send/issues/51))
+
+- The plugin's own text (Picker, Settings, footer hints, Service notifications, bar-widget tooltip, the Route labels) lives in `i18n/en.json`, read with Omarchy's `Commons.Translations`; other languages can be added later file by file. Key names (`Ctrl+,`, `Esc`, …) stay as they are. Text with a count uses plural entries (`strings.tn`); numbers and sizes go through `Commons.I18n.formatNumber`.
+- `kindle-send` sends a stable `code` and its `values` with every sentence the shell shows (failure reasons in Section 13, Settings problems, Route reasons), alongside the English text, e.g. `{"code": "too_big_for_email", "values": {"mb": 76}, "reason": "Too big for email (76 MB). Switch it to USB."}`. The plugin turns the code into catalog text and falls back to the English text for a code it doesn't know. `plan` sends Route ids (`email`, `usb`), not labels.
+- English only, by Omarchy's rule for log and diagnostic output: the Send history file, `kindle-send history`, the terminal wizard, anything printed in a terminal.
+
+### Name, README and listing ([#48](https://github.com/sorydi3/kindle-send/issues/48), [#49](https://github.com/sorydi3/kindle-send/issues/49), [#52](https://github.com/sorydi3/kindle-send/issues/52), [#53](https://github.com/sorydi3/kindle-send/issues/53))
+
+- **Name:** "Books to Kindle" everywhere it is shown (manifest `name`, Picker titles, notifications' app name, menu entries, bar-widget tooltip, README). "Send to Kindle" is Amazon's product name and already a listed plugin's name. The id `sorydi3.kindle-send` and the `kindle-send` command stay. The right-click item keeps its action label "Send to Kindle" (it says what the item does). No Amazon logos or artwork.
+- **Not-affiliated line** in the manifest `description` and the README: "Unofficial: send ebooks to your Kindle by email or USB. Not created or endorsed by Amazon."
+- **README.md** at the root, from the approved draft on branch `prototype/readme` (`docs/prototype/README.draft.md`): what sets it apart (keyboard Picker, email or USB per Book with EPUB conversion, Books held until the Kindle is plugged in, right-click entries), then Requires, Install, Configure, Use, Update, Remove (with the leftover cleanup commands) and Security.
+- **LICENSE:** MIT, at the root.
+- **preview.png** at the root: the Picker with demo Books plus a "Sent to Amazon…" notification, captured with demo data only, never real addresses.
+- **Listing fields:** `author` sorydi3; category Productivity; tags `launcher`, `quickshell`, suggested extra tag `ebooks`.
+
+### Fixes that ship with it
+
+- `textFormat: Text.PlainText` on every `Text` in the Picker that lacks it (seven today), per Omarchy's plugin UI safety rule.
+- `nautilus-python` optional in the extras script (Section 14).
+- `PRODUCT.md` updated: published for Omarchy users; the name; the bar widget.
+
+### Moving the author's install
+
+From the old layout (copied plugin in `~/.local/share/kindle-send/omarchy-plugin`, symlinked as the plugin folder; `kindle-send` copied to `~/.local/share/kindle-send/bin` and linked from `~/.local/bin`):
+
+1. Point `~/.config/omarchy/plugins/sorydi3.kindle-send` at the repo checkout's root (a symlink to the folder is allowed), and remove `~/.local/share/kindle-send/`.
+2. Run the new extras script: it re-links `~/.local/bin/kindle-send` to the bundled program and replaces the old binding and menu blocks in place.
+3. The first `kindle-send` run copies Settings from `shell.json` into `~/.config/kindle-send/settings.json`. The keyring password and the Send history (`~/.local/state/kindle-send/`) stay where they are.
+4. Restart the shell, after checking nothing is waiting for the Kindle (Pending Sends live in memory).
+
+### Going public (the author's manual checklist)
+
+1. Make the GitHub repo public.
+2. Check the root with `omarchy plugin validate .` and install it once from the public URL with `omarchy plugin add … --enable` on a clean user.
+3. Submit the listing: open an issue on `omacom/omarchy-plugin-marketplace` with its form (repo URL, category, tags, the ownership statement). Expect the security scan to say "review-required" (the `sudo pacman -S calibre` hints); a maintainer accepts it.
+

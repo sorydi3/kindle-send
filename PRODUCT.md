@@ -12,7 +12,7 @@ A native Linux desktop plugin, not web, iOS or Android: Quickshell/QML panels in
 
 Omarchy users who keep ebooks on their disk and own a Kindle. They are keyboard-first desktop users who want a Book on the Kindle without opening a browser, Amazon's apps or Calibre's UI.
 
-Design work serves other Omarchy users, not only the author (decided 2026-11-09; `docs/spec.md` §1 agrees). Publishing the plugin stays out of scope, but first-run, setup and failure messages must make sense to a stranger, and nothing may assume the author's machine, Kindle model or folders.
+The plugin is published for other Omarchy users as **Books to Kindle** (spec §17): installed with `omarchy plugin add` and listed on plugins.omarchy.org. First-run, setup and failure messages must make sense to a stranger, and nothing may assume the author's machine, Kindle model or folders.
 
 ## Product Purpose
 
@@ -41,7 +41,7 @@ It lives in the desktop shell itself. The Picker, notifications and right-click 
 
 ## Brand Commitments
 
-- Name: "Send to Kindle" (plugin id `sorydi3.kindle-send`).
+- Name: "Books to Kindle" (plugin id `sorydi3.kindle-send`). Unofficial: not created or endorsed by Amazon; no Amazon logos or artwork.
 - The Picker always follows the active Omarchy theme: it uses only omarchy-shell's theme tokens (`Color.menu.*`, `Style.*`) and has no colors or fonts of its own. It must look native in every Omarchy theme. (Confirmed binding, 2026-11-09.)
 - Voice: short, plain sentences that say what happened and what to do next ("Too big for email (N MB). Switch it to USB."). See spec §10 and §13.
 
