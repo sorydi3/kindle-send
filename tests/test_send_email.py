@@ -176,6 +176,16 @@ def test_network_or_smtp_error_names_the_error(ks, smtp, setup_done, book, capsy
                          "reason": f"Couldn't reach Gmail: {shown}."}
 
 
+def test_a_server_echoing_the_password_never_gets_it_into_the_reason_or_values(ks, smtp, setup_done, book,
+                                                                              capsys):
+    smtp.send_error = smtplib.SMTPServerDisconnected(f"closed after {PASSWORD}")
+
+    _, lines = run(ks, capsys, "send", "--route", "email", str(book))
+
+    assert lines[-1]["values"] == {"detail": "closed after ***"}
+    assert lines[-1]["reason"] == "Couldn't reach Gmail: closed after ***."
+
+
 def test_book_bigger_than_advertised_size_is_not_sent(ks, smtp, setup_done, tmp_path, capsys):
     big = tmp_path / "Atlas.pdf"
     big.write_bytes(b"x" * 3_000_000)

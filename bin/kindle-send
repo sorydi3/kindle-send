@@ -114,6 +114,13 @@ MESSAGES = {
     "calibre_missing": lambda v: "Install calibre to send EPUB over USB (sudo pacman -S calibre).",
     "conversion_failed": lambda v: f"Couldn't convert: {v['detail']}.",
     "test_book_missing": lambda v: "Couldn't find the test Book. Reinstall kindle-send.",
+    # Why `plan` chose USB (spec §5, Route rules)
+    "route_format_not_emailable": lambda v: f"{v['format']} can't be sent by email.",
+    "route_too_big_for_email": lambda v: f"Too big for email ({v['mb']} MB).",
+    # Eject (spec §7); detail is udisksctl's own first error line
+    "eject_no_kindle": lambda v: "Kindle not plugged in.",
+    "eject_failed": lambda v: v["detail"],
+    "eject_step_failed": lambda v: f"{v['step']} failed.",
 }
 
 
@@ -305,7 +312,7 @@ USB_FORMATS = {"epub", "pdf", "txt", "azw3", "azw", "mobi", "prc", "kfx"}
 
 
 DEFAULT_BOOK_FOLDERS = ["~/Books", "~/Downloads"]
-ROUTE_LABELS = {"email": "Email", "usb": "USB"}
+ROUTE_LABELS = {"email": "Email", "usb": "USB"}  # for `kindle-send history`; the Picker names Routes itself
 
 
 def book_folder_setting(settings):
@@ -367,12 +374,19 @@ def choose_route(fmt, size, limit):
     """Route rules 1 and 2: Email if the format and size allow it, otherwise USB."""
     usb_ok = fmt in USB_FORMATS
     if fmt not in EMAIL_MIME:
-        return {"route": "usb", "routeReason": f"{fmt.upper()} can't be sent by email.",
+        return {"route": "usb", **route_reason("route_format_not_emailable", format=fmt.upper()),
                 "emailOk": False, "usbOk": usb_ok}
     if size > limit:
-        return {"route": "usb", "routeReason": f"Too big for email ({megabytes(size)} MB).",
+        return {"route": "usb", **route_reason("route_too_big_for_email", mb=megabytes(size)),
                 "emailOk": False, "usbOk": usb_ok}
-    return {"route": "email", "routeReason": "", "emailOk": True, "usbOk": usb_ok}
+    return {"route": "email", "routeReason": "", "routeReasonCode": "", "routeReasonValues": {},
+            "emailOk": True, "usbOk": usb_ok}
+
+
+def route_reason(code, **values):
+    """Why `plan` chose USB, as routeReason (English), routeReasonCode and routeReasonValues."""
+    message = said(code, **values)
+    return {"routeReason": message["text"], "routeReasonCode": code, "routeReasonValues": message["values"]}
 
 
 def last_sent(history):
@@ -407,7 +421,8 @@ def plan(folders_wanted, files):
     if missing:
         emit({"setupNeeded": True, "missing": missing})
     # What the Picker shows besides Books, so these defaults live only here.
-    emit({"bookFolders": book_folder_setting(settings), "routeLabels": ROUTE_LABELS})
+    # Routes go by id ("email", "usb"); the Picker names them itself.
+    emit({"bookFolders": book_folder_setting(settings)})
     books = scan_folders(book_folders(settings)) if folders_wanted else []
     books += [Path(f) for f in files if Path(f).is_file() and supported(Path(f))]
     unique = {}
@@ -505,14 +520,21 @@ def eject():
     """Unmount the Kindle and power it off (spec §7)."""
     kindle = find_kindle()
     if kindle is None:
-        return {"ejected": False, "reason": "Kindle not plugged in."}
+        return not_ejected("eject_no_kindle")
     for argv in (["udisksctl", "unmount", "-b", kindle["partition"]],
                  ["udisksctl", "power-off", "-b", kindle["device"]]):
         code, out, err = run_tool(argv)
         if code != 0:
             lines = [l.strip() for l in (err or out).splitlines() if l.strip()]
-            return {"ejected": False, "reason": lines[0] if lines else f"{argv[1]} failed."}
+            if lines:
+                return not_ejected("eject_failed", detail=lines[0])
+            return not_ejected("eject_step_failed", step=argv[1])
     return {"ejected": True}
+
+
+def not_ejected(code, **values):
+    message = said(code, **values)
+    return {"ejected": False, "code": code, "values": message["values"], "reason": message["text"]}
 
 
 EBOOK_CONVERT = "ebook-convert"

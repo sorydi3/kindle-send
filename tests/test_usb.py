@@ -140,7 +140,8 @@ def test_eject_of_a_whole_disk_kindle_uses_the_disk_for_both(ks, usb, tmp_path, 
 
 
 def test_eject_without_a_kindle_says_so(ks, usb, capsys):
-    assert run(ks, capsys, "eject") == (0, [{"ejected": False, "reason": "Kindle not plugged in."}])
+    assert run(ks, capsys, "eject") == (0, [{"ejected": False, "code": "eject_no_kindle", "values": {},
+                                                  "reason": "Kindle not plugged in."}])
     assert usb.calls() == []
 
 
@@ -151,5 +152,17 @@ def test_eject_failure_gives_udisks_first_error_line(ks, usb, tmp_path, capsys):
     code, [line] = run(ks, capsys, "eject")
 
     assert code == 0
-    assert line == {"ejected": False, "reason": "Error unmounting /dev/sdc: GDBus.Error: target is busy"}
+    assert line == {"ejected": False, "code": "eject_failed",
+                    "values": {"detail": "Error unmounting /dev/sdc: GDBus.Error: target is busy"},
+                    "reason": "Error unmounting /dev/sdc: GDBus.Error: target is busy"}
     assert usb.calls() == ["unmount -b /dev/sdc"]
+
+
+def test_an_eject_step_that_fails_silently_is_named(ks, usb, tmp_path, capsys):
+    usb.plug(tmp_path / "Kindle", disk="sdc")
+    usb.fail_eject("")
+
+    _, [line] = run(ks, capsys, "eject")
+
+    assert line == {"ejected": False, "code": "eject_step_failed", "values": {"step": "unmount"},
+                    "reason": "unmount failed."}
