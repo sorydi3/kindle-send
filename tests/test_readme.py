@@ -20,7 +20,7 @@ def test_the_readme_opens_with_the_name_and_the_not_affiliated_line():
 
     assert text.splitlines()[0] == "# Books to Kindle"
     assert manifest["description"] in text
-    assert "](preview.png)" in text
+    assert "](docs/demo.gif)" in text
 
 
 def test_the_readme_has_the_listing_sections_in_order():

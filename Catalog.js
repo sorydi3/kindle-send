@@ -57,6 +57,32 @@ const HINT_GAP = "      "
 // Key hints side by side.
 function hints(list) { return list.join(HINT_GAP) }
 
+// The closer gap a footer falls back to when the usual one doesn't fit.
+const TIGHT_GAP = "   "
+
+// A line of key hints (hints()) laid out so every hint shows whole: as it is
+// if it fits, else with a closer gap, else on two lines split between hints
+// as evenly as can be (usual gap, then the closer one). fits(line): whether a
+// line fits the footer's width.
+function fitHints(text, fits) {
+  const list = String(text).split(HINT_GAP)
+  if (list.length < 2 || fits(text)) return text
+  const tight = list.join(TIGHT_GAP)
+  if (fits(tight)) return tight
+  const gaps = [HINT_GAP, TIGHT_GAP]
+  let best = null
+  for (let g = 0; g < gaps.length; g++) {
+    best = null
+    for (let k = 1; k < list.length; k++) {
+      const lines = [list.slice(0, k).join(gaps[g]), list.slice(k).join(gaps[g])]
+      const longest = Math.max(lines[0].length, lines[1].length)
+      if (!best || longest < best.longest) best = { lines: lines, longest: longest }
+    }
+    if (fits(best.lines[0]) && fits(best.lines[1])) break
+  }
+  return best.lines.join("\n")
+}
+
 // A Settings field's label, by its key (kindleAddress, …).
 function fieldLabel(tr, key) { return tr.t("settings." + key + ".label", key) }
 

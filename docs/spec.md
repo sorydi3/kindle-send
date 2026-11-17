@@ -115,7 +115,7 @@ The Service keeps the ordering: it decides which Book goes next, waits for `limi
   | `Ctrl+,` | open Settings (Section 9). A plain comma still filters |
   | `Esc` | clear the search, or close |
 
-- **Footer:** the keys that work on the highlighted row, with `Enter` saying what it sends ("Send this Book", "Send 3 Books"), always ending "Ctrl+,  Settings      Esc  Close". With Books marked, a status line above gives the count and any Route that can't take some of them ("3 Books marked · USB can't take 1").
+- **Footer:** the keys that work on the highlighted row, with `Enter` saying what it sends ("Send this Book", "Send 3 Books"), always ending "Ctrl+,  Settings      Esc  Close"; every hint shows whole (a closer gap, or two lines split between hints, when one line is too wide). With Books marked, a status line above gives the count and any Route that can't take some of them ("3 Books marked · USB can't take 1").
 - **Mouse:** click a row to mark or unmark it; double-click to send just that Book. A small cog at the right end of the search line opens Settings.
 - **Empty:** "No Books found in ~/Books, ~/Downloads"; `Enter` opens Settings on the Book folders field.
 - **Setup needed:** if a setting or the app password is missing, the Picker opens straight into Settings, titled "Set up Books to Kindle" ([#14](https://github.com/sorydi3/kindle-send/issues/14), [#32](https://github.com/sorydi3/kindle-send/issues/32)). The Book list is reachable once setup is saved.

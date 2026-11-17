@@ -4,7 +4,7 @@ Send the ebooks on your computer to your Kindle from the Omarchy shell: by email
 
 > Unofficial: send ebooks to your Kindle by email or USB. Not created or endorsed by Amazon.
 
-![Books to Kindle: the Picker](preview.png)
+![Books to Kindle: the bar icon opens the Picker; two Books are marked, one switched to USB, and sent; then Settings](docs/demo.gif)
 
 - **A keyboard Picker.** Type to filter, `Space` to mark, `Enter` to send. It closes at once; progress comes as Omarchy notifications.
 - **Email or USB, per Book.** It picks the Route for you: email when the format and size allow, USB otherwise. `Tab` switches it.
