@@ -142,3 +142,35 @@ def test_every_catalog_entry_is_a_string_or_an_english_plural():
             assert all(isinstance(v, str) and v for v in value.values()), key
         else:
             assert isinstance(value, str) and value, key
+
+
+# A footer line of key hints must show every hint whole at the card's width
+# (spec §4): fitHints keeps the usual gap when it fits, tightens the gap when
+# not, and splits into two lines between hints as the last resort. `fits` is
+# the Picker's width check; here, a line fits when it has at most N characters.
+FOOTER = "Space  Mark      Tab  Route      Enter  Send this Book      Ctrl+,  Settings      Esc  Clear search"
+
+
+def fit(text, width):
+    return cat(f"fitHints({json.dumps(text)}, function(line) {{ return line.length <= {width} }})")
+
+
+def test_hints_that_fit_keep_the_usual_gap():
+    assert fit(FOOTER, 200) == FOOTER
+
+
+def test_hints_a_little_too_wide_close_up_the_gap():
+    tight = "Space  Mark   Tab  Route   Enter  Send this Book   Ctrl+,  Settings   Esc  Clear search"
+    assert fit(FOOTER, len(tight)) == tight
+
+
+def test_hints_far_too_wide_split_into_two_lines_between_hints():
+    assert fit(FOOTER, 60) == "Space  Mark      Tab  Route      Enter  Send this Book\nCtrl+,  Settings      Esc  Clear search"
+
+
+def test_two_lines_close_up_the_gap_when_they_must():
+    assert fit(FOOTER, 50) == "Space  Mark   Tab  Route   Enter  Send this Book\nCtrl+,  Settings   Esc  Clear search"
+
+
+def test_a_single_hint_is_left_as_it_is():
+    assert fit("Esc  Close", 3) == "Esc  Close"

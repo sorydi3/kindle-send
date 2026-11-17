@@ -17,6 +17,7 @@ import "Routes.js" as Routes
 import "Pending.js" as Pending
 import "Settings.js" as SettingsForm
 import "Program.js" as Program
+import "Catalog.js" as Catalog
 
 Item {
   id: root
@@ -616,15 +617,23 @@ Item {
             elide: Text.ElideRight
           }
           Text {
+            id: listHints
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
-            text: root.screen ? root.screen.keys : Rows.hints(root.current, root.sendSummary.enter, root.filterText, tr)
+            // Every hint whole: a closer gap, or two lines, when one line is too wide.
+            text: Catalog.fitHints(root.screen ? root.screen.keys : Rows.hints(root.current, root.sendSummary.enter, root.filterText, tr),
+                                   function(line) { return listHintMetrics.advanceWidth(line) <= listHints.width })
             color: Commons.Color.menu.text
             opacity: root.hintOpacity
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.bodySmall
             elide: Text.ElideRight
+
+            FontMetrics {
+              id: listHintMetrics
+              font: listHints.font
+            }
           }
         }
 
@@ -941,15 +950,22 @@ Item {
               font.pixelSize: Style.font.body
             }
             Text {
+              id: settingsHints
               width: parent.width
               horizontalAlignment: Text.AlignHCenter
               textFormat: Text.PlainText
-              text: SettingsForm.footer(root.settingsFocus, root.settingsChanged, root.settingsSetup, tr)
+              text: Catalog.fitHints(SettingsForm.footer(root.settingsFocus, root.settingsChanged, root.settingsSetup, tr),
+                                     function(line) { return settingsHintMetrics.advanceWidth(line) <= settingsHints.width })
               color: Commons.Color.menu.text
               opacity: root.hintOpacity
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.bodySmall
               elide: Text.ElideRight
+
+              FontMetrics {
+                id: settingsHintMetrics
+                font: settingsHints.font
+              }
             }
           }
         }
