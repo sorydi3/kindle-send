@@ -243,19 +243,16 @@ function testOutcome(testSend) {
            problems: {} }
 }
 
-// A key hint: the key's name as it is, then what it does.
-function hint(key, action) { return key + "  " + action }
-
 // The keys that work on the focused field. Esc warns once something changed;
 // while setup is needed it closes the Picker instead (escCloses).
 // Open link shows only on a field that has one, Browse only on Book folders.
 function footer(focusedKey, isChanged, isSetup, tr) {
-  const keys = [hint("Tab", tr.t("keys.nextField")), hint("Enter", tr.t("keys.save"))]
-  if (link(focusedKey)) keys.push(hint("Ctrl+O", tr.t("keys.openLink")))
-  if (browses(focusedKey)) keys.push(hint("Ctrl+B", tr.t("keys.browse")))
-  if (isSetup) keys.push(hint("Esc", tr.t("keys.close")))
-  else keys.push(hint("Esc", tr.t(isChanged ? "keys.discard" : "keys.backToBooks")))
-  return keys.join("      ")
+  const keys = [Catalog.hint("Tab", tr.t("keys.nextField")), Catalog.hint("Enter", tr.t("keys.save"))]
+  if (link(focusedKey)) keys.push(Catalog.hint("Ctrl+O", tr.t("keys.openLink")))
+  if (browses(focusedKey)) keys.push(Catalog.hint("Ctrl+B", tr.t("keys.browse")))
+  if (isSetup) keys.push(Catalog.hint("Esc", tr.t("keys.close")))
+  else keys.push(Catalog.hint("Esc", tr.t(isChanged ? "keys.discard" : "keys.backToBooks")))
+  return Catalog.hints(keys)
 }
 
 

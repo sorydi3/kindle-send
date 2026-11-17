@@ -83,18 +83,17 @@ def test_without_plan_info_the_empty_state_names_no_folders():
 
 def test_the_plugin_names_the_routes_itself():
     """plan sends Route ids only (spec §17, Translations)."""
-    assert rows("[routeLabel('email', EN), routeLabel('usb', EN)]") == ["Email", "USB"]
     assert rows("[Routes.label('email', EN), Routes.label('usb', EN)]") == ["Email", "USB"]
 
 
 def test_route_labels_come_from_the_catalog():
-    assert rows("routeLabel('email', LANG({'route.email': 'Correo'}))") == "Correo"
+    assert rows("Routes.label('email', LANG({'route.email': 'Correo'}))") == "Correo"
     assert rows(f"details({book(usbOk=False)}, 'usb', {NOW}, LANG({{'route.usb': 'USB-Kabel'}}))") \
         == "EPUB · 1,2 MB · USB-Kabel can't take this Book"
 
 
 def test_a_route_with_no_label_shows_its_id():
-    assert rows("routeLabel('carrier-pigeon', EN)") == "carrier-pigeon"
+    assert rows("Routes.label('carrier-pigeon', EN)") == "carrier-pigeon"
 
 
 def test_a_route_the_book_cant_take_is_named_in_details():

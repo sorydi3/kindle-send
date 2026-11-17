@@ -38,8 +38,6 @@ function routeOf(book, overrides) {
   return (overrides && overrides[book.path]) || book.route
 }
 
-function routeLabel(route, tr) { return Routes.label(route, tr) }
-
 function switchRoute(route) { return Routes.other(route) }
 
 // Tab: the overrides after switching the highlighted Book. On a marked Book,
@@ -79,31 +77,27 @@ function footer(books, marked, overrides, highlighted, tr) {
     const refused = chosen.filter(function(b) {
       return routeOf(b, overrides) === routes[i] && !routeTakes(b, routes[i])
     }).length
-    if (refused > 0) parts.push(Catalog.count(tr, "rows.routeRefuses", refused, [routeLabel(routes[i], tr)]))
+    if (refused > 0) parts.push(Catalog.count(tr, "rows.routeRefuses", refused, [Routes.label(routes[i], tr)]))
   }
   return { status: parts.join(tr.t("list.dot")), enter: Catalog.count(tr, "rows.sendCount", chosen.length) }
 }
 
-// A key hint: the key's name as it is, then what it does.
-function hint(key, action) { return key + "  " + action }
-
-// The gap between key hints.
-const HINT_GAP = "      "
-
 // Esc clears a search before it closes the Picker.
-function escHint(filterText, tr) { return hint("Esc", tr.t(filterText ? "keys.clearSearch" : "keys.close")) }
+function escHint(filterText, tr) { return Catalog.hint("Esc", tr.t(filterText ? "keys.clearSearch" : "keys.close")) }
 
 // Every Book list footer ends with these: Ctrl+, opens Settings (spec §4, §9).
-function closingHints(filterText, tr) { return hint("Ctrl+,", tr.t("keys.settings")) + HINT_GAP + escHint(filterText, tr) }
+function closingHints(filterText, tr) {
+  return Catalog.hints([Catalog.hint("Ctrl+,", tr.t("keys.settings")), escHint(filterText, tr)])
+}
 
 // The key hints for the highlighted row. enter: footer().enter.
 function hints(current, enter, filterText, tr) {
   const keys = []
-  if (current && current.waiting) keys.push(hint("Delete", tr.t("keys.cancelWaiting")))
-  else if (current) keys.push(hint("Space", tr.t("keys.mark")), hint("Tab", tr.t("keys.route")))
-  if (enter) keys.push(hint("Enter", enter))
+  if (current && current.waiting) keys.push(Catalog.hint("Delete", tr.t("keys.cancelWaiting")))
+  else if (current) keys.push(Catalog.hint("Space", tr.t("keys.mark")), Catalog.hint("Tab", tr.t("keys.route")))
+  if (enter) keys.push(Catalog.hint("Enter", enter))
   keys.push(closingHints(filterText, tr))
-  return keys.join(HINT_GAP)
+  return Catalog.hints(keys)
 }
 
 // What the Picker shows instead of the list, or null when it shows the list.
@@ -121,8 +115,8 @@ function screen(state, tr) {
   const settings = state.failure !== "missing"
   const program = String(state.program || "")
   function make(message, detail, enter, enterLabel, typing, field) {
-    const keys = (enterLabel ? hint("Enter", enterLabel) + HINT_GAP : "")
-      + (settings ? closingHints(state.filterText, tr) : escHint(state.filterText, tr))
+    const keys = Catalog.hints((enterLabel ? [Catalog.hint("Enter", enterLabel)] : [])
+      .concat([settings ? closingHints(state.filterText, tr) : escHint(state.filterText, tr)]))
     return { message: message, detail: detail, enter: enter, keys: keys, typing: typing === true,
              settings: settings, field: field || "" }
   }
@@ -177,8 +171,8 @@ function details(book, route, now, tr) {
   if (book.lastSent) parts.push(sentAgo(book.lastSent, now, tr))
   if (route === book.route && book.routeReason)
     parts.push(Catalog.message(tr, book.routeReasonCode, book.routeReasonValues, book.routeReason))
-  else if (!routeTakes(book, route)) parts.push(Catalog.say(tr, "rows.routeCantTake", [routeLabel(route, tr)]))
-  else if (route !== book.route) parts.push(Catalog.say(tr, "rows.switchedTo", [routeLabel(route, tr)]))
+  else if (!routeTakes(book, route)) parts.push(Catalog.say(tr, "rows.routeCantTake", [Routes.label(route, tr)]))
+  else if (route !== book.route) parts.push(Catalog.say(tr, "rows.switchedTo", [Routes.label(route, tr)]))
   return parts.filter(function(p) { return p }).join(tr.t("list.dot"))
 }
 

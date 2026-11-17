@@ -13,6 +13,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "Rows.js" as Rows
+import "Routes.js" as Routes
 import "Pending.js" as Pending
 import "Settings.js" as SettingsForm
 import "Program.js" as Program
@@ -690,7 +691,7 @@ Item {
                 id: badgeText
                 anchors.centerIn: parent
                 textFormat: Text.PlainText
-                text: Rows.routeLabel(row.route, tr)
+                text: Routes.label(row.route, tr)
                 color: row.ink
                 font.family: Style.font.menuFamily
                 font.pixelSize: Style.font.caption

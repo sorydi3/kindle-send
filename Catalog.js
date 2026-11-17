@@ -46,6 +46,17 @@ function text(tr, note) {
   return typeof note.n === "number" ? count(tr, note.key, note.n, args) : say(tr, note.key, args)
 }
 
+// --- Key hints (the Picker's and the Settings form's footers) ---
+
+// A key hint: the key's name as it is, then what it does.
+function hint(key, action) { return key + "  " + action }
+
+// The gap between key hints.
+const HINT_GAP = "      "
+
+// Key hints side by side.
+function hints(list) { return list.join(HINT_GAP) }
+
 // A Settings field's label, by its key (kindleAddress, …).
 function fieldLabel(tr, key) { return tr.t("settings." + key + ".label", key) }
 
