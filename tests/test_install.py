@@ -237,7 +237,7 @@ MENU_TEXT = ('{\n  // my menu\n  "snip": {"icon":"x","label":"Snip"},\n'
              '  "snip.rect": {"icon":"y","label":"Rect","action":"snip rect"}\n}\n')
 # Opens the Picker in Settings, on no field in particular (spec §14).
 SETTINGS_ACTION = "omarchy-shell shell summon sorydi3.kindle-send '{\"settings\":\"\"}'"
-BIND_LINE = 'o.bind("SUPER + SHIFT + K", "Send to Kindle", "omarchy-shell shell toggle sorydi3.kindle-send")'
+BIND_LINE = 'o.bind("SUPER + SHIFT + K", "Books to Kindle", "omarchy-shell shell toggle sorydi3.kindle-send")'
 
 
 def config_files(env, bindings=BINDINGS_TEXT, menu=MENU_TEXT):
@@ -318,7 +318,8 @@ def test_yes_adds_both_menu_entries_and_the_menu_still_parses(env):
 
     menu = shell_parse(m.read_text())
     assert menu["snip.rect"]["action"] == "snip rect"
-    assert menu["kindle-send"]["label"] == "Send to Kindle"
+    assert menu["kindle-send"]["label"] == "Books to Kindle"
+    assert menu["kindle-send.pick"]["label"] == "Books to Kindle"
     assert "action" not in menu["kindle-send"]  # a submenu
     assert menu["kindle-send.pick"]["action"] == "omarchy-shell shell toggle sorydi3.kindle-send"
     assert menu["kindle-send.settings"]["label"] == "Settings"
@@ -374,11 +375,34 @@ def test_reinstalling_over_an_old_install_replaces_its_setup_entry_in_place(env)
     menu = shell_parse(text)
     assert "kindle-send.setup" not in menu
     assert menu["kindle-send.settings"]["action"] == SETTINGS_ACTION
+    assert menu["kindle-send"]["label"] == menu["kindle-send.pick"]["label"] == "Books to Kindle"
     assert text.count("kindle-send menu") == 1
     # In place: still between the user's own entries.
     assert text.index('"snip"') < text.index("kindle-send menu") < text.index('"snip.rect"')
     assert menu["snip.rect"]["action"] == "snip rect"
     assert (m.parent / "omarchy-menu.jsonc.before-kindle-send").read_text() == MENU_WITH_OLD_BLOCK
+    assert "Updated" in result.stdout
+
+
+# The menu block an install before the rename to Books to Kindle left behind.
+SEND_TO_KINDLE_BLOCK = (
+    '  // >>> kindle-send menu (added by scripts/install.sh) >>>\n'
+    '  "kindle-send": {"icon":"\U000f00ba","label":"Send to Kindle","aliases":["kindle"]},\n'
+    '  "kindle-send.pick": {"icon":"\U000f00ba","label":"Send to Kindle",'
+    '"action":"omarchy-shell shell toggle sorydi3.kindle-send"},\n'
+    '  "kindle-send.settings": {"icon":"","label":"Settings","action":' + json.dumps(SETTINGS_ACTION) + '},\n'
+    '  // <<< kindle-send <<<\n')
+
+
+def test_reinstalling_over_a_send_to_kindle_block_renames_its_entries_in_place(env):
+    _, m = config_files(env, menu='{\n  "snip": {"icon":"x","label":"Snip"},\n' + SEND_TO_KINDLE_BLOCK + '}\n')
+
+    result = install(env, "--yes")
+
+    assert result.returncode == 0, result.stderr
+    menu = shell_parse(m.read_text())
+    assert menu["kindle-send"]["label"] == menu["kindle-send.pick"]["label"] == "Books to Kindle"
+    assert m.read_text().count("kindle-send menu") == 1
     assert "Updated" in result.stdout
 
 
@@ -433,7 +457,7 @@ def test_on_a_terminal_each_edit_is_asked_about(env):
     assert m.read_text() == MENU_TEXT
 
 
-PICKER_SETUP = "Press SUPER + SHIFT + K to set up Send to Kindle in the Picker"
+PICKER_SETUP = "Press SUPER + SHIFT + K to set up Books to Kindle in the Picker"
 TERMINAL_SETUP = "Or set up in the terminal instead: kindle-send setup"
 
 

@@ -639,7 +639,7 @@ def save_settings(updates):
 
 def wizard():
     current = load_settings()
-    print("Send to Kindle setup. Press Enter to keep the value in [brackets].\n")
+    print("Books to Kindle setup. Press Enter to keep the value in [brackets].\n")
 
     print("1. Your Kindle's email address (…@kindle.com). Find it at")
     print(f"   amazon.com → Manage Your Content and Devices → Devices: {AMAZON_DEVICES_HELP}")
@@ -718,7 +718,7 @@ def run_test_send(kindle):
         return
     print("Gmail accepted it. Amazon never confirms delivery, so check your Kindle.")
     if ask_yes_no(f"Did '{TEST_BOOK_TITLE}' appear on your Kindle within a few minutes?", True):
-        print("Send to Kindle is ready.")
+        print("Books to Kindle is ready.")
         return
     print("The usual causes:")
     print("  - The Gmail address isn't on Amazon's Approved Personal Document Email List")

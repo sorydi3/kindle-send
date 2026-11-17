@@ -154,4 +154,4 @@ else
   echo "    and $state_dir. Run with --purge to delete them too."
 fi
 
-echo "Send to Kindle is uninstalled."
+echo "Books to Kindle is uninstalled."

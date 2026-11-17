@@ -237,3 +237,13 @@ Add the widget to a test bar layout yourself (the Omarchy bar settings), not wit
 - [ ] With the Kindle unplugged, send two Books by USB: "2" shows beside the icon, and the tooltip says "2 waiting for Kindle". Plug the Kindle in: while the Send runs the icon takes the bar's active colour and the tooltip says "Sending…"; afterwards the number goes and the colour is back to normal.
 - [ ] With emails held by the Send limit (section 7), the number counts them too and the tooltip adds "N held by the Send limit" (joined with " · " to anything else).
 - [ ] With a dark theme (e.g. Tokyo Night) the icon, the number and the tooltip are readable on the bar, and the active colour stands out. Switch to a light theme (e.g. Catppuccin Latte): the same, with nothing keeping a dark-theme colour.
+
+## 22. The name is Books to Kindle (#63)
+
+The plugin shows itself as "Books to Kindle"; only the right-click action keeps the label "Send to Kindle".
+
+- [ ] `omarchy plugin validate .` passes; `manifest.json` has name "Books to Kindle", version 1.0.0, author sorydi3, license MIT and the "Unofficial: … Not created or endorsed by Amazon." description.
+- [ ] While setup is needed, the Picker opens into Settings titled "Set up Books to Kindle". The Book list's search line reads "Books to Kindle…" while empty.
+- [ ] A Send's notification shows the app name "Books to Kindle".
+- [ ] Run the extras script in a temp `HOME` with an Omarchy menu file holding a "Send to Kindle" block: it offers to replace it, and afterwards the menu shows "Books to Kindle" with "Books to Kindle" and "Settings" inside.
+- [ ] The Nautilus and Strata right-click items still read "Send to Kindle".
