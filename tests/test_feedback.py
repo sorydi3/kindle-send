@@ -175,7 +175,7 @@ def test_a_failed_send_has_no_timeout():
 
 
 SETUP = ["omarchy-shell", "shell", "summon", "sorydi3.kindle-send", '{"settings":"appPassword"}']
-POST = ["omarchy-notification-send", "--app-name", "Send to Kindle", "-g", "\uF02D"]
+POST = ["omarchy-notification-send", "--app-name", "Books to Kindle", "-g", "\uF02D"]
 
 
 def test_first_post_asks_for_the_id_and_a_done_summary_times_out():

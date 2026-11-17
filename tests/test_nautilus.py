@@ -151,7 +151,7 @@ def test_unsupported_files_in_a_mixed_selection_are_listed_in_a_notification(ext
 
     notify, summon = FakeSubprocess.started
     assert notify == [
-        "omarchy-notification-send", "--app-name", "Send to Kindle", "-g", "", "-u", "normal",
+        "omarchy-notification-send", "--app-name", "Books to Kindle", "-g", "", "-u", "normal",
         "Left out 2 files", "comic.cbz, old book.djvu: Kindle can't take these formats.",
     ]
     assert summon[-1] == '{"files": ["/books/Dune.epub"]}'

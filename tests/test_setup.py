@@ -68,6 +68,7 @@ def test_first_run_saves_settings_and_stores_the_password(ks, keyring, home, ter
     assert len(store_calls) == 1
     assert store_calls[0].endswith("service kindle-send user " + SENDER)
     out = capsys.readouterr().out
+    assert out.startswith("Books to Kindle setup.")
     assert "abcd efgh" not in out
 
 
@@ -194,6 +195,7 @@ def test_test_send_emails_the_bundled_epub_and_asks_if_it_arrived(ks, keyring, s
     assert attachment.get_content_type() == "application/epub+zip"
     out = capsys.readouterr().out
     assert "Did 'Kindle Send Test' appear on your Kindle within a few minutes?" in out
+    assert "Books to Kindle is ready." in out
     assert '{"stage"' not in out
 
 

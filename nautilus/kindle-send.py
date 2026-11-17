@@ -65,7 +65,7 @@ def left_out_notification(names):
     headline = f"Left out {len(names)} file{'' if one else 's'}"
     body = ", ".join(names) + (": Kindle can't take this format." if one
                                else ": Kindle can't take these formats.")
-    return ["omarchy-notification-send", "--app-name", "Send to Kindle", "-g", BOOK_GLYPH,
+    return ["omarchy-notification-send", "--app-name", "Books to Kindle", "-g", BOOK_GLYPH,
             "-u", "normal", headline, body]
 
 

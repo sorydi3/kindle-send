@@ -272,7 +272,7 @@ function summoned(payloadJson) {
   return { focus: key, problems: problems }
 }
 
-// The Omarchy menu's "Send to Kindle → Settings" summons with
+// The Omarchy menu's "Books to Kindle → Settings" summons with
 // {"settings": ""}: open Settings on no field in particular (spec §14).
 function opensFromMenu(payloadJson) {
   let p = null
@@ -301,7 +301,7 @@ function setupNeeded(missing) { return Array.isArray(missing) && missing.length 
 // Esc closes the Picker while setup is needed: there is no usable Book list yet.
 function escCloses(missing) { return setupNeeded(missing) }
 
-function title(missing) { return setupNeeded(missing) ? "Set up Send to Kindle" : "Settings" }
+function title(missing) { return setupNeeded(missing) ? "Set up Books to Kindle" : "Settings" }
 
 // What setup still needs, from the line `kindle-send settings` printed.
 function missing(line) {
