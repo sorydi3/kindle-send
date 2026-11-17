@@ -98,7 +98,7 @@ def test_a_settings_file_that_isnt_valid_json_is_not_replaced_by_the_copy(ks, ho
     ks.main(["settings"])
 
     assert settings_file(home).read_text() == "{ broken"
-    assert printed(capsys)[0]["kindleAddress"] == ""
+    assert printed(capsys)[0]["code"] == "settings_file_invalid"
 
 
 def test_save_after_the_copy_keeps_the_copied_send_limit_numbers(ks, home, stored, capsys, monkeypatch):

@@ -656,3 +656,12 @@ def test_failures_reading_or_saving_settings_name_the_bundled_kindle_send():
         == "Couldn't read the Settings. Run /p/bin/kindle-send settings in a terminal to see why."
     assert form("saveFailed('/p/bin/kindle-send', EN)") \
         == "Couldn't save. Run /p/bin/kindle-send save in a terminal to see why."
+
+
+def test_an_unreadable_settings_file_shows_in_the_status_line():
+    """`kindle-send settings` reports it instead of values; the form never takes it for setup."""
+    line = json.dumps({"failed": True, "code": "settings_file_invalid", "values": {"path": "/x/settings.json"},
+                       "reason": "/x/settings.json isn't valid JSON, so it wasn't changed."})
+
+    assert form(f"readProblem({line}, {GERMAN})") == "/x/settings.json ist kein gültiges JSON."
+    assert form("readProblem({kindleAddress: '', missing: []}, EN)") == ""

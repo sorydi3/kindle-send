@@ -33,8 +33,10 @@ Item {
   // From plan: a setting or the app password is missing, so the Picker opens into Settings.
   property bool setupNeeded: false
   property var setupMissing: []
-  // Why listing failed: "" | "missing" (no kindle-send) | "failed" | "slow".
+  // Why listing failed: "" | "missing" (no kindle-send) | "failed" | "slow" | "problem" (plan said why).
   property string failure: ""
+  // plan's reason for "problem" ({code, values, english}), e.g. an unreadable Settings file.
+  property var failureProblem: null
   property var books: []
   // path -> true for marked Books; path -> "email"|"usb" for Tab overrides.
   property var marked: ({})
@@ -92,7 +94,7 @@ Item {
   // Setup, a failure, loading, or an empty list: what shows instead of the list (null: the list).
   readonly property var screen: Rows.screen({
     loading: loading, failure: failure, payloadCount: payloadFiles.length,
-    books: books.length, rows: rows.length, waiting: pending.length, filterText: filterText,
+    problem: failureProblem, books: books.length, rows: rows.length, waiting: pending.length, filterText: filterText,
     bookFolders: bookFolders, program: kindleSend }, tr)
   onListRowsChanged: selectedIndex = Math.max(0, Math.min(selectedIndex, listRows.length - 1))
 
@@ -149,8 +151,10 @@ Item {
     root.setupMissing = parsed.missing
     root.books = parsed.books
     root.bookFolders = parsed.bookFolders
+    root.failureProblem = parsed.problem
     if (root.payloadMode) root.marked = Rows.allMarked(parsed.books)
-    if (exitCode !== 0 && parsed.books.length === 0 && !parsed.setupNeeded)
+    if (parsed.problem) root.failure = "problem"
+    else if (exitCode !== 0 && parsed.books.length === 0 && !parsed.setupNeeded)
       root.failure = "failed"
     // No usable Book list yet: straight into Settings (spec §4, Setup needed).
     if (parsed.setupNeeded) root.openSettings("")
@@ -271,6 +275,12 @@ Item {
     const line = settingsReader.line
     if (exitCode !== 0 || !line) {
       root.settingsStatus = SettingsForm.readFailed(root.kindleSend, tr)
+      return
+    }
+    // An unreadable Settings file: said in the status line, never taken for missing values.
+    const problem = SettingsForm.readProblem(line, tr)
+    if (problem) {
+      root.settingsStatus = problem
       return
     }
     root.settingsBaseline = SettingsForm.fromSettings(line)

@@ -222,6 +222,37 @@ def test_a_failed_listing_names_how_to_see_why_and_can_be_retried():
     assert s["enter"] == "retry"
 
 
+INVALID = {"failed": True, "code": "settings_file_invalid", "values": {"path": "/h/.config/kindle-send/settings.json"},
+           "reason": "/h/.config/kindle-send/settings.json isn't valid JSON, so it wasn't changed."}
+
+
+def test_a_plan_that_couldnt_read_the_settings_file_is_a_failure_not_setup():
+    parsed = rows(f"fromPlan([{json.dumps(INVALID)}])")
+
+    assert parsed["setupNeeded"] is False
+    assert parsed["problem"] == {"code": "settings_file_invalid", "values": INVALID["values"],
+                                 "english": INVALID["reason"]}
+    assert rows("fromPlan([])")["problem"] is None
+
+
+def test_an_unreadable_settings_file_says_so_and_can_be_retried():
+    problem = {"code": "settings_file_invalid", "values": INVALID["values"], "english": INVALID["reason"]}
+    s = screen(failure="problem", problem=problem, books=0, rows=0)
+
+    assert s["message"] == "Couldn't list your Books."
+    assert s["detail"] == INVALID["reason"]
+    assert s["enter"] == "retry"
+    assert s["settings"] is True
+
+
+def test_an_unreadable_settings_file_reads_in_the_language():
+    problem = {"code": "settings_file_invalid", "values": {"path": "/x.json"}, "english": "x"}
+    tr = "LANG({'message.settings_file_invalid': '%1 ist kein gültiges JSON.'})"
+    state = json.dumps({"failure": "problem", "problem": problem, "books": 0, "rows": 0, "program": PROGRAM})
+
+    assert rows(f"screen({state}, {tr})")["detail"] == "/x.json ist kein gültiges JSON."
+
+
 def test_a_slow_listing_can_be_retried():
     s = screen(failure="slow", books=0, rows=0)
 

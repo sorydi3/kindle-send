@@ -495,3 +495,15 @@ def test_once_saved_nothing_is_missing(ks, home, keyring, smtp, capsys, monkeypa
          appPassword=PASSWORD)
 
     assert settings(ks, capsys)["missing"] == []
+
+
+def test_settings_says_when_the_settings_file_isnt_valid_json(ks, home, keyring, capsys):
+    settings_file(home).parent.mkdir(parents=True)
+    settings_file(home).write_text("[1, 2")
+
+    out = settings(ks, capsys)
+
+    path = str(settings_file(home))
+    assert out == {"failed": True, "code": "settings_file_invalid", "values": {"path": path},
+                   "reason": f"{path} isn't valid JSON, so it wasn't changed."}
+    assert settings_file(home).read_text() == "[1, 2"

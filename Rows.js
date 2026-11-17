@@ -7,19 +7,23 @@
 // lines: parsed JSON lines of `kindle-send plan`, already newest first.
 // Besides Books, plan says which Book folders it scans, so that default lives
 // only in kindle-send. Routes come as ids; the plugin labels them (Routes.js).
+// problem: why plan couldn't list at all ({code, values, english}, e.g. an
+// unreadable Settings file), else null.
 function fromPlan(lines) {
   let setupNeeded = false
   let missing = []
   let bookFolders = []
+  let problem = null
   const books = []
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]
     if (!l) continue
-    if (l.setupNeeded) { setupNeeded = true; missing = Array.isArray(l.missing) ? l.missing.map(String) : [] }
+    if (l.failed) problem = { code: l.code, values: l.values || {}, english: l.reason }
+    else if (l.setupNeeded) { setupNeeded = true; missing = Array.isArray(l.missing) ? l.missing.map(String) : [] }
     else if (Array.isArray(l.bookFolders)) bookFolders = l.bookFolders.map(String)
     else if (l.path) books.push(l)
   }
-  return { setupNeeded: setupNeeded, missing: missing, books: books, bookFolders: bookFolders }
+  return { setupNeeded: setupNeeded, missing: missing, books: books, bookFolders: bookFolders, problem: problem }
 }
 
 // Typing filters by file name only.
@@ -103,8 +107,9 @@ function hints(current, enter, filterText, tr) {
 }
 
 // What the Picker shows instead of the list, or null when it shows the list.
-// state: {loading, failure: ""|"missing"|"failed"|"slow",
-//         payloadCount, books, rows, waiting, filterText, bookFolders, program}.
+// state: {loading, failure: ""|"missing"|"failed"|"slow"|"problem",
+//         problem (fromPlan's, for "problem"), payloadCount, books, rows, waiting,
+//         filterText, bookFolders, program}.
 // program: the bundled kindle-send's path, which the failure screens name
 // (after a plain `omarchy plugin add` it isn't on PATH).
 // A waiting line keeps the list up: it is where Delete cancels it.
@@ -130,6 +135,10 @@ function screen(state, tr) {
     return make(tr.t("rows.missing"), Catalog.say(tr, "rows.missingDetail", [program]), "close", "")
   if (state.failure === "failed")
     return make(tr.t("rows.failed"), Catalog.say(tr, "rows.failedDetail", [program]), "retry", tr.t("keys.retry"))
+  if (state.failure === "problem") {
+    const p = state.problem || {}
+    return make(tr.t("rows.failed"), Catalog.message(tr, p.code, p.values, p.english), "retry", tr.t("keys.retry"))
+  }
   if (state.failure === "slow")
     return make(tr.t("rows.slow"), Catalog.say(tr, "rows.slowDetail", [program]), "retry", tr.t("keys.retry"))
   if (state.waiting > 0) return null

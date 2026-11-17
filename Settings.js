@@ -33,6 +33,13 @@ function readFailed(program, tr) { return Catalog.say(tr, "settings.readFailed",
 
 function saveFailed(program, tr) { return Catalog.say(tr, "settings.saveFailed", [program]) }
 
+// Why `kindle-send settings` gave no values ({failed: true, code, values,
+// reason}, e.g. an unreadable Settings file), for the status line; "" if it gave them.
+function readProblem(line, tr) {
+  if (!line || line.failed !== true) return ""
+  return Catalog.message(tr, line.code, line.values, line.reason)
+}
+
 // The page each field's help line links to (spec §9), keyed by field key,
 // apart from FIELDS. Book folders have none: they browse instead.
 const LINKS = {
