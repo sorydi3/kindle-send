@@ -327,7 +327,7 @@ Asking needs a terminal: without one the script makes no edits and says so. `--y
 7. Sending 25 small Books by email: the first 20 go out at least 10 s apart, and the rest are held with a "Next in M min" notification.
 8. A wrong app password fails with a critical notification, and clicking it opens Settings on the app password field.
 9. In Settings, `Ctrl+B` opens the folder chooser and the picked folder is appended to Book folders; `Esc` after an edit discards it; `Enter` in the Book list behind Settings sends nothing.
-10. `kindle-send history` lists the Sends above. `uninstall.sh` removes the plugin, binding, menu entries and Nautilus item, and keeps the settings and history.
+10. `kindle-send history` lists the Sends above. `scripts/install.sh --remove` removes the extras (binding, menu entries, link, Nautilus and Strata items) and keeps the Settings, the password and the history; `omarchy plugin remove` then removes the plugin.
 
 ## 16. Known facts and caveats
 
