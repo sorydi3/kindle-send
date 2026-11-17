@@ -86,6 +86,28 @@ def test_every_code_reads_as_the_english_kindle_send_sends(ks):
         assert cat(f"message(EN, {json.dumps(code)}, {json.dumps(values)}, '')") == english, code
 
 
+class Recording(dict):
+    """Values for a MESSAGES entry that note which names it reads."""
+
+    def __init__(self):
+        super().__init__(EXAMPLE)
+        self.read = set()
+
+    def __getitem__(self, name):
+        self.read.add(name)
+        return super().__getitem__(name)
+
+
+def test_catalog_order_names_the_values_kindle_sends_messages_use(ks):
+    """Catalog.ORDER, kindle-send's MESSAGES and test_message_codes.CODES each list
+    every code's values; this keeps ORDER in step with what MESSAGES reads."""
+    order = cat("ORDER")
+    for code, english in ks.MESSAGES.items():
+        values = Recording()
+        english(values)
+        assert set(order.get(code, [])) == values.read, code
+
+
 def test_placeholders_fill_in_order_and_leave_the_rest_alone():
     assert cat("fill('%2 of %1, 100%', [3, 1])") == "1 of 3, 100%"
     assert cat("fill('%1', ['%2', 'x'])") == "%2"
