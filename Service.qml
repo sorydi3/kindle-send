@@ -12,12 +12,16 @@ import "Feedback.js" as Feedback
 import "Pending.js" as Pending
 import "Limit.js" as Limit
 import "Routes.js" as Routes
+import "Program.js" as Program
 
 Item {
   id: root
 
   // Injected by the shell.
   property var manifest: null
+
+  // The kindle-send bundled in the plugin folder; every command runs it, never one from PATH (spec §17).
+  readonly property string kindleSend: Program.path(Qt.resolvedUrl("bin/kindle-send"))
 
   // Sends waiting to start: [{ id, books: [{ path, name, route }] }]
   property var queue: []
@@ -167,7 +171,7 @@ Item {
     property bool didStart: false
     signal answered(var limit)
     function ask() { lines = []; didStart = false; running = true }
-    command: ["kindle-send", "limit"]
+    command: [root.kindleSend, "limit"]
     stdout: SplitParser {
       onRead: function(line) {
         try { check.lines = check.lines.concat([JSON.parse(line)]) } catch (e) {}
@@ -188,7 +192,7 @@ Item {
     function runBook(book) {
       lines = []
       didStart = false
-      command = Feedback.sendArgv(book)
+      command = Feedback.sendArgv(root.kindleSend, book)
       running = true
     }
     stdout: SplitParser {
@@ -329,7 +333,7 @@ Item {
 
   Process {
     id: kindleCheck
-    command: ["kindle-send", "kindle"]
+    command: [root.kindleSend, "kindle"]
     stdout: StdioCollector { id: kindleOut }
     onExited: Qt.callLater(function() { if (Pending.kindleFound(kindleOut.text)) root.releasePending() })
   }
@@ -362,7 +366,7 @@ Item {
     id: ejector
     property bool didStart: false
     property bool done: true
-    command: ["kindle-send", "eject"]
+    command: [root.kindleSend, "eject"]
     stdout: StdioCollector { id: ejectOut }
     onStarted: didStart = true
     onRunningChanged: if (!running && !didStart && !done) root.ejectDone(-1)

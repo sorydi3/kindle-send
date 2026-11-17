@@ -135,8 +135,9 @@ function testBook(sender) {
 }
 
 // The `kindle-send send` argv for one Book; paths go as argv words, never through a shell.
-function sendArgv(book) {
-  return ["kindle-send", "send", "--route", book.route, book.test === true ? "--test" : book.path]
+// program: the bundled kindle-send's path (Program.js).
+function sendArgv(program, book) {
+  return [program, "send", "--route", book.route, book.test === true ? "--test" : book.path]
 }
 
 function testSent(sender) {

@@ -227,3 +227,11 @@ The plugin's `manifest.json`, QML and JS now sit at the repo root; nothing else 
 - [ ] `omarchy plugin validate .` at the repo root prints no error.
 - [ ] Run `./scripts/install.sh` in a temp `HOME` (not your own). `~/.local/share/kindle-send/omarchy-plugin` holds only `manifest.json`, the `*.qml` and the `*.js`, and the plugin link points at it.
 - [ ] After installing for real, `SUPER + SHIFT + K` opens the Picker and a Send works as before.
+
+## 21. The Picker and Service run the bundled kindle-send (#60)
+
+They run `bin/kindle-send` from the plugin folder, never a `kindle-send` on PATH.
+
+- [ ] With `~/.local/bin/kindle-send` moved aside (so none is on PATH), restart the shell and press `SUPER + SHIFT + K`: the Picker lists Books, `Ctrl+,` shows Settings, and a Send by email and by USB both go through. Put it back afterwards.
+- [ ] With the plugin folder a symlink to the repo checkout, `Ctrl+T` in Settings sends "Kindle Send Test" (the test EPUB is found beside the bundled program).
+- [ ] After `./scripts/install.sh` in a temp `HOME`, the copied plugin also holds `bin/kindle-send` (executable) and `assets/test.epub` besides the files section 20 lists.
