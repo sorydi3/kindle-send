@@ -164,6 +164,10 @@ copy_plugin() {
   rm -rf "$plugin_copy"
   mkdir -p "$plugin_copy"
   cp "$repo/manifest.json" "$repo"/*.qml "$repo"/*.js "$plugin_copy/"
+  # The plugin runs the kindle-send bundled beside it, which finds assets/test.epub (spec §17).
+  mkdir -p "$plugin_copy/bin" "$plugin_copy/assets"
+  cp "$repo/bin/kindle-send" "$plugin_copy/bin/"
+  cp "$repo/assets/test.epub" "$plugin_copy/assets/"
 }
 
 if ! command -v omarchy >/dev/null; then

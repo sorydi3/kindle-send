@@ -46,10 +46,15 @@ Item {
 
 
 def run_service(tmp_path, body, plug_at=0):
+    # The plugin folder is a symlink to a checkout, as in the author's setup (spec §17).
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
     plugin = tmp_path / "plugin"
-    plugin.mkdir()
+    plugin.symlink_to(checkout, target_is_directory=True)
     for js in ROOT.glob("*.js"):
         shutil.copy(js, plugin)
+    (plugin / "bin").mkdir()
+    shutil.copy(ROOT / "bin" / "kindle-send", plugin / "bin")
     # Swap the real Quickshell imports for the fake, so nothing can really run.
     service = (ROOT / "Service.qml").read_text()
     service = service.replace("import Quickshell.Io\n", "import FakeIo\n").replace("import Quickshell\n", "")
@@ -62,6 +67,11 @@ def run_service(tmp_path, body, plug_at=0):
     events = [json.loads(line.split("EVENT ", 1)[1]) for line in out.stderr.splitlines() if "EVENT " in line]
     assert events, out.stderr
     assert {"kind": "timeout"} not in [{"kind": e["kind"]} for e in events], events
+    # Every kindle-send run is the one bundled in the plugin folder, never one from PATH (spec §17).
+    bundled = (checkout / "bin" / "kindle-send").resolve()
+    for e in events:
+        if e["kind"] == "run":
+            assert Path(e["program"]).is_absolute() and Path(e["program"]).resolve() == bundled, e
     return events
 
 

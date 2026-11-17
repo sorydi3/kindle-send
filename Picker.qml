@@ -13,12 +13,16 @@ import qs.Ui
 import "Rows.js" as Rows
 import "Pending.js" as Pending
 import "Settings.js" as SettingsForm
+import "Program.js" as Program
 
 Item {
   id: root
 
   // Injected by the shell: this plugin's Service.
   property var service: null
+
+  // The kindle-send bundled in the plugin folder; every command runs it, never one from PATH (spec §17).
+  readonly property string kindleSend: Program.path(Qt.resolvedUrl("bin/kindle-send"))
 
   property bool opened: false
   property bool loading: false
@@ -125,7 +129,7 @@ Item {
     planner.lines = []
     planner.didStart = false
     // close() stops the planner, so it is idle here and picks up the new command.
-    planner.command = Rows.planCommand(root.payloadFiles)
+    planner.command = Rows.planCommand(root.kindleSend, root.payloadFiles)
     if (!planner.running) planner.running = true
     responseTimer.restart()
   }
@@ -151,7 +155,7 @@ Item {
     id: planner
     property var lines: []
     property bool didStart: false
-    command: Rows.planCommand([])
+    command: Rows.planCommand(root.kindleSend, [])
     stdout: SplitParser {
       onRead: function(line) {
         try { planner.lines = planner.lines.concat([JSON.parse(line)]) } catch (e) {}
@@ -411,7 +415,7 @@ Item {
     property var line: null
     property bool didStart: false
     property bool replaceValues: true
-    command: ["kindle-send", "settings"]
+    command: [root.kindleSend, "settings"]
     stdout: SplitParser {
       onRead: function(text) {
         try { settingsReader.line = JSON.parse(text) } catch (e) {}
@@ -428,7 +432,7 @@ Item {
     property string payload: ""
     property var result: null
     property bool didStart: false
-    command: ["kindle-send", "save"]
+    command: [root.kindleSend, "save"]
     stdinEnabled: true
     stdout: SplitParser {
       onRead: function(text) {

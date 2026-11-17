@@ -96,8 +96,13 @@ def test_install_copies_the_command_and_plugin_and_links_the_plugin(env):
     assert {"Picker.qml", "Service.qml", "Rows.js"} <= set(plugin_files)
     for name in plugin_files:
         assert (p["copy"] / name).read_bytes() == (REPO / name).read_bytes()
+    # The plugin runs the kindle-send bundled beside it, which finds the test EPUB beside it (spec §17).
+    assert (p["copy"] / "bin" / "kindle-send").read_bytes() == (REPO / "bin" / "kindle-send").read_bytes()
+    assert os.access(p["copy"] / "bin" / "kindle-send", os.X_OK)
+    assert (p["copy"] / "assets" / "test.epub").read_bytes() == (REPO / "assets" / "test.epub").read_bytes()
     # The plugin files only, not the rest of the repo.
-    assert sorted(f.name for f in p["copy"].iterdir()) == sorted(plugin_files)
+    assert sorted(f.name for f in p["copy"].iterdir()) == sorted(plugin_files + ["bin", "assets"])
+    assert [f.name for f in (p["copy"] / "bin").iterdir()] == ["kindle-send"]
     assert p["link"].is_symlink()
     assert Path(os.readlink(p["link"])) == p["copy"]
 

@@ -256,3 +256,11 @@ Back up `~/.config/omarchy/shell.json` and `~/.config/kindle-send/` first, and p
 - [ ] Change the Kindle address in the old `shell.json` entry and reopen Settings: they still show the copied one. `shell.json` is never read again.
 - [ ] Save Settings from the Picker and run `kindle-send setup` once: `shell.json` is still unchanged, and `settings.json` keeps `minEmailGapSeconds` and `maxEmailsPerHour`.
 - [ ] **Disable and enable.** Disable the plugin in omarchy and enable it again: Settings are all still there, and saving them doesn't enable a disabled plugin.
+
+## 24. The Picker and Service run the bundled kindle-send (#60)
+
+They run `bin/kindle-send` from the plugin folder, never a `kindle-send` on PATH.
+
+- [ ] With `~/.local/bin/kindle-send` moved aside (so none is on PATH), restart the shell and press `SUPER + SHIFT + K`: the Picker lists Books, `Ctrl+,` shows Settings, and a Send by email and by USB both go through. Put it back afterwards.
+- [ ] With the plugin folder a symlink to the repo checkout, `Ctrl+T` in Settings sends "Kindle Send Test" (the test EPUB is found beside the bundled program).
+- [ ] After `./scripts/install.sh` in a temp `HOME`, the copied plugin also holds `bin/kindle-send` (executable) and `assets/test.epub` besides the files section 20 lists.
