@@ -69,6 +69,15 @@ def test_no_plugin_file_runs_a_kindle_send_from_path():
             assert not bare.search(line), f"{f.name}:{n} runs a bare kindle-send: {line.strip()}"
 
 
+def test_plugin_qml_reads_theme_colours_through_the_commons_namespace():
+    # A bare `Color` resolves to QtQuick's own Color (Qt 6.12), whose `menu` is
+    # undefined, so every colour binding fails; Omarchy's plugins write Commons.Color.
+    bare = re.compile(r"(?<![\w.])Color\.")
+    for f in REPO.glob("*.qml"):
+        for n, line in enumerate(f.read_text().splitlines(), 1):
+            assert not bare.search(line), f"{f.name}:{n} uses a bare Color: {line.strip()}"
+
+
 @pytest.mark.skipif(shutil.which("omarchy") is None, reason="omarchy is not installed")
 def test_omarchy_validates_the_repo_root_as_a_plugin():
     result = subprocess.run(["omarchy", "plugin", "validate", str(REPO)], capture_output=True, text=True,

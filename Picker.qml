@@ -9,6 +9,8 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
+// Colours go through the namespace: under Qt 6.12 a bare `Color` is QtQuick's own, not the theme's.
+import qs.Commons as Commons
 import qs.Ui
 import "Rows.js" as Rows
 import "Pending.js" as Pending
@@ -476,7 +478,7 @@ Item {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
 
-    Rectangle { anchors.fill: parent; color: Color.menu.scrim }
+    Rectangle { anchors.fill: parent; color: Commons.Color.menu.scrim }
 
     MouseArea { anchors.fill: parent; onClicked: root.close() }
 
@@ -486,8 +488,8 @@ Item {
       width: Math.min(Style.space(640), parent.width - Style.gapsOut * 2)
       height: Math.min(Style.space(520), parent.height - Style.gapsOut * 2)
       radius: Style.cornerRadius
-      color: Color.menu.background
-      borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
+      color: Commons.Color.menu.background
+      borderSpec: Border.surfaceSpec("menu", "border", Commons.Color.menu.border, Math.max(1, Style.space(2)))
       padding: Style.spacing.panelPadding
 
       // Swallows clicks on the card so they don't reach the scrim, which closes the Picker.
@@ -550,7 +552,7 @@ Item {
           height: Style.space(34)
           textFormat: Text.PlainText
           text: root.filterText || tr.t("picker.search")
-          color: Color.menu.text
+          color: Commons.Color.menu.text
           opacity: root.filterText ? 1 : 0.58  // the shell's own placeholder strength
           font.family: Style.font.menuFamily
           font.pixelSize: Style.font.heading
@@ -566,7 +568,7 @@ Item {
           anchors.verticalCenter: search.verticalCenter
           textFormat: Text.PlainText
           text: "\u{F0493}"
-          color: Color.menu.text
+          color: Commons.Color.menu.text
           opacity: cogMouse.containsMouse ? 1 : root.secondaryOpacity
           font.family: Style.font.menuFamily
           font.pixelSize: Style.font.title
@@ -595,7 +597,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
             text: root.sendSummary.status
-            color: Color.menu.text
+            color: Commons.Color.menu.text
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.body
             elide: Text.ElideRight
@@ -605,7 +607,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
             text: root.screen ? root.screen.keys : Rows.hints(root.current, root.sendSummary.enter, root.filterText, tr)
-            color: Color.menu.text
+            color: Commons.Color.menu.text
             opacity: root.hintOpacity
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.bodySmall
@@ -636,12 +638,12 @@ Item {
             readonly property bool waiting: modelData.waiting === true
             readonly property bool isMarked: !waiting && root.marked[modelData.path] === true
             readonly property string route: waiting ? "" : root.routeOf(modelData)
-            readonly property color ink: hasCursor ? Color.menu.selectedText : Color.menu.text
+            readonly property color ink: hasCursor ? Commons.Color.menu.selectedText : Commons.Color.menu.text
 
             width: ListView.view.width
             height: root.rowHeight
             radius: Style.cornerRadius
-            color: hasCursor ? Color.menu.selectedBackground : "transparent"
+            color: hasCursor ? Commons.Color.menu.selectedBackground : "transparent"
 
             Text {
               id: mark
@@ -653,7 +655,7 @@ Item {
               textFormat: Text.PlainText
               text: row.waiting ? "\u{F0954}" : row.isMarked ? "\u{F0132}" : "\u{F0131}"
               // An empty box stays plain text, readable on the highlighted row too.
-              color: row.isMarked || row.waiting ? row.ink : Color.menu.text
+              color: row.isMarked || row.waiting ? row.ink : Commons.Color.menu.text
               opacity: row.isMarked || row.waiting ? 1 : root.secondaryOpacity
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.title
@@ -707,7 +709,7 @@ Item {
                 textFormat: Text.PlainText
                 text: row.waiting ? row.modelData.details : Rows.details(row.modelData, row.route, Date.now(), tr)
                 // Plain text color even on the highlighted row, as the shell's own menu does.
-                color: Color.menu.text
+                color: Commons.Color.menu.text
                 opacity: root.secondaryOpacity
                 font.family: Style.font.menuFamily
                 font.pixelSize: Style.font.bodySmall
@@ -739,7 +741,7 @@ Item {
             // A warning for failures, a book otherwise.
             textFormat: Text.PlainText
             text: root.failure ? "\u{F0026}" : "\u{F02D}"
-            color: Color.menu.selectedText
+            color: Commons.Color.menu.selectedText
             opacity: root.secondaryOpacity
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.displayLarge
@@ -750,7 +752,7 @@ Item {
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
             text: root.screen ? root.screen.message : ""
-            color: Color.menu.text
+            color: Commons.Color.menu.text
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.title
           }
@@ -761,7 +763,7 @@ Item {
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
             text: root.screen ? root.screen.detail : ""
-            color: Color.menu.text
+            color: Commons.Color.menu.text
             opacity: root.secondaryOpacity
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.body
@@ -814,7 +816,7 @@ Item {
             Text {
               textFormat: Text.PlainText
               text: SettingsForm.title(root.settingsMissing, tr)
-              color: Color.menu.text
+              color: Commons.Color.menu.text
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.heading
             }
@@ -840,7 +842,7 @@ Item {
                   Text {
                     textFormat: Text.PlainText
                     text: SettingsForm.label(entry.modelData, tr)
-                    color: Color.menu.text
+                    color: Commons.Color.menu.text
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.body
                   }
@@ -849,7 +851,7 @@ Item {
                     textFormat: Text.PlainText
                     text: SettingsForm.flag(entry.modelData.key, root.settingsMissing, root.settingsValues,
                                             root.settingsBaseline, tr)
-                    color: Color.menu.selectedText
+                    color: Commons.Color.menu.selectedText
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.body
                   }
@@ -862,8 +864,8 @@ Item {
                   TextField {
                     id: input
                     width: browseButton.visible ? parent.width - browseButton.width - Style.space(8) : parent.width
-                    foreground: Color.menu.text
-                    accent: Color.menu.selectedText
+                    foreground: Commons.Color.menu.text
+                    accent: Commons.Color.menu.selectedText
                     password: entry.modelData.masked === true
                     text: root.settingsValues[entry.modelData.key] || ""
                     placeholderText: SettingsForm.placeholder(entry.modelData, root.settingsPasswordStored, tr)
@@ -878,8 +880,8 @@ Item {
                     anchors.verticalCenter: input.verticalCenter
                     text: tr.t("settings.browse")
                     bordered: true
-                    foreground: Color.menu.text
-                    accent: Color.menu.selectedText
+                    foreground: Commons.Color.menu.text
+                    accent: Commons.Color.menu.selectedText
                     fontFamily: Style.font.menuFamily
                     onClicked: root.browseFolder()
                   }
@@ -890,7 +892,7 @@ Item {
                   textFormat: Text.PlainText
                   text: entry.line.text
                   wrapMode: Text.Wrap
-                  color: entry.line.problem ? Color.menu.selectedText : Color.menu.text
+                  color: entry.line.problem ? Commons.Color.menu.selectedText : Commons.Color.menu.text
                   opacity: entry.line.problem || helpMouse.containsMouse ? 1 : root.secondaryOpacity
                   font.family: Style.font.menuFamily
                   font.pixelSize: Style.font.bodySmall
@@ -921,7 +923,7 @@ Item {
               wrapMode: Text.Wrap
               textFormat: Text.PlainText
               text: root.settingsStatus
-              color: Color.menu.text
+              color: Commons.Color.menu.text
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
             }
@@ -930,7 +932,7 @@ Item {
               horizontalAlignment: Text.AlignHCenter
               textFormat: Text.PlainText
               text: SettingsForm.footer(root.settingsFocus, root.settingsChanged, root.settingsSetup, tr)
-              color: Color.menu.text
+              color: Commons.Color.menu.text
               opacity: root.hintOpacity
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.bodySmall
