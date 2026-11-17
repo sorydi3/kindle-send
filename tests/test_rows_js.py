@@ -66,13 +66,12 @@ def test_a_plan_without_setup_needed_lists_books():
 LABELS = json.dumps({"email": "Email", "usb": "USB"})
 
 
-def test_plan_info_gives_the_book_folders_and_route_labels():
-    parsed = rows("fromPlan([{bookFolders: ['~/Library'], routeLabels: {email: 'Email', usb: 'USB'}},"
-                  f" {book(path='/b/Dune.epub')}])")
+def test_plan_info_gives_the_book_folders():
+    parsed = rows(f"fromPlan([{{bookFolders: ['~/Library']}}, {book(path='/b/Dune.epub')}])")
 
     assert parsed["bookFolders"] == ["~/Library"]
-    assert parsed["routeLabels"] == {"email": "Email", "usb": "USB"}
     assert [b["path"] for b in parsed["books"]] == ["/b/Dune.epub"]
+    assert "routeLabels" not in parsed
 
 
 def test_without_plan_info_the_empty_state_names_no_folders():
@@ -80,8 +79,18 @@ def test_without_plan_info_the_empty_state_names_no_folders():
     assert rows("emptyMessage([])") == "No Books found in your Book folders"
 
 
-def test_route_labels_come_from_plan():
-    assert rows(f"routeLabel('usb', {LABELS})") == "USB"
+def test_the_plugin_names_the_routes_itself():
+    """plan sends Route ids only (spec §17, Translations)."""
+    assert rows("[routeLabel('email'), routeLabel('usb')]") == ["Email", "USB"]
+    assert rows("[Routes.label('email'), Routes.label('usb')]") == ["Email", "USB"]
+
+
+def test_route_labels_can_be_given_so_the_picker_can_translate_them():
+    assert rows("routeLabel('usb', {email: 'Correo', usb: 'USB-Kabel'})") == "USB-Kabel"
+
+
+def test_details_name_routes_without_labels_given():
+    assert rows(f"details({book(usbOk=False)}, 'usb', {NOW})") == "EPUB · 1.2 MB · USB can't take this Book"
 
 
 def test_a_route_the_book_cant_take_is_named_in_details():

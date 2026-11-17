@@ -11,6 +11,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "Rows.js" as Rows
+import "Routes.js" as Routes
 import "Pending.js" as Pending
 import "Settings.js" as SettingsForm
 import "Program.js" as Program
@@ -39,9 +40,10 @@ Item {
   property var routes: ({})
   property string filterText: ""
   property int selectedIndex: 0
-  // From `kindle-send plan`: the Book folders it scans and the Route labels.
+  // From `kindle-send plan`: the Book folders it scans.
   property var bookFolders: []
-  property var routeLabels: ({})
+  // The Route labels by Route id; `plan` sends only the ids.
+  readonly property var routeLabels: Routes.LABELS
   // Files from a Nautilus summon ({"files": [...]}); empty means the Book folders.
   property var payloadFiles: []
   readonly property bool payloadMode: payloadFiles.length > 0
@@ -143,7 +145,6 @@ Item {
     root.setupMissing = parsed.missing
     root.books = parsed.books
     root.bookFolders = parsed.bookFolders
-    root.routeLabels = parsed.routeLabels
     if (root.payloadMode) root.marked = Rows.allMarked(parsed.books)
     if (exitCode !== 0 && parsed.books.length === 0 && !parsed.setupNeeded)
       root.failure = "failed"

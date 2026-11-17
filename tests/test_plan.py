@@ -48,6 +48,8 @@ def test_folders_lists_a_book_in_books_with_its_details(ks, home, set_up, capsys
         "mtime": 1_700_000_000,
         "route": "email",
         "routeReason": "",
+        "routeReasonCode": "",
+        "routeReasonValues": {},
         "emailOk": True,
         "usbOk": True,
         "lastSent": None,
@@ -127,27 +129,30 @@ def plan_one(ks, capsys, book):
 
 
 def route_of(line):
-    return {k: line[k] for k in ("route", "routeReason", "emailOk", "usbOk")}
+    return {k: line[k] for k in ("route", "routeReason", "routeReasonCode", "routeReasonValues", "emailOk", "usbOk")}
 
 
 def test_a_format_email_cannot_take_goes_by_usb(ks, home, set_up, capsys):
     line = plan_one(ks, capsys, make_book(home / "Books" / "Dune.azw3"))
 
     assert route_of(line) == {"route": "usb", "routeReason": "AZW3 can't be sent by email.",
+                              "routeReasonCode": "route_format_not_emailable",
+                              "routeReasonValues": {"format": "AZW3"},
                               "emailOk": False, "usbOk": True}
 
 
 def test_a_format_usb_refuses_goes_by_email(ks, home, set_up, capsys):
     line = plan_one(ks, capsys, make_book(home / "Books" / "Essay.docx"))
 
-    assert route_of(line) == {"route": "email", "routeReason": "",
-                              "emailOk": True, "usbOk": False}
+    assert route_of(line) == {"route": "email", "routeReason": "", "routeReasonCode": "",
+                              "routeReasonValues": {}, "emailOk": True, "usbOk": False}
 
 
 def test_email_wins_when_both_routes_work(ks, home, set_up, capsys):
     line = plan_one(ks, capsys, make_book(home / "Books" / "Paper.pdf"))
 
-    assert route_of(line) == {"route": "email", "routeReason": "", "emailOk": True, "usbOk": True}
+    assert route_of(line) == {"route": "email", "routeReason": "", "routeReasonCode": "",
+                              "routeReasonValues": {}, "emailOk": True, "usbOk": True}
 
 
 @pytest.mark.parametrize("size, route", [(26_143_825, "email"), (26_143_826, "usb")])
@@ -162,6 +167,8 @@ def test_a_book_over_the_email_limit_says_why_it_goes_by_usb(ks, home, set_up, c
     line = plan_one(ks, capsys, sparse_book(home / "Books" / "Big.pdf", 40_000_000))
 
     assert route_of(line) == {"route": "usb", "routeReason": "Too big for email (40 MB).",
+                              "routeReasonCode": "route_too_big_for_email",
+                              "routeReasonValues": {"mb": 40},
                               "emailOk": False, "usbOk": True}
 
 
@@ -181,6 +188,8 @@ def test_a_big_book_neither_route_takes_goes_to_usb_and_is_marked_unusable(ks, h
     line = plan_one(ks, capsys, sparse_book(home / "Books" / "Huge.docx", 40_000_000))
 
     assert route_of(line) == {"route": "usb", "routeReason": "Too big for email (40 MB).",
+                              "routeReasonCode": "route_too_big_for_email",
+                              "routeReasonValues": {"mb": 40},
                               "emailOk": False, "usbOk": False}
 
 
@@ -271,12 +280,12 @@ def test_files_with_spaces_and_non_ascii_names_are_planned(ks, home, set_up, cap
     assert [(line["path"], line["name"]) for line in lines] == [(str(book), "L'Étranger — Camus.epub")]
 
 
-PICKER_INFO = {"bookFolders": ["~/Books", "~/Downloads"], "routeLabels": {"email": "Email", "usb": "USB"}}
+PICKER_INFO = {"bookFolders": ["~/Books", "~/Downloads"]}
 
 
-def test_plan_tells_the_picker_the_book_folders_and_route_labels_before_the_books(ks, home, set_up, capsys):
-    """The Picker names the folders in its empty state and labels Routes from
-    this line, so the defaults live only in kindle-send."""
+def test_plan_tells_the_picker_the_book_folders_before_the_books(ks, home, set_up, capsys):
+    """The Picker names the folders in its empty state from this line, so the
+    defaults live only in kindle-send. Routes go by id; the Picker names them."""
     make_book(home / "Books" / "Dune.epub")
 
     _, lines = raw(ks, capsys, "plan", "--folders")

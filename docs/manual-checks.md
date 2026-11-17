@@ -13,7 +13,7 @@ Before you start:
 
 ## 1. Fresh install (§15.1)
 
-Install the plugin (`omarchy plugin add … --enable`, or the plugin folder linked to the checkout), then run the extras script `~/.config/omarchy/plugins/sorydi3.kindle-send/scripts/install.sh` in a terminal (section 25 has the details).
+Install the plugin (`omarchy plugin add … --enable`, or the plugin folder linked to the checkout), then run the extras script `~/.config/omarchy/plugins/sorydi3.kindle-send/scripts/install.sh` in a terminal (section 26 has the details).
 
 - [ ] The dependency check prints `python3, secret-tool: found`. If Calibre is missing, it adds only the line `Optional: sudo pacman -S calibre to send EPUB over USB`. It never asks for a sudo password.
 - [ ] It asks to link `~/.local/bin/kindle-send`, then about the Nautilus item (and the Strata action, with Strata). Answer `y` to each.
@@ -262,9 +262,17 @@ They run `bin/kindle-send` from the plugin folder, never a `kindle-send` on PATH
 
 - [ ] With `~/.local/bin/kindle-send` moved aside (so none is on PATH), restart the shell and press `SUPER + SHIFT + K`: the Picker lists Books, `Ctrl+,` shows Settings, and a Send by email and by USB both go through. Put it back afterwards.
 - [ ] With the plugin folder a symlink to the repo checkout, `Ctrl+T` in Settings sends "Kindle Send Test" (the test EPUB is found beside the bundled program).
-- [ ] (Retired by #66: the extras script no longer copies the plugin; the link in `~/.local/bin` points at the bundled `bin/kindle-send`, section 25.)
+- [ ] (Retired by #66: the extras script no longer copies the plugin; the link in `~/.local/bin` points at the bundled `bin/kindle-send`, section 26.)
 
-## 25. Extras script, --remove and --purge (#66, spec §14)
+## 25. Message codes and Route ids (#64)
+
+The Picker still shows the English text; only where Route labels come from changed.
+
+- [ ] The Picker shows "Email" and "USB" on each row, in the footer ("USB can't take 1") and in the details ("switched to USB") as before.
+- [ ] `kindle-send plan --folders` prints no `routeLabels`; each Book has `routeReasonCode` and `routeReasonValues`.
+- [ ] `kindle-send history` and `kindle-send setup` read exactly as before (English, no codes).
+
+## 26. Extras script, --remove and --purge (#66, spec §14)
 
 Run it from the plugin folder (`~/.config/omarchy/plugins/sorydi3.kindle-send/scripts/install.sh`). Try it first in a temp `HOME` (`HOME=$(mktemp -d) XDG_CONFIG_HOME= XDG_STATE_HOME= XDG_DATA_HOME= …`) before your own; back up `~/.config/hypr/bindings.lua` and `~/.config/omarchy/extensions/omarchy-menu.jsonc` first.
 
