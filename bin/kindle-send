@@ -50,24 +50,104 @@ def emit(obj):
     print(json.dumps(obj), flush=True)
 
 
+def config_home():
+    return Path(os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config"))
+
+
+def settings_path():
+    """Where Settings live (spec §9, ADR 0002). kindle-send is its only writer."""
+    return config_home() / "kindle-send" / "settings.json"
+
+
 def shell_json_path():
+    """omarchy-shell's own file, where Settings were kept before they had their own file.
+    Only ever read, for the one-time copy."""
     override = os.environ.get("KINDLE_SEND_SHELL_JSON")
     if override:
         return Path(override)
-    config = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(config) / "omarchy" / "shell.json"
+    return config_home() / "omarchy" / "shell.json"
 
 
-def load_settings():
-    """The plugin's entry from shell.json, or {} if there is none."""
+SETTING_KEYS = ("kindleAddress", "senderAddress", "bookFolders", "minEmailGapSeconds", "maxEmailsPerHour")
+
+
+def old_shell_json_settings():
+    """The Settings in the plugin's old shell.json entry, or {} if there are none."""
     try:
         data = json.loads(shell_json_path().read_text())
     except (OSError, ValueError):
         return {}
     for entry in data.get("plugins", []) if isinstance(data, dict) else []:
         if isinstance(entry, dict) and entry.get("id") == PLUGIN_ID:
-            return entry
+            return {key: entry[key] for key in SETTING_KEYS if key in entry}
     return {}
+
+
+class SettingsInvalid(Exception):
+    """The Settings file exists but isn't a JSON object, so nothing overwrites it."""
+
+    def __init__(self, path):
+        super().__init__(f"{path} isn't valid JSON")
+        self.path = path
+
+    def line(self):
+        """What `plan` and `settings` print instead of their answer."""
+        message = said("settings_file_invalid", path=str(self.path))
+        return {"failed": True, "code": message["code"], "values": message["values"], "reason": message["text"]}
+
+
+def read_settings_file():
+    """The Settings file's contents; None if there is no file. SettingsInvalid if unreadable."""
+    path = settings_path()
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        raise SettingsInvalid(path) from None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        raise SettingsInvalid(path)
+    return data
+
+
+def write_settings_file(settings):
+    """Write the whole Settings file atomically (temp file, then rename), mode 600."""
+    path = settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w") as out:
+            out.write(json.dumps(settings, indent=2) + "\n")
+            out.flush()
+            os.fsync(out.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
+
+
+def load_settings():
+    """The Settings, or {} if there are none.
+
+    With no Settings file yet, Settings found in the plugin's old shell.json entry
+    are copied into one, once; after that shell.json is never read again.
+    SettingsInvalid if the file is there but unreadable: it is never taken for
+    missing Settings, so nothing asks for setup or writes over it."""
+    settings = read_settings_file()
+    if settings is not None:
+        return settings
+    old = old_shell_json_settings()
+    if old:
+        with contextlib.suppress(OSError):
+            write_settings_file(old)
+    return old
 
 
 def lookup_password(sender):
@@ -95,17 +175,72 @@ def build_message(book, sender, kindle):
     return msg
 
 
+# Every sentence the shell shows, by its stable code (spec §17, Translations). The
+# shell gets the code, its values and this English text, and may show its own text
+# for the code instead. Terminal output, the wizard and the Send history stay English.
+MESSAGES = {
+    # Send failures (spec §13)
+    "too_big_for_email": lambda v: f"Too big for email ({v['mb']} MB). Switch it to USB.",
+    "format_not_emailable": lambda v: f"{v['format']} can't be sent by email. Switch it to USB.",
+    "format_not_for_usb": lambda v: f"{v['format']} can't be read over USB. Send it by email.",
+    "file_not_found": lambda v: f"File not found: {v['name']}.",
+    "not_set_up": lambda v: f"Not set up: {', '.join(v['fields'])} missing.",
+    "no_app_password": lambda v: "No app password stored.",
+    "password_rejected": lambda v: "Gmail rejected the app password.",
+    "gmail_unreachable": lambda v: f"Couldn't reach Gmail: {v['detail']}.",
+    "kindle_not_plugged_in": lambda v: "Kindle not plugged in. Plug it in and send again.",
+    "kindle_full": lambda v: f"Not enough space on the Kindle (needs {v['mb']} MB).",
+    "copy_failed": lambda v: f"Couldn't copy to the Kindle: {v['detail']}.",
+    "calibre_missing": lambda v: "Install calibre to send EPUB over USB (sudo pacman -S calibre).",
+    "conversion_failed": lambda v: f"Couldn't convert: {v['detail']}.",
+    "test_book_missing": lambda v: "Couldn't find the test Book. Reinstall Books to Kindle.",
+    # Why `plan` chose USB (spec §5, Route rules)
+    "route_format_not_emailable": lambda v: f"{v['format']} can't be sent by email.",
+    "route_too_big_for_email": lambda v: f"Too big for email ({v['mb']} MB).",
+    # Eject (spec §7); detail is udisksctl's own first error line
+    "eject_no_kindle": lambda v: "Kindle not plugged in.",
+    "eject_failed": lambda v: v["detail"],
+    "eject_step_failed": lambda v: f"{v['step']} failed.",
+    # Settings form problems (spec §3, §9)
+    "value_needed": lambda v: "Needed before Books can be sent.",
+    "not_an_email_address": lambda v: "That isn't an email address.",
+    "kindle_address_unusual": lambda v: "Kindle addresses usually end in @kindle.com.",
+    "sender_not_gmail": lambda v: "Make sure this is a Google account.",
+    "book_folder_missing": lambda v: f"{v['folder']} doesn't exist, so the Picker skips it.",
+    "book_folders_missing": lambda v: f"{and_list(v['folders'])} don't exist, so the Picker skips them.",
+    "app_password_rejected": lambda v: "Gmail rejected this app password.",
+    "password_check_unreachable": lambda v: "Couldn't reach Gmail to check the password. Saved anyway.",
+    "secret_tool_missing": lambda v: "secret-tool is missing. Install libsecret, then save again.",
+    "password_not_stored": lambda v: "Couldn't store the app password in the keyring.",
+    "form_unreadable": lambda v: "The Settings form sent something unreadable.",
+    "settings_file_invalid": lambda v: f"{v['path']} isn't valid JSON, so it wasn't changed.",
+    "settings_file_unwritable": lambda v: f"Couldn't write {v['path']}: {v['detail']}.",
+}
+
+
+def and_list(items):
+    """"a, b and c"."""
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def said(code, **values):
+    """A shell-facing sentence: {"code", "values", "text"}."""
+    return {"code": code, "values": values, "text": MESSAGES[code](values)}
+
+
 class SendFailed(Exception):
     """A per-Book failure, reported as a result line rather than a crash."""
 
-    def __init__(self, reason, field=""):
+    def __init__(self, code, field="", **values):
         """field: the Setting that fixes it (kindleAddress, senderAddress, appPassword), if any."""
-        super().__init__(reason)
-        self.reason = reason
+        self.message = said(code, **values)
+        super().__init__(self.message["text"])
+        self.reason = self.message["text"]
         self.field = field
 
     def result(self):
-        line = {"result": "failed", "reason": self.reason}
+        line = {"result": "failed", "code": self.message["code"], "values": self.message["values"],
+                "reason": self.reason}
         if self.field:
             line["fixBySetup"] = True
             line["field"] = self.field
@@ -117,7 +252,7 @@ class NoKindle(SendFailed):
     isn't written to the Send history until it really goes."""
 
     def __init__(self):
-        super().__init__("Kindle not plugged in. Plug it in and send again.")
+        super().__init__("kindle_not_plugged_in")
 
 
 EMAIL_SETTINGS = ("kindleAddress", "senderAddress")
@@ -194,28 +329,31 @@ def record_send(book, route, result):
 
 def sendable(book, formats, refusal):
     """The Book's format, after checking the Route takes it and the file exists.
-    `refusal` names the format as {FMT} when the Route can't take it."""
+    `refusal`: the message code for a format the Route can't take."""
     fmt = book_format(book)
     if fmt not in formats:
-        raise SendFailed(refusal.format(FMT=fmt.upper()))
+        raise SendFailed(refusal, format=fmt.upper())
     if not book.is_file():
-        raise SendFailed(f"File not found: {book.name}.")
+        raise SendFailed("file_not_found", name=book.name)
     return fmt
 
 
 def send_email(book):
-    sendable(book, EMAIL_MIME, "{FMT} can't be sent by email. Switch it to USB.")
-    settings = load_settings()
+    sendable(book, EMAIL_MIME, "format_not_emailable")
+    try:
+        settings = load_settings()
+    except SettingsInvalid as invalid:
+        raise SendFailed("settings_file_invalid", path=str(invalid.path)) from None
     missing = missing_settings(settings)
     if missing:
-        raise SendFailed(f"Not set up: {', '.join(missing)} missing.", field=missing[0])
+        raise SendFailed("not_set_up", field=missing[0], fields=missing)
     sender, kindle = settings["senderAddress"], settings["kindleAddress"]
     password = lookup_password(sender)
     if not password:
-        raise SendFailed("No app password stored.", field="appPassword")
+        raise SendFailed("no_app_password", field="appPassword")
     emit({"stage": "sending"})
     msg = build_message(book, sender, kindle)
-    too_big = SendFailed(f"Too big for email ({megabytes(book.stat().st_size)} MB). Switch it to USB.")
+    too_big = SendFailed("too_big_for_email", mb=megabytes(book.stat().st_size))
     try:
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
             server.ehlo()
@@ -227,7 +365,7 @@ def send_email(book):
                     raise too_big
             server.send_message(msg)
     except smtplib.SMTPAuthenticationError:
-        raise SendFailed("Gmail rejected the app password.", field="appPassword") from None
+        raise SendFailed("password_rejected", field="appPassword") from None
     except smtplib.SMTPResponseException as error:
         if error.smtp_code == 552:
             raise too_big from None
@@ -258,7 +396,7 @@ def advertised_size(server):
 
 def unreachable(error, password):
     # Never let the password leak into a reason, whatever the server echoes.
-    return SendFailed(f"Couldn't reach Gmail: {error_text(error).replace(password, '***')}.")
+    return SendFailed("gmail_unreachable", detail=error_text(error).replace(password, "***"))
 
 
 def error_text(error):
@@ -276,7 +414,7 @@ USB_FORMATS = {"epub", "pdf", "txt", "azw3", "azw", "mobi", "prc", "kfx"}
 
 
 DEFAULT_BOOK_FOLDERS = ["~/Books", "~/Downloads"]
-ROUTE_LABELS = {"email": "Email", "usb": "USB"}
+ROUTE_LABELS = {"email": "Email", "usb": "USB"}  # for `kindle-send history`; the Picker names Routes itself
 
 
 def book_folder_setting(settings):
@@ -338,12 +476,19 @@ def choose_route(fmt, size, limit):
     """Route rules 1 and 2: Email if the format and size allow it, otherwise USB."""
     usb_ok = fmt in USB_FORMATS
     if fmt not in EMAIL_MIME:
-        return {"route": "usb", "routeReason": f"{fmt.upper()} can't be sent by email.",
+        return {"route": "usb", **route_reason("route_format_not_emailable", format=fmt.upper()),
                 "emailOk": False, "usbOk": usb_ok}
     if size > limit:
-        return {"route": "usb", "routeReason": f"Too big for email ({megabytes(size)} MB).",
+        return {"route": "usb", **route_reason("route_too_big_for_email", mb=megabytes(size)),
                 "emailOk": False, "usbOk": usb_ok}
-    return {"route": "email", "routeReason": "", "emailOk": True, "usbOk": usb_ok}
+    return {"route": "email", "routeReason": "", "routeReasonCode": "", "routeReasonValues": {},
+            "emailOk": True, "usbOk": usb_ok}
+
+
+def route_reason(code, **values):
+    """Why `plan` chose USB, as routeReason (English), routeReasonCode and routeReasonValues."""
+    message = said(code, **values)
+    return {"routeReason": message["text"], "routeReasonCode": code, "routeReasonValues": message["values"]}
 
 
 def last_sent(history):
@@ -368,8 +513,13 @@ def classify(book, limit, sent):
 
 
 def plan(folders_wanted, files):
-    """Classify Books for the Picker (spec §3), newest first."""
-    settings = load_settings()
+    """Classify Books for the Picker (spec §3), newest first. An unreadable
+    Settings file is the one line printed: without its Book folders there is no list."""
+    try:
+        settings = load_settings()
+    except SettingsInvalid as invalid:
+        emit(invalid.line())
+        return
     missing = missing_settings(settings)
     # Without a stored app password nothing can be emailed either (spec §9).
     # Only its absence is reported, never the password itself.
@@ -378,7 +528,8 @@ def plan(folders_wanted, files):
     if missing:
         emit({"setupNeeded": True, "missing": missing})
     # What the Picker shows besides Books, so these defaults live only here.
-    emit({"bookFolders": book_folder_setting(settings), "routeLabels": ROUTE_LABELS})
+    # Routes go by id ("email", "usb"); the Picker names them itself.
+    emit({"bookFolders": book_folder_setting(settings)})
     books = scan_folders(book_folders(settings)) if folders_wanted else []
     books += [Path(f) for f in files if Path(f).is_file() and supported(Path(f))]
     unique = {}
@@ -469,21 +620,28 @@ def copy_to_kindle(source, mount):
     except OSError as error:
         with contextlib.suppress(OSError):
             part.unlink()
-        raise SendFailed(f"Couldn't copy to the Kindle: {error.strerror or error}.") from None
+        raise SendFailed("copy_failed", detail=str(error.strerror or error)) from None
 
 
 def eject():
     """Unmount the Kindle and power it off (spec §7)."""
     kindle = find_kindle()
     if kindle is None:
-        return {"ejected": False, "reason": "Kindle not plugged in."}
+        return not_ejected("eject_no_kindle")
     for argv in (["udisksctl", "unmount", "-b", kindle["partition"]],
                  ["udisksctl", "power-off", "-b", kindle["device"]]):
         code, out, err = run_tool(argv)
         if code != 0:
             lines = [l.strip() for l in (err or out).splitlines() if l.strip()]
-            return {"ejected": False, "reason": lines[0] if lines else f"{argv[1]} failed."}
+            if lines:
+                return not_ejected("eject_failed", detail=lines[0])
+            return not_ejected("eject_step_failed", step=argv[1])
     return {"ejected": True}
+
+
+def not_ejected(code, **values):
+    message = said(code, **values)
+    return {"ejected": False, "code": code, "values": message["values"], "reason": message["text"]}
 
 
 EBOOK_CONVERT = "ebook-convert"
@@ -498,18 +656,18 @@ def convert_for_usb(book, workdir):
         out = subprocess.run([EBOOK_CONVERT, str(book), str(target)],
                              capture_output=True, text=True, timeout=CONVERSION_TIMEOUT)
     except FileNotFoundError:
-        raise SendFailed("Install calibre to send EPUB over USB (sudo pacman -S calibre).") from None
+        raise SendFailed("calibre_missing") from None
     except (OSError, subprocess.SubprocessError) as error:
-        raise SendFailed(f"Couldn't convert: {error}.") from None
+        raise SendFailed("conversion_failed", detail=str(error).rstrip(".")) from None
     if out.returncode != 0 or not target.is_file():
         first = next((l.strip() for l in out.stderr.splitlines() if l.strip()),
                      f"ebook-convert exited with {out.returncode}")
-        raise SendFailed(f"Couldn't convert: {first.rstrip('.')}.")
+        raise SendFailed("conversion_failed", detail=first.rstrip("."))
     return target
 
 
 def send_usb(book):
-    fmt = sendable(book, USB_FORMATS, "{FMT} can't be read over USB. Send it by email.")
+    fmt = sendable(book, USB_FORMATS, "format_not_for_usb")
     kindle = find_kindle()
     if kindle is None:
         raise NoKindle()
@@ -517,7 +675,7 @@ def send_usb(book):
         source = convert_for_usb(book, Path(workdir)) if fmt == "epub" else book
         size = source.stat().st_size
         if size > free_space(kindle["mount"]):
-            raise SendFailed(f"Not enough space on the Kindle (needs {megabytes(size)} MB).")
+            raise SendFailed("kindle_full", mb=megabytes(size))
         emit({"stage": "copying"})
         copy_to_kindle(source, kindle["mount"])
     return {"result": "copied"}
@@ -599,47 +757,27 @@ def password_step(sender):
     store_password(sender)
 
 
-class ShellJsonInvalid(SetupCancelled):
-    """shell.json exists but isn't a JSON object, so nothing writes to it."""
-
-    def __init__(self, path):
-        super().__init__(f"{path} isn't valid JSON")
-        self.path = path
-
-
 def save_settings(updates):
-    """Merge `updates` into the plugin's entry in shell.json, keeping everything else."""
-    path = shell_json_path()
-    try:
-        text = path.read_text()
-    except FileNotFoundError:
-        text = ""
-    try:
-        data = json.loads(text) if text.strip() else {}
-    except ValueError:
-        data = None
-    if not isinstance(data, dict):
-        raise ShellJsonInvalid(path)
-    plugins = data.setdefault("plugins", [])
-    entry = next((p for p in plugins if isinstance(p, dict) and p.get("id") == PLUGIN_ID), None)
-    if entry is None:
-        entry = {"id": PLUGIN_ID}
-        plugins.append(entry)
-    for key, value in DEFAULT_LIMITS.items():
-        entry.setdefault(key, value)
-    entry.update(updates)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".kindle-send.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as out:
-        out.write(json.dumps(data, indent=2) + "\n")
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    """Merge `updates` into the Settings file, keeping every other key (the Send limit
+    numbers among them). SettingsInvalid if the file can't be read as JSON."""
+    current = read_settings_file()
+    if current is None:
+        current = load_settings()  # the one-time copy from shell.json, if any
+    settings = {**DEFAULT_LIMITS, **current, **updates}
+    write_settings_file(settings)
+
+
+def invalid_settings_stop(invalid):
+    print(f"{invalid.path} isn't valid JSON, so setup won't touch it. Fix it and run setup again.")
+    raise SetupCancelled from None
 
 
 def wizard():
-    current = load_settings()
-    print("Send to Kindle setup. Press Enter to keep the value in [brackets].\n")
+    try:
+        current = load_settings()
+    except SettingsInvalid as invalid:
+        invalid_settings_stop(invalid)
+    print("Books to Kindle setup. Press Enter to keep the value in [brackets].\n")
 
     print("1. Your Kindle's email address (…@kindle.com). Find it at")
     print(f"   amazon.com → Manage Your Content and Devices → Devices: {AMAZON_DEVICES_HELP}")
@@ -665,10 +803,12 @@ def wizard():
 
     try:
         save_settings({"kindleAddress": kindle, "senderAddress": sender, "bookFolders": folders})
-    except ShellJsonInvalid as invalid:
-        print(f"{invalid.path} isn't valid JSON, so setup won't touch it. Fix it and run setup again.")
-        raise
-    print(f"Settings saved to {shell_json_path()}.")
+    except SettingsInvalid as invalid:
+        invalid_settings_stop(invalid)
+    except OSError as error:
+        print(f"Couldn't write {settings_path()}: {error.strerror or error}.")
+        raise SetupCancelled from None
+    print(f"Settings saved to {settings_path()}.")
 
     if create_books_folder():
         print(f"Created {Path(os.path.expanduser(DEFAULT_BOOK_FOLDERS[0]))}.")
@@ -698,7 +838,7 @@ def send_test_book():
         try:
             shutil.copyfile(test_epub_path(), book)
         except OSError:
-            return SendFailed("Couldn't find the test Book. Reinstall kindle-send.").result()
+            return SendFailed("test_book_missing").result()
         try:
             result = send_email(book)
         except SendFailed as failure:
@@ -718,7 +858,7 @@ def run_test_send(kindle):
         return
     print("Gmail accepted it. Amazon never confirms delivery, so check your Kindle.")
     if ask_yes_no(f"Did '{TEST_BOOK_TITLE}' appear on your Kindle within a few minutes?", True):
-        print("Send to Kindle is ready.")
+        print("Books to Kindle is ready.")
         return
     print("The usual causes:")
     print("  - The Gmail address isn't on Amazon's Approved Personal Document Email List")
@@ -772,8 +912,12 @@ def now():
 
 
 def limit_settings():
-    """(minEmailGapSeconds, maxEmailsPerHour) from settings; defaults for absent or unusable values."""
-    settings = load_settings()
+    """(minEmailGapSeconds, maxEmailsPerHour) from settings; defaults for absent or unusable
+    values, an unreadable Settings file among them (the Send itself says so)."""
+    try:
+        settings = load_settings()
+    except SettingsInvalid:
+        settings = {}
 
     def number(name, lowest):
         value = settings.get(name)
@@ -840,8 +984,13 @@ def setup_missing(settings):
 
 def form_settings():
     """`kindle-send settings`: the values the Settings form shows (spec §3), and what's
-    still missing, which titles the form and flags its fields. Never the password."""
-    current = load_settings()
+    still missing, which titles the form and flags its fields. Never the password.
+    An unreadable Settings file is reported instead, never taken for missing values."""
+    try:
+        current = load_settings()
+    except SettingsInvalid as invalid:
+        emit(invalid.line())
+        return 0
     missing = setup_missing(current)
     emit({"kindleAddress": str(current.get("kindleAddress") or "").strip(),
           "senderAddress": sender_address(current),
@@ -877,13 +1026,16 @@ def is_email_address(text):
 FORM_FIELDS = ("kindleAddress", "senderAddress", "appPassword", "bookFolders")
 
 
-def problem(field, message, blocking):
-    return {"field": field, "message": message, "blocking": blocking}
+def problem(field, code, blocking, **values):
+    """A Settings-form problem: its field, message code, values and English message."""
+    message = said(code, **values)
+    return {"field": field, "code": code, "values": message["values"], "message": message["text"],
+            "blocking": blocking}
 
 
 def needed(field):
     """A missing value: it blocks saving, and the form counts these ("N still needed …")."""
-    return {**problem(field, "Needed before Books can be sent.", True), "needed": True}
+    return {**problem(field, "value_needed", True), "needed": True}
 
 
 def blocking_problems(values, has_password):
@@ -894,7 +1046,7 @@ def blocking_problems(values, has_password):
         if not values[field]:
             problems.append(needed(field))
         elif not is_email_address(values[field]):
-            problems.append(problem(field, "That isn't an email address.", True))
+            problems.append(problem(field, "not_an_email_address", True))
     if not has_password:
         problems.append(needed("appPassword"))
     return problems
@@ -904,15 +1056,14 @@ def value_warnings(values):
     """Unusual but valid values: they save, and the form says why they might be wrong."""
     found = []
     if not values["kindleAddress"].lower().endswith("@kindle.com"):
-        found.append(problem("kindleAddress", "Kindle addresses usually end in @kindle.com.", False))
+        found.append(problem("kindleAddress", "kindle_address_unusual", False))
     if not values["senderAddress"].lower().endswith("@gmail.com"):
-        found.append(problem("senderAddress", "Make sure this is a Google account.", False))
+        found.append(problem("senderAddress", "sender_not_gmail", False))
     absent = [f for f in values["bookFolders"] if not Path(os.path.expanduser(f)).is_dir()]
     if len(absent) == 1:
-        found.append(problem("bookFolders", f"{absent[0]} doesn't exist, so the Picker skips it.", False))
+        found.append(problem("bookFolders", "book_folder_missing", False, folder=absent[0]))
     elif absent:
-        names = ", ".join(absent[:-1]) + " and " + absent[-1]
-        found.append(problem("bookFolders", f"{names} don't exist, so the Picker skips them.", False))
+        found.append(problem("bookFolders", "book_folders_missing", False, folders=absent))
     return found
 
 
@@ -943,9 +1094,9 @@ def store_typed_password(sender, password):
                         "service", "kindle-send", "user", sender],
                        input=password, text=True, capture_output=True)
     except OSError:
-        return problem("appPassword", "secret-tool is missing. Install libsecret, then save again.", True)
+        return problem("appPassword", "secret_tool_missing", True)
     if lookup_password(sender) != password:
-        return problem("appPassword", "Couldn't store the app password in the keyring.", True)
+        return problem("appPassword", "password_not_stored", True)
     return None
 
 
@@ -963,15 +1114,15 @@ def create_books_folder():
 
 
 def save_form():
-    """`kindle-send save`: check the form's values and write them to shell.json (spec §3, §9).
-    Reads one JSON line on stdin. Prints {"saved": bool, "firstSave"?: true, "problems": [{"field", "message", "blocking"}]};
+    """`kindle-send save`: check the form's values and write them to the Settings file (spec §3, §9).
+    Reads one JSON line on stdin. Prints {"saved": bool, "firstSave"?: true, "problems": [{"field", "code", "values", "message", "blocking"}]};
     field "" is about the whole form."""
     try:
         raw = json.loads(sys.stdin.readline())  # one line, so the Picker needs no EOF
     except ValueError:
         raw = None
     if not isinstance(raw, dict):
-        emit({"saved": False, "problems": [problem("", "The Settings form sent something unreadable.", True)]})
+        emit({"saved": False, "problems": [problem("", "form_unreadable", True)]})
         return 0
     values = form_values(raw)
     sender = values["senderAddress"]
@@ -981,7 +1132,11 @@ def save_form():
         emit({"saved": False, "problems": blocking})
         return 0
     password_problems = []
-    before = load_settings()
+    try:
+        before = load_settings()
+    except SettingsInvalid as invalid:
+        emit({"saved": False, "problems": [problem("", "settings_file_invalid", True, path=str(invalid.path))]})
+        return 0
     # The save that completes setup is the first; it creates ~/Books, as the wizard does.
     first_save = bool(setup_missing(before))
     address_changed = sender != sender_address(before)
@@ -990,11 +1145,10 @@ def save_form():
     if password:
         outcome = check_password(sender, password)
         if outcome == "rejected":
-            emit({"saved": False, "problems": [problem("appPassword", "Gmail rejected this app password.", True)]})
+            emit({"saved": False, "problems": [problem("appPassword", "app_password_rejected", True)]})
             return 0
         if outcome == "unreachable":
-            password_problems.append(problem("appPassword", "Couldn't reach Gmail to check the password. Saved anyway.",
-                                   False))
+            password_problems.append(problem("appPassword", "password_check_unreachable", False))
     if typed:
         stored = store_typed_password(sender, typed)
         if stored:
@@ -1002,13 +1156,13 @@ def save_form():
             return 0
     try:
         save_settings(values)
-    except ShellJsonInvalid as invalid:
-        message = f"{invalid.path} isn't valid JSON, so it wasn't changed."
-        emit({"saved": False, "problems": [problem("", message, True)]})
+    except SettingsInvalid as invalid:
+        emit({"saved": False, "problems": [problem("", "settings_file_invalid", True, path=str(invalid.path))]})
         return 0
     except OSError as error:
-        message = f"Couldn't write {shell_json_path()}: {error.strerror or error}."
-        emit({"saved": False, "problems": [problem("", message, True)]})
+        unwritable = problem("", "settings_file_unwritable", True, path=str(settings_path()),
+                             detail=str(error.strerror or error))
+        emit({"saved": False, "problems": [unwritable]})
         return 0
     if first_save:
         create_books_folder()

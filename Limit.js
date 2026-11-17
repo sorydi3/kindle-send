@@ -6,6 +6,7 @@
 // USB Books, its eject and later Sends go on without them (spec §7, §11).
 .pragma library
 .import "Routes.js" as Routes
+.import "Catalog.js" as Catalog
 
 function capped(limit) {
   return limit.sentLastHour >= limit.maxEmailsPerHour
@@ -60,9 +61,9 @@ function parse(lines) {
 }
 
 // The hold notice (spec §10): critical, so it stays while Books are held.
-// count: emails held; canSendIn: seconds until the next may go.
-function holding(count, canSendIn) {
+// count: emails held; canSendIn: seconds until the next may go. tr: Catalog.js's translator.
+function holding(count, canSendIn, tr) {
   const minutes = Math.max(1, Math.ceil(canSendIn / 60))
-  return { headline: "Holding " + count + " Book" + (count === 1 ? "" : "s") + " to stay under Amazon's limit.",
-           body: "Next in " + minutes + " min.", urgency: "critical" }
+  return { headline: Catalog.count(tr, "limit.holding", count),
+           body: Catalog.count(tr, "limit.next", minutes), urgency: "critical" }
 }

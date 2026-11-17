@@ -1,4 +1,4 @@
-"""plugin/Limit.js, run under node (skipped without node): how the Service keeps to the Send limit.
+"""Limit.js, run under node (skipped without node): how the Service keeps to the Send limit.
 
 Emails the hourly cap holds back leave their Send and wait in the Service's
 held-email line, so USB Books and later Sends don't wait for them (spec §7, §11).
@@ -93,17 +93,26 @@ def test_the_held_line_over_the_cap_shows_the_notice():
 
 
 def test_the_hold_notice_stays_on_screen():
-    assert js("holding(3, 600)") == {"headline": "Holding 3 Books to stay under Amazon's limit.",
+    assert js("holding(3, 600, EN)") == {"headline": "Holding 3 Books to stay under Amazon's limit.",
                                      "body": "Next in 10 min.", "urgency": "critical"}
 
 
 def test_holding_one_book_rounds_the_minutes_up():
-    assert js("holding(1, 61)")["headline"] == "Holding 1 Book to stay under Amazon's limit."
-    assert js("holding(1, 61)")["body"] == "Next in 2 min."
+    assert js("holding(1, 61, EN)")["headline"] == "Holding 1 Book to stay under Amazon's limit."
+    assert js("holding(1, 61, EN)")["body"] == "Next in 2 min."
 
 
 def test_holding_says_at_least_one_minute():
-    assert js("holding(2, 5)")["body"] == "Next in 1 min."
+    assert js("holding(2, 5, EN)")["body"] == "Next in 1 min."
+
+
+def test_the_hold_notice_counts_with_plural_entries_and_formatted_numbers():
+    tr = ("LANG({'limit.holding': {one: 'Halte %1 Buch zurück.', other: 'Halte %1 Bücher zurück.'},"
+          " 'limit.next': {one: 'Nächstes in %1 Minute.', other: 'Nächstes in %1 Minuten.'}}, '\\u0660')")
+
+    assert js(f"holding(1, 30, {tr})") == {"headline": "Halte ١ Buch zurück.",
+                                           "body": "Nächstes in ١ Minute.", "urgency": "critical"}
+    assert js(f"holding(2, 600, {tr})")["body"] == "Nächstes in ١٠ Minuten."
 
 
 def test_parse_reads_the_limit_line():

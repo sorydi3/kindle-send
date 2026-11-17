@@ -1,4 +1,4 @@
-"""plugin/Feedback.js: what the Send notification says (spec §10). Run with node."""
+"""Feedback.js: what the Send notification says (spec §10). Run with node."""
 import json
 
 import pytest
@@ -12,19 +12,24 @@ def call(name, *args):
     return evaluate("Feedback.js", f"{name}(...{json.dumps(list(args))})")
 
 
+def say(name, *args, tr="EN"):
+    """A text function: its arguments, then the translator (EN, or a LANG(...) expression)."""
+    return evaluate("Feedback.js", f"{name}(...{json.dumps(list(args))}, {tr})")
+
+
 EJECTED = {"ejected": True}
 NOT_EJECTED = {"ejected": False, "reason": "target is busy"}
 
 
 def test_one_book_copied_and_ejected_says_safe_to_unplug():
-    s = call("summary", [{"name": "Atlas.pdf", "result": "copied"}], EJECTED)
+    s = say("summary", [{"name": "Atlas.pdf", "result": "copied"}], EJECTED)
 
     assert s == {"headline": "Atlas.pdf", "body": "Copied to Kindle. Kindle ejected, safe to unplug.",
                  "urgency": "normal", "fix": None, "timeout": 5000}
 
 
 def test_eject_failure_asks_the_user_to_eject_and_stays_on_screen():
-    s = call("summary", [{"name": "Atlas.pdf", "result": "copied"}], NOT_EJECTED)
+    s = say("summary", [{"name": "Atlas.pdf", "result": "copied"}], NOT_EJECTED)
 
     assert s["body"] == "Copied to Kindle. Please eject the Kindle."
     assert s["urgency"] == "critical"
@@ -33,7 +38,7 @@ def test_eject_failure_asks_the_user_to_eject_and_stays_on_screen():
 def test_mixed_send_lists_each_route_result():
     results = [{"name": "Dune.epub", "result": "sent"}, {"name": "Atlas.pdf", "result": "copied"}]
 
-    s = call("summary", results, EJECTED)
+    s = say("summary", results, EJECTED)
 
     assert s["headline"] == "Sent 2 Books"
     assert s["body"] == ("Dune.epub: Sent to Amazon.\nAtlas.pdf: Copied to Kindle.\n"
@@ -43,13 +48,13 @@ def test_mixed_send_lists_each_route_result():
 
 
 def test_email_only_send_has_no_eject_line():
-    s = call("summary", [{"name": "Dune.epub", "result": "sent"}], None)
+    s = say("summary", [{"name": "Dune.epub", "result": "sent"}], None)
 
     assert s["body"] == "Sent to Amazon. Should appear on your Kindle within a few minutes."
 
 
 def test_failed_usb_book_without_eject_names_the_reason():
-    s = call("summary", [{"name": "Atlas.pdf", "result": "failed",
+    s = say("summary", [{"name": "Atlas.pdf", "result": "failed",
                           "reason": "Kindle not plugged in. Plug it in and send again."}], None)
 
     assert s["headline"] == "Couldn't send Atlas.pdf"
@@ -60,19 +65,19 @@ def test_failed_usb_book_without_eject_names_the_reason():
 def test_copying_stage_updates_the_notification():
     books = [{"name": "Dune.epub"}, {"name": "Atlas.pdf"}]
 
-    assert call("stageAt", books, 1, "copying") == {"headline": "Copying to Kindle…",
+    assert say("stageAt", books, 1, "copying") == {"headline": "Copying to Kindle…",
                                                      "body": "2 of 2: Atlas.pdf"}
-    assert call("stageAt", books[1:], 0, "copying") == {"headline": "Copying to Kindle…",
+    assert say("stageAt", books[1:], 0, "copying") == {"headline": "Copying to Kindle…",
                                                          "body": "Atlas.pdf"}
-    assert call("stageAt", books, 0, "sending") is None
+    assert say("stageAt", books, 0, "sending") is None
 
 
 def test_converting_stage_names_the_book():
     books = [{"name": "Dune.epub"}, {"name": "Atlas.pdf"}]
 
-    assert call("stageAt", books, 0, "converting") == {"headline": "Converting Dune.epub…",
+    assert say("stageAt", books, 0, "converting") == {"headline": "Converting Dune.epub…",
                                                        "body": "1 of 2"}
-    assert call("stageAt", books[:1], 0, "converting") == {"headline": "Converting Dune.epub…",
+    assert say("stageAt", books[:1], 0, "converting") == {"headline": "Converting Dune.epub…",
                                                            "body": ""}
 
 
@@ -120,7 +125,7 @@ TOO_BIG = {"name": "Atlas.pdf", "result": "failed", "reason": "Too big for email
 def test_every_failed_book_is_listed_with_its_reason_and_stays_on_screen():
     results = [PASSWORD, {"name": "Emma.epub", "result": "sent"}, TOO_BIG]
 
-    s = call("summary", results, None)
+    s = say("summary", results, None)
 
     assert s["headline"] == "2 Books of 3 failed"
     assert s["body"].splitlines()[:3] == [
@@ -132,13 +137,13 @@ def test_every_failed_book_is_listed_with_its_reason_and_stays_on_screen():
 
 
 def test_a_failure_a_setting_fixes_names_that_field_and_its_reason():
-    assert call("summary", [PASSWORD], None)["fix"] == {
+    assert say("summary", [PASSWORD], None)["fix"] == {
         "field": "appPassword", "reason": "Gmail rejected the app password."}
-    assert call("summary", [TOO_BIG, PASSWORD], None)["fix"]["field"] == "appPassword"
+    assert say("summary", [TOO_BIG, PASSWORD], None)["fix"]["field"] == "appPassword"
 
 
 def test_with_several_fixable_failures_the_first_one_is_the_fix():
-    assert call("summary", [MISSING, PASSWORD], None)["fix"]["field"] == "kindleAddress"
+    assert say("summary", [MISSING, PASSWORD], None)["fix"]["field"] == "kindleAddress"
 
 
 def test_a_click_on_a_fixable_failure_summons_the_picker_into_settings_on_the_field():
@@ -156,7 +161,7 @@ def test_no_fix_means_no_click():
 
 
 def test_a_failure_setup_cannot_fix_does_not_open_setup():
-    s = call("summary", [TOO_BIG], None)
+    s = say("summary", [TOO_BIG], None)
 
     assert s["headline"] == "Couldn't send Atlas.pdf"
     assert s["body"] == "Too big for email (60 MB). Switch it to USB."
@@ -164,24 +169,24 @@ def test_a_failure_setup_cannot_fix_does_not_open_setup():
 
 
 def test_a_successful_send_times_out_after_a_few_seconds():
-    s = call("summary", [{"name": "Dune.epub", "result": "sent"}], None)
+    s = say("summary", [{"name": "Dune.epub", "result": "sent"}], None)
 
     assert s["urgency"] == "normal"
     assert s["timeout"] == 5000
 
 
 def test_a_failed_send_has_no_timeout():
-    assert "timeout" not in call("summary", [TOO_BIG], None)
+    assert "timeout" not in say("summary", [TOO_BIG], None)
 
 
 SETUP = ["omarchy-shell", "shell", "summon", "sorydi3.kindle-send", '{"settings":"appPassword"}']
-POST = ["omarchy-notification-send", "--app-name", "Send to Kindle", "-g", "\uF02D"]
+POST = ["omarchy-notification-send", "--app-name", "Books to Kindle", "-g", "\uF02D"]
 
 
 def test_first_post_asks_for_the_id_and_a_done_summary_times_out():
     item = {"headline": "Dune.epub", "body": "Sent to Amazon.", "urgency": "normal", "timeout": 5000}
 
-    assert call("notifyArgv", item, 0) == POST + ["-u", "normal", "-t", "5000", "-p",
+    assert say("notifyArgv", item, 0) == POST + ["-u", "normal", "-t", "5000", "-p",
                                                   "Dune.epub", "Sent to Amazon."]
 
 
@@ -189,7 +194,7 @@ def test_a_failure_a_setting_fixes_replaces_in_place_and_opens_settings_on_click
     item = {"headline": "Couldn't send Dune.epub", "body": "No app password stored.",
             "urgency": "critical", "exec": SETUP}
 
-    assert call("notifyArgv", item, 7) == POST + ["-u", "critical", "-r", "7",
+    assert say("notifyArgv", item, 7) == POST + ["-u", "critical", "-r", "7",
                                                   "Couldn't send Dune.epub", "No app password stored.",
                                                   "--exec"] + SETUP
 
@@ -201,6 +206,70 @@ def test_a_send_result_keeps_the_field_at_fault():
 
     assert r == {"name": "Dune.epub", "result": "failed", "reason": "No app password stored.",
                  "fixBySetup": True, "field": "appPassword"}
+
+
+def test_a_send_result_keeps_its_code_and_values():
+    line = {"result": "failed", "code": "too_big_for_email", "values": {"mb": 60},
+            "reason": "Too big for email (60 MB). Switch it to USB."}
+
+    r = call("resultFor", {"name": "Atlas.pdf"}, [line], 0, True)
+
+    assert r == {"name": "Atlas.pdf", "result": "failed", "code": "too_big_for_email", "values": {"mb": 60},
+                 "reason": "Too big for email (60 MB). Switch it to USB."}
+
+
+GERMAN = ("LANG({'message.too_big_for_email': 'Zu groß für E-Mail (%1 MB).',"
+          " 'message.password_rejected': 'Gmail hat das App-Passwort abgelehnt.'})")
+TOO_BIG_CODED = {**TOO_BIG, "code": "too_big_for_email", "values": {"mb": 60.5}}
+PASSWORD_CODED = {**PASSWORD, "code": "password_rejected", "values": {}}
+
+
+def test_failure_reasons_read_from_their_codes():
+    s = say("summary", [TOO_BIG_CODED], None, tr=GERMAN)
+
+    assert s["body"] == "Zu groß für E-Mail (60,5 MB)."
+
+
+def test_a_fix_carries_the_reason_as_the_catalog_says_it():
+    """Settings shows that reason beside the field the click opens on."""
+    s = say("summary", [PASSWORD_CODED], None, tr=GERMAN)
+
+    assert s["fix"] == {"field": "appPassword", "reason": "Gmail hat das App-Passwort abgelehnt."}
+
+
+def test_a_failure_with_an_unknown_code_shows_kindle_sends_english():
+    unknown = {**TOO_BIG, "code": "something_new", "values": {}, "reason": "Something new went wrong."}
+
+    assert say("summary", [unknown], None, tr=GERMAN)["body"] == "Something new went wrong."
+
+
+def test_a_kindle_send_that_never_started_means_a_broken_plugin_folder():
+    """kindle-send is bundled in the plugin folder (spec §17); scripts/install.sh is no longer the way in."""
+    r = call("resultFor", {"name": "Dune.epub"}, [], -1, False)
+
+    assert say("summary", [r], None)["body"] == \
+        "Couldn't run kindle-send from the plugin folder. Reinstall Books to Kindle."
+
+
+def test_a_kindle_send_that_stopped_without_a_result_says_so():
+    r = call("resultFor", {"name": "Dune.epub"}, [{"stage": "sending"}], 2, True)
+
+    assert say("summary", [r], None)["body"] == "kindle-send stopped without a result (exit 2)."
+
+
+def test_progress_counts_with_plural_entries():
+    books = [{"name": "Dune.epub"}, {"name": "Atlas.pdf"}]
+
+    assert say("progress", books) == {"headline": "Sending 2 Books…", "body": ""}
+    assert say("progress", books[:1]) == {"headline": "Sending Dune.epub…", "body": ""}
+    assert say("progressAt", books, 1) == {"headline": "Sending 2 Books…", "body": "2 of 2: Atlas.pdf"}
+
+
+def test_summary_counts_with_plural_entries_in_another_language():
+    tr = "LANG({'feedback.sent': {one: '%1 Buch gesendet', other: '%1 Bücher gesendet'}})"
+    two = [{"name": "Dune.epub", "result": "sent"}, {"name": "Emma.epub", "result": "sent"}]
+
+    assert say("summary", two, None, tr=tr)["headline"] == "2 Bücher gesendet"
 
 
 # --- The test send (spec §9, §10) ---------------------------------------------
@@ -215,20 +284,21 @@ def test_the_test_book_runs_send_with_test_instead_of_a_file():
 
     assert book["name"] == "Kindle Send Test"
     assert book["route"] == "email"
-    assert call("sendArgv", book) == ["kindle-send", "send", "--route", "email", "--test"]
+    assert call("sendArgv", "/p/bin/kindle-send", book) == ["/p/bin/kindle-send", "send", "--route", "email", "--test"]
 
 
 def test_any_other_book_runs_send_with_its_path():
     book = {"path": "/b/Dune.epub", "name": "Dune.epub", "route": "email"}
 
-    assert call("sendArgv", book) == ["kindle-send", "send", "--route", "email", "/b/Dune.epub"]
+    assert call("sendArgv", "/p/bin/kindle-send", book) == [
+        "/p/bin/kindle-send", "send", "--route", "email", "/b/Dune.epub"]
 
 
 def test_a_sent_test_book_lists_the_usual_causes_instead_of_a_question():
     book = call("testBook", "sender@gmail.com")
     result = call("resultFor", book, [{"stage": "sending"}, {"result": "sent"}], 0, True)
 
-    s = call("summary", [result], None)
+    s = say("summary", [result], None)
 
     assert s["headline"] == "Kindle Send Test"
     assert s["body"] == TEST_SENT
@@ -239,7 +309,7 @@ def test_clicking_a_sent_test_book_opens_settings():
     book = call("testBook", "sender@gmail.com")
     result = call("resultFor", book, [{"result": "sent"}], 0, True)
 
-    assert call("clickArgv", "sorydi3.kindle-send", call("summary", [result], None)) == SUMMON_SETTINGS
+    assert call("clickArgv", "sorydi3.kindle-send", say("summary", [result], None)) == SUMMON_SETTINGS
 
 
 def test_clicking_a_failed_test_book_opens_settings_only_on_a_field_a_setting_fixes():
@@ -248,15 +318,15 @@ def test_clicking_a_failed_test_book_opens_settings_only_on_a_field_a_setting_fi
                                          "fixBySetup": True, "field": "appPassword"}], 0, True)
     offline = call("resultFor", book, [{"result": "failed", "reason": "Couldn't reach Gmail."}], 0, True)
 
-    on_field = call("clickArgv", "sorydi3.kindle-send", call("summary", [rejected], None))
+    on_field = call("clickArgv", "sorydi3.kindle-send", say("summary", [rejected], None))
     assert json.loads(on_field[4]) == {"settings": "appPassword", "problem": "Gmail rejected the app password."}
     # No Setting fixes a network failure, so its click does nothing (spec §13).
-    assert call("clickArgv", "sorydi3.kindle-send", call("summary", [offline], None)) == []
+    assert call("clickArgv", "sorydi3.kindle-send", say("summary", [offline], None)) == []
 
 
 def test_clicking_an_ordinary_send_opens_settings_only_for_a_fix():
-    sent = call("summary", [{"name": "Dune.epub", "result": "sent"}], None)
-    rejected = call("summary", [{"name": "Dune.epub", "result": "failed", "reason": "No app password stored.",
+    sent = say("summary", [{"name": "Dune.epub", "result": "sent"}], None)
+    rejected = say("summary", [{"name": "Dune.epub", "result": "failed", "reason": "No app password stored.",
                                  "fixBySetup": True, "field": "appPassword"}], None)
 
     assert call("clickArgv", "sorydi3.kindle-send", sent) == []

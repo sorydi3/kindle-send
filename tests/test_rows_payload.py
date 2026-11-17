@@ -1,4 +1,4 @@
-"""Picker payload mode (spec §4): plugin/Rows.js run under node.
+"""Picker payload mode (spec §4): Rows.js run under node.
 
 The Nautilus extension summons the Picker with {"files": [...]}; the Picker then
 plans just those files and marks them all.
@@ -15,17 +15,20 @@ def rows(call):
     return evaluate("Rows.js", call)
 
 
+KS = "/p/bin/kindle-send"
+
+
 def test_a_bind_opens_the_picker_on_the_book_folders():
-    assert rows('planCommand(payloadFiles("{}"))') == ["kindle-send", "plan", "--folders"]
-    assert rows('planCommand(payloadFiles(""))') == ["kindle-send", "plan", "--folders"]
-    assert rows('planCommand(payloadFiles("not json"))') == ["kindle-send", "plan", "--folders"]
+    assert rows(f'planCommand("{KS}", payloadFiles("{{}}"))') == [KS, "plan", "--folders"]
+    assert rows(f'planCommand("{KS}", payloadFiles(""))') == [KS, "plan", "--folders"]
+    assert rows(f'planCommand("{KS}", payloadFiles("not json"))') == [KS, "plan", "--folders"]
 
 
 def test_a_files_payload_plans_just_those_files():
     payload = json.dumps({"files": ["/books/My Book é.epub", "/books/b.pdf"]})
 
-    assert rows(f"planCommand(payloadFiles({json.dumps(payload)}))") == [
-        "kindle-send", "plan", "/books/My Book é.epub", "/books/b.pdf"]
+    assert rows(f'planCommand("{KS}", payloadFiles({json.dumps(payload)}))') == [
+        KS, "plan", "/books/My Book é.epub", "/books/b.pdf"]
 
 
 def test_non_string_entries_in_the_payload_are_ignored():

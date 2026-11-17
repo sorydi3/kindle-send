@@ -12,12 +12,22 @@ import "Feedback.js" as Feedback
 import "Pending.js" as Pending
 import "Limit.js" as Limit
 import "Routes.js" as Routes
+import "Program.js" as Program
 
 Item {
   id: root
 
   // Injected by the shell.
   property var manifest: null
+
+  // The kindle-send bundled in the plugin folder; every command runs it, never one from PATH (spec §17).
+  readonly property string kindleSend: Program.path(Qt.resolvedUrl("bin/kindle-send"))
+
+  // The plugin's own text (i18n/). Notification text is built when something
+  // happens, in the language picked then.
+  Translator {
+    id: tr
+  }
 
   // Sends waiting to start: [{ id, books: [{ path, name, route }] }]
   property var queue: []
@@ -52,7 +62,7 @@ Item {
   // --- Test send (spec §9) --------------------------------------------------
   // Settings' Ctrl+T: the bundled test Book goes by email like any Send. The
   // Picker's status line follows testSend: null before one, then
-  // { state: "sending" }, then { state: "sent", at } or { state: "failed", at, reason, field }.
+  // { state: "sending" }, then { state: "sent", at } or { state: "failed", at, code, values, reason, field }.
   property var testSend: null
 
   // sender: the saved Gmail address, named in the success summary.
@@ -67,6 +77,8 @@ Item {
     if (book.test !== true) return
     const t = { state: result.result === "sent" ? "sent" : "failed", at: Date.now() }
     if (t.state === "failed") {
+      t.code = result.code || ""
+      t.values = result.values || {}
       t.reason = result.reason || ""
       t.field = result.field || ""
     }
@@ -123,7 +135,7 @@ Item {
 
   function startBook() {
     const send = root.current
-    const p = Feedback.progressAt(send.books, root.bookIndex)
+    const p = Feedback.progressAt(send.books, root.bookIndex, tr)
     root.notify(send.id, p.headline, p.body, "normal", [])
     sender.runBook(send.books[root.bookIndex])
   }
@@ -143,7 +155,7 @@ Item {
     const send = root.current
     if (root.waitingNow.length > 0) root.holdPending(send.id, root.results.length)
     if (root.results.length > 0) {
-      const s = Feedback.summary(root.results, root.ejectResult)
+      const s = Feedback.summary(root.results, root.ejectResult, tr)
       // A fully successful summary times out; any failure stays (critical) and,
       // when a Setting is the fix, a click opens Settings on it (spec §10, §13).
       // A sent test Book's click opens Settings (spec §9).
@@ -155,7 +167,7 @@ Item {
   function showStage(line) {
     const send = root.current
     if (!send || !line || !line.stage) return
-    const p = Feedback.stageAt(send.books, root.bookIndex, line.stage)
+    const p = Feedback.stageAt(send.books, root.bookIndex, line.stage, tr)
     if (p) root.notify(send.id, p.headline, p.body, "normal", [])
   }
 
@@ -167,7 +179,7 @@ Item {
     property bool didStart: false
     signal answered(var limit)
     function ask() { lines = []; didStart = false; running = true }
-    command: ["kindle-send", "limit"]
+    command: [root.kindleSend, "limit"]
     stdout: SplitParser {
       onRead: function(line) {
         try { check.lines = check.lines.concat([JSON.parse(line)]) } catch (e) {}
@@ -188,7 +200,7 @@ Item {
     function runBook(book) {
       lines = []
       didStart = false
-      command = Feedback.sendArgv(book)
+      command = Feedback.sendArgv(root.kindleSend, book)
       running = true
     }
     stdout: SplitParser {
@@ -236,14 +248,14 @@ Item {
 
   function showHold() {
     if (root.holdKey === 0) root.holdKey = root.newKey()
-    const h = Limit.holding(root.held.length, Math.max(0, (root.heldUntil - Date.now()) / 1000))
+    const h = Limit.holding(root.held.length, Math.max(0, (root.heldUntil - Date.now()) / 1000), tr)
     root.notify(root.holdKey, h.headline, h.body, h.urgency, [])
   }
 
   function heldNext() {
     if (root.held.length > 0) { heldLimiter.ask(); return }
     if (root.heldResults.length > 0) {
-      const s = Feedback.summary(root.heldResults, null)
+      const s = Feedback.summary(root.heldResults, null, tr)
       root.notify(root.holdKey || root.newKey(), s.headline, s.body, s.urgency,
                   Feedback.clickArgv(root.pluginId, s), s.timeout || 0)
     }
@@ -296,7 +308,7 @@ Item {
     let key = Pending.noticeKey(root.pendingKey, sendId, resultCount)
     if (key === 0) key = root.newKey()
     root.pendingKey = key
-    const n = Pending.notice(root.pending)
+    const n = Pending.notice(root.pending, tr)
     root.notify(key, n.headline, n.body, n.urgency, root.pickerCommand)
   }
 
@@ -313,7 +325,7 @@ Item {
 
   function cancelPending() {
     if (root.pending.length === 0) return
-    const c = Pending.cancelledNotice(root.pending)
+    const c = Pending.cancelledNotice(root.pending, tr)
     if (root.pendingKey > 0) root.notify(root.pendingKey, c.headline, c.body, c.urgency, [])
     root.pending = []
     root.pendingKey = 0
@@ -329,7 +341,7 @@ Item {
 
   Process {
     id: kindleCheck
-    command: ["kindle-send", "kindle"]
+    command: [root.kindleSend, "kindle"]
     stdout: StdioCollector { id: kindleOut }
     onExited: Qt.callLater(function() { if (Pending.kindleFound(kindleOut.text)) root.releasePending() })
   }
@@ -346,7 +358,7 @@ Item {
   function ejectDone(exitCode) {
     if (ejector.done) return
     ejector.done = true
-    let result = { ejected: false, reason: "kindle-send eject stopped without a result (exit " + exitCode + ")." }
+    let result = { ejected: false, code: "eject_stopped", values: { exit: exitCode } }
     const lines = ejectOut.text.split("\n")
     for (let i = 0; i < lines.length; i++) {
       try {
@@ -362,7 +374,7 @@ Item {
     id: ejector
     property bool didStart: false
     property bool done: true
-    command: ["kindle-send", "eject"]
+    command: [root.kindleSend, "eject"]
     stdout: StdioCollector { id: ejectOut }
     onStarted: didStart = true
     onRunningChanged: if (!running && !didStart && !done) root.ejectDone(-1)
@@ -391,7 +403,7 @@ Item {
     root.notifyQueue = root.notifyQueue.slice(1)
     const id = root.notifyIds[item.sendId] || 0
     root.notifyFor = id > 0 ? 0 : item.sendId
-    notifier.command = Feedback.notifyArgv(item, id)
+    notifier.command = Feedback.notifyArgv(item, id, tr)
     notifier.running = true
   }
 

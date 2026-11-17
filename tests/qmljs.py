@@ -1,4 +1,4 @@
-"""Runs the plugin's QML JavaScript libraries (plugin/*.js) under node.
+"""Runs the plugin's QML JavaScript libraries (the *.js at the repo root) under node.
 
 QML-only lines are handled the way QML does: `.pragma library` is dropped and
 `.import "Other.js" as Name` loads that file and binds it to `Name`.
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-PLUGIN = Path(__file__).resolve().parent.parent / "plugin"
+PLUGIN = Path(__file__).resolve().parent.parent
 NODE = shutil.which("node")
 
 needs_node = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -29,13 +29,50 @@ function load(file) {
   vm.runInContext(src, ctx)
   return ctx
 }
+// The translators the plugin's text functions take ({t, tn, num, time}), standing in
+// for Commons.Translations, Commons.I18n.formatNumber and Qt.locale's time. EN reads i18n/en.json
+// the way Translations does in English; LANG(entries) is a made-up language
+// over it (its entries first, then English) that writes a decimal comma and,
+// given zeroDigit (e.g. "٠"), that script's digits.
+const catalogFile = path.join(path.dirname(process.argv[1]), "i18n", "en.json")
+const english = fs.existsSync(catalogFile) ? JSON.parse(fs.readFileSync(catalogFile, "utf8")) : {}
+function translator(entries, decimal, zeroDigit) {
+  const strings = Object.assign({}, english, entries)
+  return {
+    t: function(key, fallback) {
+      let v = strings[key]
+      if (v && typeof v === "object") v = v.other
+      return typeof v === "string" && v.length > 0 ? v : (fallback !== undefined ? fallback : key)
+    },
+    tn: function(key, count, fallback) {
+      let v = strings[key]
+      if (v && typeof v === "object") v = count === 1 && v.one ? v.one : v.other
+      return typeof v === "string" && v.length > 0 ? v : (fallback !== undefined ? fallback : key)
+    },
+    num: function(value, decimals) {
+      const n = Number(value)
+      const text = decimals === undefined ? String(n) : n.toFixed(decimals)
+      const zero = (zeroDigit || "0").charCodeAt(0)
+      return text.replace(".", decimal)
+        .replace(/[0-9]/g, function(d) { return String.fromCharCode(zero + d.charCodeAt(0) - 48) })
+    },
+    // Stands in for Qt.locale(formatLocale)'s short time: "09:05", local time.
+    time: function(ms) {
+      const d = new Date(ms)
+      const two = function(n) { return (n < 10 ? "0" : "") + n }
+      return two(d.getHours()) + ":" + two(d.getMinutes())
+    }
+  }
+}
 const ctx = load(process.argv[1])
+ctx.EN = translator({}, ".")
+ctx.LANG = function(entries, zeroDigit) { return translator(entries || {}, ",", zeroDigit) }
 process.stdout.write(JSON.stringify(vm.runInContext(process.argv[2], ctx)))
 """
 
 
 def evaluate(library, expr):
-    """The JSON value of JS expression `expr`, evaluated inside plugin/<library>."""
+    """The JSON value of JS expression `expr`, evaluated inside <library> at the repo root."""
     out = subprocess.run([NODE, "-e", LOADER, str(PLUGIN / library), expr],
                          capture_output=True, text=True, check=True).stdout
     return json.loads(out) if out else None

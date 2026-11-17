@@ -72,7 +72,8 @@ def test_usb_send_without_a_kindle_fails_before_copying_and_leaves_no_history(ks
 
     _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
 
-    assert lines == [{"result": "failed", "reason": "Kindle not plugged in. Plug it in and send again."}]
+    assert lines == [{"result": "failed", "code": "kindle_not_plugged_in", "values": {},
+                      "reason": "Kindle not plugged in. Plug it in and send again."}]
     # The Service makes it a Pending Send; it is recorded once it is copied (or fails for another reason).
     assert ks.read_history() == []
 
@@ -83,7 +84,8 @@ def test_usb_send_refuses_formats_the_kindle_cant_read(ks, usb, tmp_path, capsys
 
     _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
 
-    assert lines == [{"result": "failed", "reason": "DOCX can't be read over USB. Send it by email."}]
+    assert lines == [{"result": "failed", "code": "format_not_for_usb", "values": {"format": "DOCX"},
+                      "reason": "DOCX can't be read over USB. Send it by email."}]
 
 
 def test_usb_send_of_a_missing_file_fails_before_looking_for_the_kindle(ks, usb, tmp_path, capsys):
@@ -91,7 +93,8 @@ def test_usb_send_of_a_missing_file_fails_before_looking_for_the_kindle(ks, usb,
 
     _, lines = run(ks, capsys, "send", "--route", "usb", str(tmp_path / "Gone.pdf"))
 
-    assert lines == [{"result": "failed", "reason": "File not found: Gone.pdf."}]
+    assert lines == [{"result": "failed", "code": "file_not_found", "values": {"name": "Gone.pdf"},
+                      "reason": "File not found: Gone.pdf."}]
 
 
 def test_usb_send_fails_when_the_kindle_is_short_of_space(ks, usb, tmp_path, capsys, monkeypatch):
@@ -101,8 +104,24 @@ def test_usb_send_fails_when_the_kindle_is_short_of_space(ks, usb, tmp_path, cap
 
     _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
 
-    assert lines == [{"result": "failed", "reason": "Not enough space on the Kindle (needs 3 MB)."}]
+    assert lines == [{"result": "failed", "code": "kindle_full", "values": {"mb": 3},
+                      "reason": "Not enough space on the Kindle (needs 3 MB)."}]
     assert not (kindle / "documents" / "Atlas.pdf").exists()
+
+
+def test_a_copy_that_fails_part_way_names_the_error_and_leaves_nothing(ks, usb, tmp_path, capsys, monkeypatch):
+    kindle = usb.plug(tmp_path / "Kindle")
+    book = make_book(tmp_path, "Atlas.pdf")
+
+    def broken(src, dst, length=0):
+        raise OSError(5, "Input/output error")
+    monkeypatch.setattr(ks.shutil, "copyfileobj", broken)
+
+    _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
+
+    assert lines[-1] == {"result": "failed", "code": "copy_failed", "values": {"detail": "Input/output error"},
+                         "reason": "Couldn't copy to the Kindle: Input/output error."}
+    assert list((kindle / "documents").iterdir()) == []
 
 
 def test_eject_unmounts_the_partition_then_powers_off_the_disk(ks, usb, tmp_path, capsys):
@@ -121,7 +140,8 @@ def test_eject_of_a_whole_disk_kindle_uses_the_disk_for_both(ks, usb, tmp_path, 
 
 
 def test_eject_without_a_kindle_says_so(ks, usb, capsys):
-    assert run(ks, capsys, "eject") == (0, [{"ejected": False, "reason": "Kindle not plugged in."}])
+    assert run(ks, capsys, "eject") == (0, [{"ejected": False, "code": "eject_no_kindle", "values": {},
+                                                  "reason": "Kindle not plugged in."}])
     assert usb.calls() == []
 
 
@@ -132,5 +152,17 @@ def test_eject_failure_gives_udisks_first_error_line(ks, usb, tmp_path, capsys):
     code, [line] = run(ks, capsys, "eject")
 
     assert code == 0
-    assert line == {"ejected": False, "reason": "Error unmounting /dev/sdc: GDBus.Error: target is busy"}
+    assert line == {"ejected": False, "code": "eject_failed",
+                    "values": {"detail": "Error unmounting /dev/sdc: GDBus.Error: target is busy"},
+                    "reason": "Error unmounting /dev/sdc: GDBus.Error: target is busy"}
     assert usb.calls() == ["unmount -b /dev/sdc"]
+
+
+def test_an_eject_step_that_fails_silently_is_named(ks, usb, tmp_path, capsys):
+    usb.plug(tmp_path / "Kindle", disk="sdc")
+    usb.fail_eject("")
+
+    _, [line] = run(ks, capsys, "eject")
+
+    assert line == {"ejected": False, "code": "eject_step_failed", "values": {"step": "unmount"},
+                    "reason": "unmount failed."}

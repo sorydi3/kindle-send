@@ -22,8 +22,8 @@ PICK = "omarchy-shell shell toggle sorydi3.kindle-send"
 # Opens the Picker in Settings, on no field in particular (spec §14).
 SETTINGS = "omarchy-shell shell summon sorydi3.kindle-send '{\"settings\":\"\"}'"
 ENTRIES = [
-    ("kindle-send", {"icon": "\U000F00BA", "label": "Send to Kindle", "aliases": ["kindle"]}),
-    ("kindle-send.pick", {"icon": "\U000F00BA", "label": "Send to Kindle", "action": PICK}),
+    ("kindle-send", {"icon": "\U000F00BA", "label": "Books to Kindle", "aliases": ["kindle"]}),
+    ("kindle-send.pick", {"icon": "\U000F00BA", "label": "Books to Kindle", "action": PICK}),
     ("kindle-send.settings", {"icon": "", "label": "Settings", "action": SETTINGS}),
 ]
 

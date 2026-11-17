@@ -1,23 +1,17 @@
 // Pending Sends (spec §7, §10): USB Books waiting for the Kindle to be plugged in.
 // Held by the Service in memory only. Pure functions, no QML.
+// tr: the translator every text function takes (Catalog.js).
 .pragma library
 .import "Routes.js" as Routes
+.import "Catalog.js" as Catalog
 
-const NO_KINDLE = "Kindle not plugged in"
-const PLUG_IN = "Plug it in to send. Click to manage."
-
-function plural(n, word) {
-  return n + " " + word + (n === 1 ? "" : "s")
-}
-
-function names(books) {
-  return books.map(function(b) { return b.name }).join(", ")
+function names(books, tr) {
+  return books.map(function(b) { return b.name }).join(tr.t("list.separator"))
 }
 
 // A USB Book that failed only because no Kindle was found waits instead.
 function isPending(book, result) {
-  return book.route === Routes.USB && result.result === "failed"
-    && String(result.reason || "").indexOf(NO_KINDLE) === 0
+  return book.route === Routes.USB && result.result === "failed" && result.code === "kindle_not_plugged_in"
 }
 
 // Output of `kindle-send kindle`: true once a Kindle is mounted.
@@ -42,16 +36,17 @@ function add(pending, books) {
 }
 
 // The lasting notification while Books wait. Clicking it opens the Picker.
-function notice(books) {
+function notice(books, tr) {
   if (books.length === 1)
-    return { headline: "Waiting for Kindle: " + books[0].name, body: PLUG_IN, urgency: "critical" }
-  return { headline: "Waiting for Kindle: " + plural(books.length, "Book"),
-           body: names(books) + "\n" + PLUG_IN, urgency: "critical" }
+    return { headline: Catalog.say(tr, "pending.waitingOne", [books[0].name]), body: tr.t("pending.plugIn"),
+             urgency: "critical" }
+  return { headline: Catalog.count(tr, "pending.waitingMany", books.length),
+           body: names(books, tr) + "\n" + tr.t("pending.plugIn"), urgency: "critical" }
 }
 
 // Replaces the lasting notification after `Delete` in the Picker.
-function cancelledNotice(books) {
-  return { headline: "Cancelled " + plural(books.length, "Book") + " waiting for Kindle", body: "", urgency: "normal" }
+function cancelledNotice(books, tr) {
+  return { headline: Catalog.count(tr, "pending.cancelled", books.length), body: "", urgency: "normal" }
 }
 
 // The notification key that carries the notice. pendingKey is the one already up (0: none).
@@ -62,9 +57,9 @@ function noticeKey(pendingKey, sendId, resultCount) {
 }
 
 // The Picker's rows with the "N Books waiting for Kindle" line on top while anything waits.
-function withWaiting(rows, pending) {
+function withWaiting(rows, pending, tr) {
   if (!pending || pending.length === 0) return rows
-  const line = { waiting: true, path: "", name: plural(pending.length, "Book") + " waiting for Kindle",
-                 details: names(pending) }
+  const line = { waiting: true, path: "", name: Catalog.count(tr, "pending.line", pending.length),
+                 details: names(pending, tr) }
   return [line].concat(rows)
 }

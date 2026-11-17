@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from conftest import write_shell_json
+from conftest import settings_file, write_settings
 
 KINDLE = "reader@kindle.com"
 SENDER = "sender@gmail.com"
@@ -30,7 +30,7 @@ def make_book(path, size=10, mtime=None):
 
 @pytest.fixture
 def set_up(home, keyring):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER)
     keyring.set_password("app-password")
 
 
@@ -48,6 +48,8 @@ def test_folders_lists_a_book_in_books_with_its_details(ks, home, set_up, capsys
         "mtime": 1_700_000_000,
         "route": "email",
         "routeReason": "",
+        "routeReasonCode": "",
+        "routeReasonValues": {},
         "emailOk": True,
         "usbOk": True,
         "lastSent": None,
@@ -91,7 +93,7 @@ def test_folders_lists_newest_first_across_folders(ks, home, set_up, capsys):
 
 def test_folders_uses_the_book_folders_setting(ks, home, keyring, capsys, tmp_path):
     keyring.set_password("app-password")
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER,
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER,
                      bookFolders=["~/Library", str(tmp_path / "elsewhere")])
     make_book(home / "Books" / "NotSearched.epub")
     make_book(home / "Library" / "InLibrary.epub")
@@ -104,7 +106,7 @@ def test_folders_uses_the_book_folders_setting(ks, home, keyring, capsys, tmp_pa
 
 def test_a_book_in_overlapping_folders_is_listed_once(ks, home, keyring, capsys):
     keyring.set_password("app-password")
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER,
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER,
                      bookFolders=["~/Books", "~/Books/sub"])
     make_book(home / "Books" / "sub" / "Dune.epub")
 
@@ -127,27 +129,30 @@ def plan_one(ks, capsys, book):
 
 
 def route_of(line):
-    return {k: line[k] for k in ("route", "routeReason", "emailOk", "usbOk")}
+    return {k: line[k] for k in ("route", "routeReason", "routeReasonCode", "routeReasonValues", "emailOk", "usbOk")}
 
 
 def test_a_format_email_cannot_take_goes_by_usb(ks, home, set_up, capsys):
     line = plan_one(ks, capsys, make_book(home / "Books" / "Dune.azw3"))
 
     assert route_of(line) == {"route": "usb", "routeReason": "AZW3 can't be sent by email.",
+                              "routeReasonCode": "route_format_not_emailable",
+                              "routeReasonValues": {"format": "AZW3"},
                               "emailOk": False, "usbOk": True}
 
 
 def test_a_format_usb_refuses_goes_by_email(ks, home, set_up, capsys):
     line = plan_one(ks, capsys, make_book(home / "Books" / "Essay.docx"))
 
-    assert route_of(line) == {"route": "email", "routeReason": "",
-                              "emailOk": True, "usbOk": False}
+    assert route_of(line) == {"route": "email", "routeReason": "", "routeReasonCode": "",
+                              "routeReasonValues": {}, "emailOk": True, "usbOk": False}
 
 
 def test_email_wins_when_both_routes_work(ks, home, set_up, capsys):
     line = plan_one(ks, capsys, make_book(home / "Books" / "Paper.pdf"))
 
-    assert route_of(line) == {"route": "email", "routeReason": "", "emailOk": True, "usbOk": True}
+    assert route_of(line) == {"route": "email", "routeReason": "", "routeReasonCode": "",
+                              "routeReasonValues": {}, "emailOk": True, "usbOk": True}
 
 
 @pytest.mark.parametrize("size, route", [(26_143_825, "email"), (26_143_826, "usb")])
@@ -162,6 +167,8 @@ def test_a_book_over_the_email_limit_says_why_it_goes_by_usb(ks, home, set_up, c
     line = plan_one(ks, capsys, sparse_book(home / "Books" / "Big.pdf", 40_000_000))
 
     assert route_of(line) == {"route": "usb", "routeReason": "Too big for email (40 MB).",
+                              "routeReasonCode": "route_too_big_for_email",
+                              "routeReasonValues": {"mb": 40},
                               "emailOk": False, "usbOk": True}
 
 
@@ -181,6 +188,8 @@ def test_a_big_book_neither_route_takes_goes_to_usb_and_is_marked_unusable(ks, h
     line = plan_one(ks, capsys, sparse_book(home / "Books" / "Huge.docx", 40_000_000))
 
     assert route_of(line) == {"route": "usb", "routeReason": "Too big for email (40 MB).",
+                              "routeReasonCode": "route_too_big_for_email",
+                              "routeReasonValues": {"mb": 40},
                               "emailOk": False, "usbOk": False}
 
 
@@ -208,7 +217,7 @@ def test_last_sent_is_the_latest_successful_send_of_the_same_name_and_size(ks, h
 
 
 def test_setup_needed_comes_first_and_names_the_missing_settings(ks, home, capsys):
-    write_shell_json(home, kindleAddress=KINDLE)
+    write_settings(home, kindleAddress=KINDLE)
     make_book(home / "Books" / "Dune.epub")
 
     _, lines = run(ks, capsys, "plan", "--folders")
@@ -224,7 +233,7 @@ def test_setup_needed_without_any_settings(ks, home, capsys):
 
 
 def test_a_missing_app_password_also_needs_setup(ks, home, keyring, capsys):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER)
     make_book(home / "Books" / "Dune.epub")
 
     _, lines = run(ks, capsys, "plan", "--folders")
@@ -271,12 +280,12 @@ def test_files_with_spaces_and_non_ascii_names_are_planned(ks, home, set_up, cap
     assert [(line["path"], line["name"]) for line in lines] == [(str(book), "L'Étranger — Camus.epub")]
 
 
-PICKER_INFO = {"bookFolders": ["~/Books", "~/Downloads"], "routeLabels": {"email": "Email", "usb": "USB"}}
+PICKER_INFO = {"bookFolders": ["~/Books", "~/Downloads"]}
 
 
-def test_plan_tells_the_picker_the_book_folders_and_route_labels_before_the_books(ks, home, set_up, capsys):
-    """The Picker names the folders in its empty state and labels Routes from
-    this line, so the defaults live only in kindle-send."""
+def test_plan_tells_the_picker_the_book_folders_before_the_books(ks, home, set_up, capsys):
+    """The Picker names the folders in its empty state from this line, so the
+    defaults live only in kindle-send. Routes go by id; the Picker names them."""
     make_book(home / "Books" / "Dune.epub")
 
     _, lines = raw(ks, capsys, "plan", "--folders")
@@ -286,7 +295,7 @@ def test_plan_tells_the_picker_the_book_folders_and_route_labels_before_the_book
 
 
 def test_the_info_line_shows_the_book_folders_setting_as_written(ks, home, keyring, capsys):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Library"])
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Library"])
     keyring.set_password("app-password")
 
     _, lines = raw(ks, capsys, "plan", "--folders")
@@ -298,3 +307,17 @@ def test_setup_needed_still_comes_before_the_info_line(ks, home, capsys):
     _, lines = raw(ks, capsys, "plan", "--folders")
 
     assert lines == [{"setupNeeded": True, "missing": ["kindleAddress", "senderAddress"]}, PICKER_INFO]
+
+
+def test_a_settings_file_that_isnt_valid_json_is_reported_not_taken_for_setup(ks, home, keyring, capsys):
+    settings_file(home).parent.mkdir(parents=True)
+    settings_file(home).write_text("{ broken")
+    make_book(home / "Books" / "Dune.epub")
+
+    code, lines = raw(ks, capsys, "plan", "--folders")
+
+    path = str(settings_file(home))
+    assert code == 0
+    assert lines == [{"failed": True, "code": "settings_file_invalid", "values": {"path": path},
+                      "reason": f"{path} isn't valid JSON, so it wasn't changed."}]
+    assert settings_file(home).read_text() == "{ broken"

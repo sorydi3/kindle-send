@@ -9,16 +9,23 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
+// Colours go through the namespace: under Qt 6.12 a bare `Color` is QtQuick's own, not the theme's.
+import qs.Commons as Commons
 import qs.Ui
 import "Rows.js" as Rows
+import "Routes.js" as Routes
 import "Pending.js" as Pending
 import "Settings.js" as SettingsForm
+import "Program.js" as Program
 
 Item {
   id: root
 
   // Injected by the shell: this plugin's Service.
   property var service: null
+
+  // The kindle-send bundled in the plugin folder; every command runs it, never one from PATH (spec §17).
+  readonly property string kindleSend: Program.path(Qt.resolvedUrl("bin/kindle-send"))
 
   property bool opened: false
   property bool loading: false
@@ -27,17 +34,23 @@ Item {
   // From plan: a setting or the app password is missing, so the Picker opens into Settings.
   property bool setupNeeded: false
   property var setupMissing: []
-  // Why listing failed: "" | "missing" (no kindle-send) | "failed" | "slow".
+  // Why listing failed: "" | "missing" (no kindle-send) | "failed" | "slow" | "problem" (plan said why).
   property string failure: ""
+  // plan's reason for "problem" ({code, values, english}), e.g. an unreadable Settings file.
+  property var failureProblem: null
   property var books: []
   // path -> true for marked Books; path -> "email"|"usb" for Tab overrides.
   property var marked: ({})
   property var routes: ({})
   property string filterText: ""
   property int selectedIndex: 0
-  // From `kindle-send plan`: the Book folders it scans and the Route labels.
+  // From `kindle-send plan`: the Book folders it scans.
   property var bookFolders: []
-  property var routeLabels: ({})
+  // The plugin's own text (i18n/), in the language picked under Setup > Language.
+  // Every text function of the JS libraries takes it.
+  Translator {
+    id: tr
+  }
   // Files from a Nautilus summon ({"files": [...]}); empty means the Book folders.
   property var payloadFiles: []
   readonly property bool payloadMode: payloadFiles.length > 0
@@ -52,9 +65,11 @@ Item {
   // What setup still needs (kindle-send settings): titles the form, flags fields, makes Esc close.
   property var settingsMissing: []
   readonly property bool settingsSetup: SettingsForm.setupNeeded(settingsMissing)
-  // field key -> problem message from the last save, cleared as each field is edited.
+  // field key -> problem from the last save, cleared as each field is edited. It and
+  // the status line are notes (Catalog.text, key and values), turned into text in
+  // the bindings that show them, so a language switch re-renders them.
   property var settingsProblems: ({})
-  property string settingsStatus: ""
+  property var settingsStatus: null
   property string settingsFocus: ""
   property bool settingsSaving: false
   // Something was saved since Settings opened, so the Book list is planned again on the way back.
@@ -75,15 +90,15 @@ Item {
   readonly property var rows: Rows.filter(books, filterText)
   // Pending Sends held by the Service, shown as one "N Books waiting for Kindle" line on top.
   readonly property var pending: service && service.pending ? service.pending : []
-  readonly property var listRows: Pending.withWaiting(rows, pending)
+  readonly property var listRows: Pending.withWaiting(rows, pending, tr)
   readonly property var current: listRows.length > 0 ? listRows[Math.min(selectedIndex, listRows.length - 1)] : null
   // Footer text: what Enter sends, and which marked Books their Route can't take.
-  readonly property var sendSummary: Rows.footer(books, marked, routes, current, routeLabels)
+  readonly property var sendSummary: Rows.footer(books, marked, routes, current, tr)
   // Setup, a failure, loading, or an empty list: what shows instead of the list (null: the list).
   readonly property var screen: Rows.screen({
     loading: loading, failure: failure, payloadCount: payloadFiles.length,
-    books: books.length, rows: rows.length, waiting: pending.length, filterText: filterText,
-    bookFolders: bookFolders })
+    problem: failureProblem, books: books.length, rows: rows.length, waiting: pending.length, filterText: filterText,
+    bookFolders: bookFolders, program: kindleSend }, tr)
   onListRowsChanged: selectedIndex = Math.max(0, Math.min(selectedIndex, listRows.length - 1))
 
   function open(payloadJson) {
@@ -125,7 +140,7 @@ Item {
     planner.lines = []
     planner.didStart = false
     // close() stops the planner, so it is idle here and picks up the new command.
-    planner.command = Rows.planCommand(root.payloadFiles)
+    planner.command = Rows.planCommand(root.kindleSend, root.payloadFiles)
     if (!planner.running) planner.running = true
     responseTimer.restart()
   }
@@ -139,9 +154,10 @@ Item {
     root.setupMissing = parsed.missing
     root.books = parsed.books
     root.bookFolders = parsed.bookFolders
-    root.routeLabels = parsed.routeLabels
+    root.failureProblem = parsed.problem
     if (root.payloadMode) root.marked = Rows.allMarked(parsed.books)
-    if (exitCode !== 0 && parsed.books.length === 0 && !parsed.setupNeeded)
+    if (parsed.problem) root.failure = "problem"
+    else if (exitCode !== 0 && parsed.books.length === 0 && !parsed.setupNeeded)
       root.failure = "failed"
     // No usable Book list yet: straight into Settings (spec §4, Setup needed).
     if (parsed.setupNeeded) root.openSettings("")
@@ -151,7 +167,7 @@ Item {
     id: planner
     property var lines: []
     property bool didStart: false
-    command: Rows.planCommand([])
+    command: Rows.planCommand(root.kindleSend, [])
     stdout: SplitParser {
       onRead: function(line) {
         try { planner.lines = planner.lines.concat([JSON.parse(line)]) } catch (e) {}
@@ -222,7 +238,7 @@ Item {
     if (root.settingsOpen) return
     root.settingsOpen = true
     root.settingsProblems = problems || {}
-    root.settingsStatus = ""
+    root.settingsStatus = null
     root.settingsTesting = false
     root.settingsSavedSinceOpen = false
     root.settingsPasswordStored = false
@@ -261,7 +277,13 @@ Item {
   function settingsLoaded(exitCode) {
     const line = settingsReader.line
     if (exitCode !== 0 || !line) {
-      root.settingsStatus = "Couldn't read the Settings. Run kindle-send settings in a terminal to see why."
+      root.settingsStatus = SettingsForm.readFailed(root.kindleSend)
+      return
+    }
+    // An unreadable Settings file: said in the status line, never taken for missing values.
+    const problem = SettingsForm.readProblem(line)
+    if (problem) {
+      root.settingsStatus = problem
       return
     }
     root.settingsBaseline = SettingsForm.fromSettings(line)
@@ -293,7 +315,7 @@ Item {
     saver.payload = ""  // it may hold the app password if save never started
     const result = saver.result
     if (exitCode !== 0 || !result) {
-      root.settingsStatus = "Couldn't save. Run kindle-send save in a terminal to see why."
+      root.settingsStatus = SettingsForm.saveFailed(root.kindleSend)
       return
     }
     root.settingsProblems = SettingsForm.byField(result.problems)
@@ -325,7 +347,7 @@ Item {
     root.settingsValues = back.values
     root.settingsBaseline = back.baseline
     root.settingsProblems = back.problems || {}
-    root.settingsStatus = back.status || ""
+    root.settingsStatus = back.status || null
     root.settingsSavedSinceOpen = back.savedSinceOpen === true
     root.settingsPasswordStored = back.passwordStored === true
     root.settingsMissing = back.missing || []
@@ -394,7 +416,7 @@ Item {
 
   FolderDialog {
     id: folderDialog
-    title: "Add a Book folder"
+    title: tr.t("settings.browseTitle")
     currentFolder: "file://" + Quickshell.env("HOME")
     onAccepted: root.folderBrowsed(String(selectedFolder))
     onRejected: root.folderBrowsed("")
@@ -411,7 +433,7 @@ Item {
     property var line: null
     property bool didStart: false
     property bool replaceValues: true
-    command: ["kindle-send", "settings"]
+    command: [root.kindleSend, "settings"]
     stdout: SplitParser {
       onRead: function(text) {
         try { settingsReader.line = JSON.parse(text) } catch (e) {}
@@ -428,7 +450,7 @@ Item {
     property string payload: ""
     property var result: null
     property bool didStart: false
-    command: ["kindle-send", "save"]
+    command: [root.kindleSend, "save"]
     stdinEnabled: true
     stdout: SplitParser {
       onRead: function(text) {
@@ -469,7 +491,7 @@ Item {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
 
-    Rectangle { anchors.fill: parent; color: Color.menu.scrim }
+    Rectangle { anchors.fill: parent; color: Commons.Color.menu.scrim }
 
     MouseArea { anchors.fill: parent; onClicked: root.close() }
 
@@ -479,8 +501,8 @@ Item {
       width: Math.min(Style.space(640), parent.width - Style.gapsOut * 2)
       height: Math.min(Style.space(520), parent.height - Style.gapsOut * 2)
       radius: Style.cornerRadius
-      color: Color.menu.background
-      borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
+      color: Commons.Color.menu.background
+      borderSpec: Border.surfaceSpec("menu", "border", Commons.Color.menu.border, Math.max(1, Style.space(2)))
       padding: Style.spacing.panelPadding
 
       // Swallows clicks on the card so they don't reach the scrim, which closes the Picker.
@@ -542,8 +564,8 @@ Item {
           width: parent.width - cog.width - Style.space(8)
           height: Style.space(34)
           textFormat: Text.PlainText
-          text: root.filterText || "Send to Kindle…"
-          color: Color.menu.text
+          text: root.filterText || tr.t("picker.search")
+          color: Commons.Color.menu.text
           opacity: root.filterText ? 1 : 0.58  // the shell's own placeholder strength
           font.family: Style.font.menuFamily
           font.pixelSize: Style.font.heading
@@ -557,8 +579,9 @@ Item {
           visible: !root.settingsOpen && (!root.screen || root.screen.settings)
           anchors.right: parent.right
           anchors.verticalCenter: search.verticalCenter
+          textFormat: Text.PlainText
           text: "\u{F0493}"
-          color: Color.menu.text
+          color: Commons.Color.menu.text
           opacity: cogMouse.containsMouse ? 1 : root.secondaryOpacity
           font.family: Style.font.menuFamily
           font.pixelSize: Style.font.title
@@ -587,7 +610,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
             text: root.sendSummary.status
-            color: Color.menu.text
+            color: Commons.Color.menu.text
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.body
             elide: Text.ElideRight
@@ -596,8 +619,8 @@ Item {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
-            text: root.screen ? root.screen.keys : Rows.hints(root.current, root.sendSummary.enter, root.filterText)
-            color: Color.menu.text
+            text: root.screen ? root.screen.keys : Rows.hints(root.current, root.sendSummary.enter, root.filterText, tr)
+            color: Commons.Color.menu.text
             opacity: root.hintOpacity
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.bodySmall
@@ -628,12 +651,12 @@ Item {
             readonly property bool waiting: modelData.waiting === true
             readonly property bool isMarked: !waiting && root.marked[modelData.path] === true
             readonly property string route: waiting ? "" : root.routeOf(modelData)
-            readonly property color ink: hasCursor ? Color.menu.selectedText : Color.menu.text
+            readonly property color ink: hasCursor ? Commons.Color.menu.selectedText : Commons.Color.menu.text
 
             width: ListView.view.width
             height: root.rowHeight
             radius: Style.cornerRadius
-            color: hasCursor ? Color.menu.selectedBackground : "transparent"
+            color: hasCursor ? Commons.Color.menu.selectedBackground : "transparent"
 
             Text {
               id: mark
@@ -642,9 +665,10 @@ Item {
               anchors.verticalCenter: parent.verticalCenter
               width: Style.space(24)
               // A clock on the waiting line, a checkbox on Books.
+              textFormat: Text.PlainText
               text: row.waiting ? "\u{F0954}" : row.isMarked ? "\u{F0132}" : "\u{F0131}"
               // An empty box stays plain text, readable on the highlighted row too.
-              color: row.isMarked || row.waiting ? row.ink : Color.menu.text
+              color: row.isMarked || row.waiting ? row.ink : Commons.Color.menu.text
               opacity: row.isMarked || row.waiting ? 1 : root.secondaryOpacity
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.title
@@ -666,7 +690,8 @@ Item {
               Text {
                 id: badgeText
                 anchors.centerIn: parent
-                text: Rows.routeLabel(row.route, root.routeLabels)
+                textFormat: Text.PlainText
+                text: Routes.label(row.route, tr)
                 color: row.ink
                 font.family: Style.font.menuFamily
                 font.pixelSize: Style.font.caption
@@ -695,9 +720,9 @@ Item {
               Text {
                 width: parent.width
                 textFormat: Text.PlainText
-                text: row.waiting ? row.modelData.details : Rows.details(row.modelData, row.route, Date.now(), root.routeLabels)
+                text: row.waiting ? row.modelData.details : Rows.details(row.modelData, row.route, Date.now(), tr)
                 // Plain text color even on the highlighted row, as the shell's own menu does.
-                color: Color.menu.text
+                color: Commons.Color.menu.text
                 opacity: root.secondaryOpacity
                 font.family: Style.font.menuFamily
                 font.pixelSize: Style.font.bodySmall
@@ -727,8 +752,9 @@ Item {
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
             // A warning for failures, a book otherwise.
+            textFormat: Text.PlainText
             text: root.failure ? "\u{F0026}" : "\u{F02D}"
-            color: Color.menu.selectedText
+            color: Commons.Color.menu.selectedText
             opacity: root.secondaryOpacity
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.displayLarge
@@ -739,7 +765,7 @@ Item {
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
             text: root.screen ? root.screen.message : ""
-            color: Color.menu.text
+            color: Commons.Color.menu.text
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.title
           }
@@ -750,7 +776,7 @@ Item {
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
             text: root.screen ? root.screen.detail : ""
-            color: Color.menu.text
+            color: Commons.Color.menu.text
             opacity: root.secondaryOpacity
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.body
@@ -801,8 +827,9 @@ Item {
             spacing: Style.space(12)
 
             Text {
-              text: SettingsForm.title(root.settingsMissing)
-              color: Color.menu.text
+              textFormat: Text.PlainText
+              text: SettingsForm.title(root.settingsMissing, tr)
+              color: Commons.Color.menu.text
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.heading
             }
@@ -815,7 +842,7 @@ Item {
                 required property var modelData
                 required property int index
                 property alias input: input
-                readonly property var line: SettingsForm.helpLine(modelData, root.settingsProblems)
+                readonly property var line: SettingsForm.helpLine(modelData, root.settingsProblems, tr)
                 // The help line is link text when the field has a page and no problem covers it.
                 readonly property bool linked: !line.problem && SettingsForm.link(modelData.key) !== ""
                 width: parent.width
@@ -826,16 +853,18 @@ Item {
                   spacing: Style.space(6)
 
                   Text {
-                    text: entry.modelData.label
-                    color: Color.menu.text
+                    textFormat: Text.PlainText
+                    text: SettingsForm.label(entry.modelData, tr)
+                    color: Commons.Color.menu.text
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.body
                   }
                   Text {
                     visible: text !== ""
+                    textFormat: Text.PlainText
                     text: SettingsForm.flag(entry.modelData.key, root.settingsMissing, root.settingsValues,
-                                            root.settingsBaseline)
-                    color: Color.menu.selectedText
+                                            root.settingsBaseline, tr)
+                    color: Commons.Color.menu.selectedText
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.body
                   }
@@ -848,11 +877,11 @@ Item {
                   TextField {
                     id: input
                     width: browseButton.visible ? parent.width - browseButton.width - Style.space(8) : parent.width
-                    foreground: Color.menu.text
-                    accent: Color.menu.selectedText
+                    foreground: Commons.Color.menu.text
+                    accent: Commons.Color.menu.selectedText
                     password: entry.modelData.masked === true
                     text: root.settingsValues[entry.modelData.key] || ""
-                    placeholderText: SettingsForm.placeholder(entry.modelData, root.settingsPasswordStored)
+                    placeholderText: SettingsForm.placeholder(entry.modelData, root.settingsPasswordStored, tr)
                     onTextEdited: root.editSetting(entry.modelData.key, text)
                     onAccepted: root.saveSettings()
                     onActiveFocusChanged: if (activeFocus) root.settingsFocus = entry.modelData.key
@@ -862,10 +891,10 @@ Item {
                     visible: SettingsForm.browses(entry.modelData.key)
                     anchors.right: parent.right
                     anchors.verticalCenter: input.verticalCenter
-                    text: "Browse…"
+                    text: tr.t("settings.browse")
                     bordered: true
-                    foreground: Color.menu.text
-                    accent: Color.menu.selectedText
+                    foreground: Commons.Color.menu.text
+                    accent: Commons.Color.menu.selectedText
                     fontFamily: Style.font.menuFamily
                     onClicked: root.browseFolder()
                   }
@@ -876,7 +905,7 @@ Item {
                   textFormat: Text.PlainText
                   text: entry.line.text
                   wrapMode: Text.Wrap
-                  color: entry.line.problem ? Color.menu.selectedText : Color.menu.text
+                  color: entry.line.problem ? Commons.Color.menu.selectedText : Commons.Color.menu.text
                   opacity: entry.line.problem || helpMouse.containsMouse ? 1 : root.secondaryOpacity
                   font.family: Style.font.menuFamily
                   font.pixelSize: Style.font.bodySmall
@@ -906,8 +935,8 @@ Item {
               horizontalAlignment: Text.AlignHCenter
               wrapMode: Text.Wrap
               textFormat: Text.PlainText
-              text: root.settingsStatus
-              color: Color.menu.text
+              text: SettingsForm.text(root.settingsStatus, tr)
+              color: Commons.Color.menu.text
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
             }
@@ -915,8 +944,8 @@ Item {
               width: parent.width
               horizontalAlignment: Text.AlignHCenter
               textFormat: Text.PlainText
-              text: SettingsForm.footer(root.settingsFocus, root.settingsChanged, root.settingsSetup)
-              color: Color.menu.text
+              text: SettingsForm.footer(root.settingsFocus, root.settingsChanged, root.settingsSetup, tr)
+              color: Commons.Color.menu.text
               opacity: root.hintOpacity
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.bodySmall

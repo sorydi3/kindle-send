@@ -53,6 +53,7 @@ def test_a_rejected_password_is_reported_even_when_gmail_hangs_up(ks, keyring, s
     ks.main(["send", "--route", "email", str(book)])
 
     result = json.loads(capsys.readouterr().out.splitlines()[-1])
-    assert result == {"result": "failed", "reason": "Gmail rejected the app password.", "fixBySetup": True,
+    assert result == {"result": "failed", "code": "password_rejected", "values": {},
+                      "reason": "Gmail rejected the app password.", "fixBySetup": True,
                       "field": "appPassword"}
     assert commands[-1] == "AUTH PLAIN"

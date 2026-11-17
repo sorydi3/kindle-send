@@ -4,7 +4,7 @@ import socket
 
 import pytest
 
-from conftest import write_shell_json
+from conftest import settings_file, write_settings
 
 KINDLE = "reader@kindle.com"
 SENDER = "sender@gmail.com"
@@ -26,7 +26,7 @@ def book(tmp_path):
 
 @pytest.fixture
 def setup_done(home, keyring):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER)
     keyring.set_password(PASSWORD + "\n")
 
 
@@ -83,20 +83,21 @@ def test_subject_is_file_name_without_extension(ks, tmp_path):
 def test_missing_setting_fails_before_connecting(
     ks, smtp, home, keyring, book, capsys, settings, missing
 ):
-    write_shell_json(home, **settings)
+    write_settings(home, **settings)
     keyring.set_password(PASSWORD)
 
     code, lines = run(ks, capsys, "send", "--route", "email", str(book))
 
     assert code == 0
     assert lines == [
-        {"result": "failed", "reason": f"Not set up: {missing} missing.", "fixBySetup": True,
+        {"result": "failed", "code": "not_set_up", "values": {"fields": [missing]},
+         "reason": f"Not set up: {missing} missing.", "fixBySetup": True,
          "field": missing}
     ]
     assert smtp.instances == []
 
 
-def test_no_shell_json_names_both_settings(ks, smtp, home, keyring, book, capsys):
+def test_no_settings_names_both_settings(ks, smtp, home, keyring, book, capsys):
     keyring.set_password(PASSWORD)
 
     _, lines = run(ks, capsys, "send", "--route", "email", str(book))
@@ -104,6 +105,8 @@ def test_no_shell_json_names_both_settings(ks, smtp, home, keyring, book, capsys
     assert lines == [
         {
             "result": "failed",
+            "code": "not_set_up",
+            "values": {"fields": ["kindleAddress", "senderAddress"]},
             "reason": "Not set up: kindleAddress, senderAddress missing.",
             "fixBySetup": True,
             "field": "kindleAddress",
@@ -116,19 +119,20 @@ def test_no_shell_json_names_both_settings(ks, smtp, home, keyring, book, capsys
 def test_missing_or_empty_password_fails_before_connecting(
     ks, smtp, home, keyring, book, capsys, stored
 ):
-    write_shell_json(home, kindleAddress=KINDLE, senderAddress=SENDER)
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER)
     if stored is not None:
         keyring.set_password(stored)
 
     _, lines = run(ks, capsys, "send", "--route", "email", str(book))
 
-    assert lines == [{"result": "failed", "reason": "No app password stored.", "fixBySetup": True,
+    assert lines == [{"result": "failed", "code": "no_app_password", "values": {},
+                      "reason": "No app password stored.", "fixBySetup": True,
                       "field": "appPassword"}]
     assert smtp.instances == []
     assert keyring.calls() == ["lookup service kindle-send user sender@gmail.com"]
 
 
-def test_settings_path_can_be_overridden(ks, smtp, home, keyring, book, capsys, tmp_path, monkeypatch):
+def test_the_old_shell_json_path_can_be_overridden_for_the_copy(ks, smtp, home, keyring, book, capsys, tmp_path, monkeypatch):
     other = tmp_path / "elsewhere.json"
     other.write_text(json.dumps({"plugins": [
         {"id": "sorydi3.kindle-send", "kindleAddress": KINDLE, "senderAddress": SENDER}]}))
@@ -147,7 +151,8 @@ def test_rejected_password_asks_for_setup(ks, smtp, setup_done, book, capsys):
 
     assert lines == [
         {"stage": "sending"},
-        {"result": "failed", "reason": "Gmail rejected the app password.", "fixBySetup": True,
+        {"result": "failed", "code": "password_rejected", "values": {},
+         "reason": "Gmail rejected the app password.", "fixBySetup": True,
          "field": "appPassword"},
     ]
 
@@ -167,7 +172,18 @@ def test_network_or_smtp_error_names_the_error(ks, smtp, setup_done, book, capsy
 
     _, lines = run(ks, capsys, "send", "--route", "email", str(book))
 
-    assert lines[-1] == {"result": "failed", "reason": f"Couldn't reach Gmail: {shown}."}
+    assert lines[-1] == {"result": "failed", "code": "gmail_unreachable", "values": {"detail": shown},
+                         "reason": f"Couldn't reach Gmail: {shown}."}
+
+
+def test_a_server_echoing_the_password_never_gets_it_into_the_reason_or_values(ks, smtp, setup_done, book,
+                                                                              capsys):
+    smtp.send_error = smtplib.SMTPServerDisconnected(f"closed after {PASSWORD}")
+
+    _, lines = run(ks, capsys, "send", "--route", "email", str(book))
+
+    assert lines[-1]["values"] == {"detail": "closed after ***"}
+    assert lines[-1]["reason"] == "Couldn't reach Gmail: closed after ***."
 
 
 def test_book_bigger_than_advertised_size_is_not_sent(ks, smtp, setup_done, tmp_path, capsys):
@@ -177,7 +193,8 @@ def test_book_bigger_than_advertised_size_is_not_sent(ks, smtp, setup_done, tmp_
 
     _, lines = run(ks, capsys, "send", "--route", "email", str(big))
 
-    assert lines[-1] == {"result": "failed", "reason": "Too big for email (3 MB). Switch it to USB."}
+    assert lines[-1] == {"result": "failed", "code": "too_big_for_email", "values": {"mb": 3},
+                         "reason": "Too big for email (3 MB). Switch it to USB."}
     assert smtp.instances[0].sent == []
 
 
@@ -188,7 +205,8 @@ def test_server_refusing_size_is_too_big(ks, smtp, setup_done, tmp_path, capsys)
 
     _, lines = run(ks, capsys, "send", "--route", "email", str(big))
 
-    assert lines[-1] == {"result": "failed", "reason": "Too big for email (2 MB). Switch it to USB."}
+    assert lines[-1] == {"result": "failed", "code": "too_big_for_email", "values": {"mb": 2},
+                         "reason": "Too big for email (2 MB). Switch it to USB."}
 
 
 def test_advertised_size_is_cached_for_plan(ks, smtp, setup_done, book, home, capsys):
@@ -206,7 +224,8 @@ def test_format_email_cannot_carry_fails_without_connecting(ks, smtp, setup_done
 
     _, lines = run(ks, capsys, "send", "--route", "email", str(book))
 
-    assert lines == [{"result": "failed", "reason": "AZW3 can't be sent by email. Switch it to USB."}]
+    assert lines == [{"result": "failed", "code": "format_not_emailable", "values": {"format": "AZW3"},
+                      "reason": "AZW3 can't be sent by email. Switch it to USB."}]
     assert smtp.instances == []
 
 
@@ -231,6 +250,16 @@ def test_a_failed_send_is_recorded_with_its_reason(ks, smtp, setup_done, book, h
     [entry] = history(home)
     assert entry["result"] == "failed"
     assert entry["reason"] == "Gmail rejected the app password."
+
+
+def test_the_send_history_keeps_the_english_reason_only(ks, smtp, setup_done, book, home, capsys):
+    """Message codes are for the shell; the Send history stays English (spec §17)."""
+    smtp.login_error = smtplib.SMTPAuthenticationError(535, b"no")
+
+    run(ks, capsys, "send", "--route", "email", str(book))
+
+    [entry] = history(home)
+    assert set(entry) == {"time", "name", "size", "route", "result", "reason"}
 
 
 def test_history_time_is_an_iso_timestamp_with_offset(ks, smtp, setup_done, book, home, capsys):
@@ -270,7 +299,8 @@ def test_script_runs_as_a_command(home, tmp_path):
     )
 
     assert [json.loads(l) for l in out.stdout.splitlines()] == [
-        {"result": "failed", "reason": "File not found: Gone.epub."}
+        {"result": "failed", "code": "file_not_found", "values": {"name": "Gone.epub"},
+         "reason": "File not found: Gone.epub."}
     ]
 
 
@@ -316,8 +346,8 @@ def test_a_failed_send_test_names_its_field_and_is_recorded(ks, smtp, setup_done
     code, lines = run(ks, capsys, "send", "--route", "email", "--test")
 
     assert code == 0
-    assert lines[-1] == {"result": "failed", "reason": "Gmail rejected the app password.",
-                         "fixBySetup": True, "field": "appPassword"}
+    assert lines[-1] == {"result": "failed", "code": "password_rejected", "values": {},
+                         "reason": "Gmail rejected the app password.", "fixBySetup": True, "field": "appPassword"}
     [entry] = ks.read_history()
     assert (entry["name"], entry["result"]) == ("Kindle Send Test.epub", "failed")
 
@@ -329,7 +359,8 @@ def test_send_test_without_the_bundled_epub_fails_with_a_reason(ks, smtp, setup_
     code, lines = run(ks, capsys, "send", "--route", "email", "--test")
 
     assert code == 0
-    assert lines == [{"result": "failed", "reason": "Couldn't find the test Book. Reinstall kindle-send."}]
+    assert lines == [{"result": "failed", "code": "test_book_missing", "values": {},
+                      "reason": "Couldn't find the test Book. Reinstall Books to Kindle."}]
     assert smtp.instances == []
 
 
@@ -342,3 +373,19 @@ def test_send_takes_either_a_file_or_test_by_email(ks, argv, capsys):
     with pytest.raises(SystemExit) as exit_:
         ks.main(argv)
     assert exit_.value.code == 2
+
+
+@pytest.mark.parametrize("target", ["book", "--test"])
+def test_a_settings_file_that_isnt_valid_json_fails_the_send_and_is_left_alone(ks, smtp, home, keyring, book,
+                                                                               capsys, target):
+    settings_file(home).parent.mkdir(parents=True)
+    settings_file(home).write_text("{ broken")
+    keyring.set_password(PASSWORD)
+
+    _, lines = run(ks, capsys, "send", "--route", "email", str(book) if target == "book" else target)
+
+    path = str(settings_file(home))
+    assert lines == [{"result": "failed", "code": "settings_file_invalid", "values": {"path": path},
+                      "reason": f"{path} isn't valid JSON, so it wasn't changed."}]
+    assert smtp.instances == []
+    assert settings_file(home).read_text() == "{ broken"

@@ -82,7 +82,7 @@ def test_without_calibre_the_epub_fails_with_how_to_install(ks, usb, tmp_path, c
 
     assert code == 0
     assert lines == [{"stage": "converting"},
-                     {"result": "failed",
+                     {"result": "failed", "code": "calibre_missing", "values": {},
                       "reason": "Install calibre to send EPUB over USB (sudo pacman -S calibre)."}]
     assert not (kindle / "documents").exists() or list((kindle / "documents").iterdir()) == []
     [entry] = ks.read_history()
@@ -99,7 +99,9 @@ def test_failed_conversion_reports_the_first_error_line_and_copies_nothing(ks, u
 
     assert code == 0
     assert lines == [{"stage": "converting"},
-                     {"result": "failed", "reason": "Couldn't convert: DRMError: This book is locked by DRM."}]
+                     {"result": "failed", "code": "conversion_failed",
+                      "values": {"detail": "DRMError: This book is locked by DRM"},
+                      "reason": "Couldn't convert: DRMError: This book is locked by DRM."}]
     assert not (kindle / "documents").exists() or list((kindle / "documents").iterdir()) == []
     assert book.read_bytes() == b"epub bytes"
 
