@@ -69,3 +69,23 @@ def test_bad_formats_input_fails_without_writing(tmp_path):
 
     assert out.returncode != 0
     assert not (actions / "kindle-send").exists()
+
+
+def current(actions, formats=FORMATS):
+    return subprocess.run([sys.executable, "-I", str(HELPER), "--current", str(actions),
+                           json.dumps({"formats": formats})], capture_output=True, text=True, timeout=10)
+
+
+def test_current_says_whether_the_action_is_up_to_date_without_writing(tmp_path):
+    actions = tmp_path / "actions"
+    assert current(actions).returncode == 3
+    assert not (actions / "kindle-send").exists()
+
+    write(actions)
+    path = actions / "kindle-send" / "action.toml"
+    path.write_text(path.read_text().replace("enabled = false", "enabled = true"))
+    before = path.read_text()
+
+    assert current(actions).returncode == 0  # the user's on/off choice is theirs
+    assert current(actions, FORMATS + ["mobi"]).returncode == 3
+    assert path.read_text() == before
