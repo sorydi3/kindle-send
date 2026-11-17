@@ -220,19 +220,12 @@ function testKey(isSetup, isChanged, testSend, tr) {
   return { send: true, status: "" }
 }
 
-// "09:05", in the language's digits.
-function clock(ms, tr) {
-  const d = new Date(ms)
-  const two = function(n) { return (n < 10 ? tr.num(0) : "") + tr.num(n) }
-  return Catalog.say(tr, "settings.clock", [two(d.getHours()), two(d.getMinutes())])
-}
-
 // The status line and field problems for the test send's state. A failure a
 // Setting fixes shows next to that field, any other in the status line.
 function testOutcome(testSend, tr) {
   const t = testSend || {}
   if (t.state === "sending") return { status: tr.t("settings.sendingTest"), problems: {} }
-  if (t.state === "sent") return { status: Catalog.say(tr, "settings.testAccepted", [clock(t.at, tr)]), problems: {} }
+  if (t.state === "sent") return { status: Catalog.say(tr, "settings.testAccepted", [tr.time(t.at)]), problems: {} }
   if (t.state !== "failed") return { status: "", problems: {} }
   const reason = Catalog.message(tr, t.code, t.values, t.reason)
   if (t.field && FIELDS.some(function(f) { return f.key === t.field })) {

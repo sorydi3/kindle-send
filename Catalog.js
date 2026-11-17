@@ -3,6 +3,7 @@
 //   tr.t(key, fallback)      a catalog string (Commons.Translations.t)
 //   tr.tn(key, count)        the plural form for count (Commons.Translations.tn)
 //   tr.num(value, decimals)  a number as the language writes it (Commons.I18n.formatNumber)
+//   tr.time(ms)              a time of day as the language writes it (Qt.locale(Commons.I18n.formatLocale))
 // The Picker, the Service and the bar widget hand in Omarchy's; the tests a
 // stand-in over i18n/en.json. Catalog strings carry %1, %2, … placeholders.
 .pragma library

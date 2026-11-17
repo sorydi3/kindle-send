@@ -659,10 +659,12 @@ def test_a_failed_test_send_reads_its_reason_from_its_code():
     assert failed["problems"] == {"appPassword": "Gmail hat das App-Passwort abgelehnt."}
 
 
-def test_the_test_send_time_uses_the_languages_digits():
-    sent = form("testOutcome({state: 'sent', at: new Date(2026, 10, 13, 9, 5).getTime()}, LANG({}, '\\u0660'))")
+def test_the_test_send_time_is_written_the_way_omarchys_locale_writes_it():
+    """tr.time formats with Qt.locale(Commons.I18n.formatLocale) in Translator.qml."""
+    tr = "Object.assign(LANG({}), {time: function(ms) { return '9.05 Uhr (' + ms + ')' }})"
+    sent = form(f"testOutcome({{state: 'sent', at: 42}}, {tr})")
 
-    assert "٠٩:٠٥" in sent["status"]
+    assert sent["status"] == "Gmail accepted the test Book at 9.05 Uhr (42). Check your Kindle in a few minutes."
 
 
 def test_failures_reading_or_saving_settings_name_the_bundled_kindle_send():
