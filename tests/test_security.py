@@ -174,3 +174,54 @@ def test_the_settings_folder_is_private_and_an_open_one_is_tightened(ks, home, k
 
     assert mode(config(home)) == 0o700
     assert mode(config(home) / "settings.json") == 0o600
+
+
+# --- The USB copy never writes through a link -------------------------------------------
+
+def test_a_link_where_the_staging_file_goes_is_removed_not_written_through(ks, kindle, tmp_path, capsys):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("untouched\n")
+    (kindle / "documents" / ".Atlas.pdf.part").symlink_to(outside)
+
+    _, lines = usb_send(ks, capsys, tmp_path)
+
+    assert lines[-1] == {"result": "copied"}
+    assert outside.read_text() == "untouched\n"
+    assert (kindle / "documents" / "Atlas.pdf").read_bytes() == b"%PDF-1.7 atlas"
+    assert not (kindle / "documents" / "Atlas.pdf").is_symlink()
+    assert sorted(p.name for p in (kindle / "documents").iterdir()) == ["Atlas.pdf"]
+
+
+def test_a_documents_folder_that_links_off_the_kindle_is_refused(ks, usb, tmp_path, capsys):
+    mount = usb.plug(tmp_path / "Kindle")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (mount / "documents").symlink_to(outside)
+
+    _, lines = usb_send(ks, capsys, tmp_path)
+
+    detail = "documents links outside the Kindle"
+    assert lines[-1] == {"result": "failed", "code": "copy_failed", "values": {"detail": detail},
+                         "reason": f"Couldn't copy to the Kindle: {detail}."}
+    assert list(outside.iterdir()) == []
+
+
+def test_a_documents_link_that_points_nowhere_is_refused_without_a_crash(ks, usb, tmp_path, capsys):
+    mount = usb.plug(tmp_path / "Kindle")
+    (mount / "documents").symlink_to(tmp_path / "gone")
+
+    _, lines = usb_send(ks, capsys, tmp_path)
+
+    assert lines[-1]["code"] == "copy_failed"
+    assert not (tmp_path / "gone").exists()
+
+
+def test_a_documents_link_that_stays_on_the_kindle_is_followed(ks, usb, tmp_path, capsys):
+    mount = usb.plug(tmp_path / "Kindle")
+    (mount / "Books").mkdir()
+    (mount / "documents").symlink_to("Books")
+
+    _, lines = usb_send(ks, capsys, tmp_path)
+
+    assert lines[-1] == {"result": "copied"}
+    assert (mount / "Books" / "Atlas.pdf").read_bytes() == b"%PDF-1.7 atlas"

@@ -636,25 +636,56 @@ def kindle_status():
 
 
 def copy_to_kindle(source, mount):
-    """Copy `source` into documents/ under a temporary name, then rename and flush (spec §7)."""
-    documents = Path(mount) / "documents"
-    documents.mkdir(exist_ok=True)
-    part = documents / f".{source.name}.part"
+    """Copy `source` into documents/ under a temporary name, then rename and flush (spec §7).
+    Never writes through a link: documents/ must be on the Kindle, and the staging
+    file is created afresh (O_EXCL, O_NOFOLLOW) after removing whatever was there."""
+    part = f".{source.name}.part"
+    dfd = None
     try:
-        with open(source, "rb") as src, open(part, "wb") as dst:
+        dfd = open_documents(Path(mount))
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(part, dir_fd=dfd)  # a file or link left over; links aren't followed
+        out = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=dfd)
+        with open(source, "rb") as src, os.fdopen(out, "wb") as dst:
             shutil.copyfileobj(src, dst, 1024 * 1024)
             dst.flush()
             os.fsync(dst.fileno())
-        os.replace(part, documents / source.name)  # replaces a same-name file
-        fd = os.open(documents, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
+        # Replaces a same-name file (or link) itself; never follows it.
+        os.replace(part, source.name, src_dir_fd=dfd, dst_dir_fd=dfd)
+        os.fsync(dfd)
     except OSError as error:
-        with contextlib.suppress(OSError):
-            part.unlink()
+        if dfd is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(part, dir_fd=dfd)
         raise SendFailed("copy_failed", detail=str(error.strerror or error)) from None
+    finally:
+        if dfd is not None:
+            os.close(dfd)
+
+
+class OffKindle(OSError):
+    pass
+
+
+def open_documents(mount):
+    """A file descriptor for the Kindle's documents/ folder, creating it if missing.
+    A documents/ that is a link may only lead to a folder on the Kindle itself."""
+    documents = mount / "documents"
+    if not os.path.lexists(documents):
+        os.mkdir(documents)
+    real_mount = os.path.realpath(mount)
+    real = os.path.realpath(documents)
+    off = OffKindle("documents links outside the Kindle")
+    if os.path.commonpath([real_mount, real]) != real_mount:
+        raise off
+    try:
+        fd = os.open(real, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        raise off from None
+    if os.fstat(fd).st_dev != os.stat(real_mount).st_dev:
+        os.close(fd)
+        raise off
+    return fd
 
 
 def eject():
