@@ -95,6 +95,7 @@ const ORDER = {
   file_not_found: ["name"],
   not_set_up: ["fields"],
   gmail_unreachable: ["detail"],
+  gmail_certificate_invalid: ["detail"],
   kindle_full: ["mb"],
   copy_failed: ["detail"],
   conversion_failed: ["detail"],
@@ -104,6 +105,7 @@ const ORDER = {
   eject_step_failed: ["step"],
   book_folder_missing: ["folder"],
   book_folders_missing: ["folders"],
+  password_check_untrusted: ["detail"],
   settings_file_invalid: ["path"],
   settings_file_unwritable: ["path", "detail"],
   // The plugin's own codes, for a kindle-send that left no line to read.

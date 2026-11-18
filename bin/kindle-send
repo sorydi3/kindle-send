@@ -11,6 +11,8 @@ import math
 import os
 import shutil
 import smtplib
+import ssl
+import stat
 import subprocess
 import sys
 import tempfile
@@ -116,16 +118,34 @@ def read_settings_file():
 
 def write_settings_file(settings):
     """Write the whole Settings file atomically (temp file, then rename), mode 600."""
-    path = settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    write_private(settings_path(), json.dumps(settings, indent=2) + "\n")
+
+
+def private_dir(path):
+    """Create `path` (and its parents) if needed, mode 700. An existing one loses
+    any group and other permissions (tightened, never loosened)."""
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    current = stat.S_IMODE(os.stat(path).st_mode)
+    if current & 0o077:
+        os.chmod(path, current & 0o700)
+
+
+def write_private(path, text):
+    """Replace `path` with `text` atomically, mode 600, in a mode-700 folder.
+    The temp file is created afresh (O_EXCL, O_NOFOLLOW): a link left in its
+    place is removed, never written through. An existing open file is replaced
+    by the new private one."""
+    private_dir(path.parent)
     tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(tmp)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     try:
         with os.fdopen(fd, "w") as out:
-            out.write(json.dumps(settings, indent=2) + "\n")
+            os.fchmod(out.fileno(), 0o600)  # whatever the umask
+            out.write(text)
             out.flush()
             os.fsync(out.fileno())
-        os.chmod(tmp, 0o600)
         os.replace(tmp, path)
     except BaseException:
         with contextlib.suppress(OSError):
@@ -188,6 +208,7 @@ MESSAGES = {
     "no_app_password": lambda v: "No app password stored.",
     "password_rejected": lambda v: "Gmail rejected the app password.",
     "gmail_unreachable": lambda v: f"Couldn't reach Gmail: {v['detail']}.",
+    "gmail_certificate_invalid": lambda v: f"Couldn't verify Gmail's certificate: {v['detail']}.",
     "kindle_not_plugged_in": lambda v: "Kindle not plugged in. Plug it in and send again.",
     "kindle_full": lambda v: f"Not enough space on the Kindle (needs {v['mb']} MB).",
     "copy_failed": lambda v: f"Couldn't copy to the Kindle: {v['detail']}.",
@@ -210,6 +231,8 @@ MESSAGES = {
     "book_folders_missing": lambda v: f"{and_list(v['folders'])} don't exist, so the Picker skips them.",
     "app_password_rejected": lambda v: "Gmail rejected this app password.",
     "password_check_unreachable": lambda v: "Couldn't reach Gmail to check the password. Saved anyway.",
+    "password_check_untrusted": lambda v: ("Couldn't verify Gmail's certificate, so the password wasn't "
+                                           f"checked: {v['detail']}. Saved anyway."),
     "secret_tool_missing": lambda v: "secret-tool is missing. Install libsecret, then save again.",
     "password_not_stored": lambda v: "Couldn't store the app password in the keyring.",
     "form_unreadable": lambda v: "The Settings form sent something unreadable.",
@@ -270,9 +293,7 @@ def state_dir():
 
 def save_email_limit(advertised):
     """Cache Gmail's advertised size so `plan` can estimate the Email limit (spec §5)."""
-    path = state_dir() / "email-limit.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"advertised": advertised}) + "\n")
+    write_private(state_dir() / "email-limit.json", json.dumps({"advertised": advertised}) + "\n")
 
 
 HISTORY_DAYS = 90
@@ -320,11 +341,7 @@ def record_send(book, route, result):
         entry["reason"] = result["reason"]
     cutoff = now - timedelta(days=HISTORY_DAYS)
     kept = [e for e in read_history() if (entry_time(e) or now) >= cutoff]
-    path = history_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text("".join(json.dumps(e) + "\n" for e in kept + [entry]))
-    os.replace(tmp, path)
+    write_private(history_path(), "".join(json.dumps(e) + "\n" for e in kept + [entry]))
 
 
 def sendable(book, formats, refusal):
@@ -355,7 +372,7 @@ def send_email(book):
     msg = build_message(book, sender, kindle)
     too_big = SendFailed("too_big_for_email", mb=megabytes(book.stat().st_size))
     try:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
+        with connect_gmail() as server:
             server.ehlo()
             sign_in(server, sender, password)
             advertised = advertised_size(server)
@@ -364,6 +381,9 @@ def send_email(book):
                 if len(msg.as_bytes()) > advertised:
                     raise too_big
             server.send_message(msg)
+    except ssl.SSLCertVerificationError as error:
+        raise SendFailed("gmail_certificate_invalid",
+                         detail=certificate_problem(error).replace(password, "***")) from None
     except smtplib.SMTPAuthenticationError:
         raise SendFailed("password_rejected", field="appPassword") from None
     except smtplib.SMTPResponseException as error:
@@ -373,6 +393,20 @@ def send_email(book):
     except (smtplib.SMTPException, OSError) as error:
         raise unreachable(error, password) from None
     return {"result": "sent"}
+
+
+def connect_gmail():
+    """An SMTP connection to Gmail over TLS that verifies Gmail's certificate and
+    host name (the system's trusted CAs). Never falls back to an unverified one:
+    a certificate Gmail can't prove raises ssl.SSLCertVerificationError."""
+    context = ssl.create_default_context()
+    return smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT, context=context)
+
+
+def certificate_problem(error):
+    """What was wrong with the certificate, e.g. "self-signed certificate"."""
+    return getattr(error, "verify_message", None) or getattr(error, "reason", None) or str(error) \
+        or type(error).__name__
 
 
 def sign_in(server, user, password):
@@ -602,25 +636,56 @@ def kindle_status():
 
 
 def copy_to_kindle(source, mount):
-    """Copy `source` into documents/ under a temporary name, then rename and flush (spec §7)."""
-    documents = Path(mount) / "documents"
-    documents.mkdir(exist_ok=True)
-    part = documents / f".{source.name}.part"
+    """Copy `source` into documents/ under a temporary name, then rename and flush (spec §7).
+    Never writes through a link: documents/ must be on the Kindle, and the staging
+    file is created afresh (O_EXCL, O_NOFOLLOW) after removing whatever was there."""
+    part = f".{source.name}.part"
+    dfd = None
     try:
-        with open(source, "rb") as src, open(part, "wb") as dst:
+        dfd = open_documents(Path(mount))
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(part, dir_fd=dfd)  # a file or link left over; links aren't followed
+        out = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=dfd)
+        with open(source, "rb") as src, os.fdopen(out, "wb") as dst:
             shutil.copyfileobj(src, dst, 1024 * 1024)
             dst.flush()
             os.fsync(dst.fileno())
-        os.replace(part, documents / source.name)  # replaces a same-name file
-        fd = os.open(documents, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
+        # Replaces a same-name file (or link) itself; never follows it.
+        os.replace(part, source.name, src_dir_fd=dfd, dst_dir_fd=dfd)
+        os.fsync(dfd)
     except OSError as error:
-        with contextlib.suppress(OSError):
-            part.unlink()
+        if dfd is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(part, dir_fd=dfd)
         raise SendFailed("copy_failed", detail=str(error.strerror or error)) from None
+    finally:
+        if dfd is not None:
+            os.close(dfd)
+
+
+class OffKindle(OSError):
+    pass
+
+
+def open_documents(mount):
+    """A file descriptor for the Kindle's documents/ folder, creating it if missing.
+    A documents/ that is a link may only lead to a folder on the Kindle itself."""
+    documents = mount / "documents"
+    if not os.path.lexists(documents):
+        os.mkdir(documents)
+    real_mount = os.path.realpath(mount)
+    real = os.path.realpath(documents)
+    off = OffKindle("documents links outside the Kindle")
+    if os.path.commonpath([real_mount, real]) != real_mount:
+        raise off
+    try:
+        fd = os.open(real, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        raise off from None
+    if os.fstat(fd).st_dev != os.stat(real_mount).st_dev:
+        os.close(fd)
+        raise off
+    return fd
 
 
 def eject():
@@ -1074,16 +1139,20 @@ def typed_password(raw):
 
 
 def check_password(sender, password):
-    """Sign in to Gmail without sending (spec §9): "accepted", "rejected" or "unreachable"."""
+    """Sign in to Gmail without sending (spec §9): ("accepted" | "rejected" |
+    "unreachable" | "untrusted", detail). "untrusted": Gmail's certificate
+    couldn't be verified, so the password was never sent."""
     try:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
+        with connect_gmail() as server:
             server.ehlo()
             sign_in(server, sender, password)
+    except ssl.SSLCertVerificationError as error:
+        return "untrusted", certificate_problem(error).replace(password, "***")
     except smtplib.SMTPAuthenticationError:
-        return "rejected"
+        return "rejected", ""
     except (smtplib.SMTPException, OSError):
-        return "unreachable"
-    return "accepted"
+        return "unreachable", ""
+    return "accepted", ""
 
 
 def store_typed_password(sender, password):
@@ -1143,12 +1212,14 @@ def save_form():
     # A changed address is checked with the password already stored for it, if any.
     password = typed or (lookup_password(sender) if address_changed else None)
     if password:
-        outcome = check_password(sender, password)
+        outcome, detail = check_password(sender, password)
         if outcome == "rejected":
             emit({"saved": False, "problems": [problem("appPassword", "app_password_rejected", True)]})
             return 0
         if outcome == "unreachable":
             password_problems.append(problem("appPassword", "password_check_unreachable", False))
+        if outcome == "untrusted":
+            password_problems.append(problem("appPassword", "password_check_untrusted", False, detail=detail))
     if typed:
         stored = store_typed_password(sender, typed)
         if stored:
