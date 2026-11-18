@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 ACTION_ID = "kindle-send"
 
@@ -68,13 +69,20 @@ def main(actions_dir, formats_json, only_check=False):
     if only_check:
         return 0 if text == old else 3
 
+    if os.path.islink(folder):
+        sys.exit(f"    {folder} is a link; the Strata action was not written.")
     os.makedirs(folder, mode=0o700, exist_ok=True)
-    os.chmod(folder, 0o700)
-    tmp = path + ".kindle-send-tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, path)
+    os.chmod(folder, 0o700, follow_symlinks=False)
+    # A fresh owner-only staging file (never a fixed path a planted link could
+    # redirect), renamed over the action, which replaces a link instead of following it.
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".action.toml.", suffix=".kindle-send-tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
 
     if not existed:
         print(f"    Added {path}, turned off.")

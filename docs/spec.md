@@ -307,7 +307,7 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 
 1. **Check dependencies:** `python3` and `secret-tool` required; `nautilus-python`, Strata and Calibre optional. A missing optional one only skips its extra (for Calibre, print "Optional: `sudo pacman -S calibre` to send EPUB over USB"). Never run `sudo`.
 2. **Link:** `~/.local/bin/kindle-send` → the bundled `bin/kindle-send`, so the terminal and the right-click extras find it. Without the link the right-click extras aren't installed.
-3. **Right-click:** `nautilus/kindle-send.py` → `~/.local/share/nautilus-python/extensions/` if `nautilus-python` is installed; the Strata action → `~/.config/strata/actions/kindle-send/` if Strata is installed (Section 4).
+3. **Right-click:** `nautilus/kindle-send.py` → `~/.local/share/nautilus-python/extensions/` if `nautilus-python` is installed. A `kindle-send.py` already there that isn't ours (ours, in every version, holds `PLUGIN_ID = "sorydi3.kindle-send"`, the same check `--remove` uses) is left alone and never offered for replacement: "… is not Books to Kindle's; left alone." An older one of ours is asked about ("Update…?"), backed up to `kindle-send.py.before-kindle-send`, then replaced. The Strata action → `~/.config/strata/actions/kindle-send/` if Strata is installed (Section 4).
 4. **Edit config, each backed up first and wrapped in `>>> kindle-send … >>>` / `<<< kindle-send <<<` markers:**
    - `~/.config/hypr/bindings.lua`: `SUPER + SHIFT + K` → `omarchy-shell shell toggle sorydi3.kindle-send`
    - `~/.config/omarchy/extensions/omarchy-menu.jsonc`: "Books to Kindle" (toggle the Picker) and "Books to Kindle → Settings" (`omarchy-shell shell summon sorydi3.kindle-send '{"settings":""}'`). An older block is replaced in place (asked like any edit); an up-to-date block is left as it is.
@@ -315,6 +315,13 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 6. **Finish:** say the Picker opens from the bar widget (and `SUPER + SHIFT + K` if added). On a terminal, ask "Set up in the terminal instead? [y/N]" and run `kindle-send setup` on yes.
 
 Asking needs a terminal: without one the script makes no edits and says so. `--yes` makes them without asking. Each block goes in only once; the menu block goes before the final `}`; after an edit the script checks the file with the shell's own parsing rules and restores the backup if that fails; a menu file that already fails to parse is left alone. Backups: `<file>.before-kindle-send`.
+
+**No writes through a fixed path.** Nothing the extras script or its helpers (`scripts/menu_block.py`, `scripts/strata_action.py`) write goes to a fixed staging path, since a stale file or a link already sitting there would be truncated or written through. Each write is staged in a fresh owner-only file from `mktemp`/`tempfile.mkstemp` in the target's own folder (named `.<file>.kindle-send-…`, which Nautilus doesn't load), and removed if anything fails:
+- A file put in place whole (the Nautilus extension, the menu file, the Strata action, a backup) is renamed over its path, so a link there is replaced, not followed. The menu file keeps its mode; the Nautilus extension is `644`; the Strata action `600`.
+- `bindings.lua` is edited by copying the new text into it, so a bindings file that is a link into the user's dotfiles stays one.
+- A backup is copied (`cp -p`) into a fresh file and then renamed onto `<file>.before-kindle-send`, so a link already at the backup path is replaced, and the backup holds the file as it was.
+- A Strata `kindle-send` action folder that is itself a link is refused (not `chmod`ed or written into).
+- The `~/.local/bin/kindle-send` link is removed and recreated, which never writes through what was there.
 
 **Remove:** `scripts/install.sh --remove` removes the extras (binding and menu blocks, the link, the Nautilus extension, the Strata action); `--purge` also deletes `~/.config/kindle-send/`, the keyring password (`secret-tool clear service kindle-send`) and the Send history (`~/.local/state/kindle-send/`). Then `omarchy plugin remove sorydi3.kindle-send` removes the plugin itself; without `--purge`, Settings, the password and the Send history survive it.
 

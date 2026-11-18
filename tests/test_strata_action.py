@@ -61,6 +61,60 @@ def test_rerun_keeps_the_users_enabled_choice_and_updates_the_formats(tmp_path):
     assert action["when"]["extensions"] == FORMATS + ["mobi"]
 
 
+def test_a_link_planted_at_the_old_staging_path_is_not_written_through(tmp_path):
+    actions = tmp_path / "actions"
+    (actions / "kindle-send").mkdir(parents=True)
+    victim = tmp_path / "victim"
+    victim.write_text("someone's file\n")
+    (actions / "kindle-send" / "action.toml.kindle-send-tmp").symlink_to(victim)
+
+    out = write(actions)
+
+    assert out.returncode == 0, out.stderr
+    assert victim.read_text() == "someone's file\n"
+    assert manifest(actions)["id"] == "kindle-send"
+    assert stat.S_IMODE((actions / "kindle-send" / "action.toml").stat().st_mode) == 0o600
+
+
+def test_a_link_at_the_action_file_is_replaced_not_written_through(tmp_path):
+    actions = tmp_path / "actions"
+    (actions / "kindle-send").mkdir(parents=True)
+    victim = tmp_path / "victim.toml"
+    victim.write_text("enabled = true\n")
+    path = actions / "kindle-send" / "action.toml"
+    path.symlink_to(victim)
+
+    out = write(actions)
+
+    assert out.returncode == 0, out.stderr
+    assert victim.read_text() == "enabled = true\n"
+    assert not path.is_symlink()
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_an_action_folder_that_is_a_link_is_refused(tmp_path):
+    actions = tmp_path / "actions"
+    actions.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir(mode=0o755)
+    (actions / "kindle-send").symlink_to(elsewhere)
+
+    out = write(actions)
+
+    assert out.returncode != 0
+    assert list(elsewhere.iterdir()) == []
+    assert stat.S_IMODE(elsewhere.stat().st_mode) == 0o755
+
+
+def test_no_staging_file_is_left_beside_the_action(tmp_path):
+    actions = tmp_path / "actions"
+
+    write(actions)
+    write(actions, FORMATS + ["mobi"])
+
+    assert [f.name for f in (actions / "kindle-send").iterdir()] == ["action.toml"]
+
+
 def test_bad_formats_input_fails_without_writing(tmp_path):
     actions = tmp_path / "actions"
 
