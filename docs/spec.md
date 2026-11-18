@@ -163,7 +163,8 @@ Route rules, per Book:
 
 ## 6. Email route ([#5](https://github.com/sorydi3/kindle-send/issues/5), [#11](https://github.com/sorydi3/kindle-send/issues/11))
 
-- Python `smtplib.SMTP_SSL("smtp.gmail.com", 465)`; login with `senderAddress` and the app password from the keyring.
+- Python `smtplib.SMTP_SSL("smtp.gmail.com", 465)` with `ssl.create_default_context()`, so Gmail's certificate and host name are verified against the system's trusted CAs (sending and the save-time password check share one connection helper); login with `senderAddress` and the app password from the keyring.
+- **Certificate Gmail can't prove:** never falls back to an unverified connection. The Send fails with "Couldn't verify Gmail's certificate: <detail>." (code `gmail_certificate_invalid`) before the app password or the Book is sent.
 - **One email per Book:** From `senderAddress`, To `kindleAddress`, subject = file name without extension, a one-line body, the Book attached with its MIME type (`application/epub+zip` for EPUB).
 - Success means **Gmail accepted the message**. Amazon sends nothing back, neither on success nor on failure (verified live), so the plugin can never confirm delivery.
 - An unapproved sender fails silently. Setup's test send is the only check.
@@ -175,7 +176,7 @@ Route rules, per Book:
 - **Copy**, for each Book:
   1. Convert if it's an EPUB (Section 8).
   2. Check free space; fail if there isn't enough.
-  3. Copy to `documents/.<name>.part`, rename to `documents/<name>` (replacing a same-name file), then `fsync`.
+  3. Copy to `documents/.<name>.part`, rename to `documents/<name>` (replacing a same-name file), then `fsync`. Nothing is written through a link: a `documents` that is a link must lead to a folder on the Kindle itself (same path prefix and device), else the copy fails with "Couldn't copy to the Kindle: documents links outside the Kindle."; whatever sits at the staging name is removed (a link is not followed) and the staging file is created afresh (`O_CREAT|O_EXCL|O_NOFOLLOW`); the rename replaces a same-name link itself, not its target.
 - **Eject** once per Send, as soon as it has no USB Book left (emails still to go, e.g. held by the Send limit, don't keep the Kindle mounted): `udisksctl unmount -b <partition>` then `udisksctl power-off -b <device>`. If it fails (e.g. Nautilus has the drive open), the Books stay copied and the notification asks the user to eject.
 - After an eject, a later USB Send needs the Kindle plugged back in, so it becomes a Pending Send.
 
@@ -204,7 +205,7 @@ The two Send limit numbers are not in the Settings form; they are changed in thi
 
 **Missing setting or password:** the Send fails before anything is sent. The notification names what's missing, and clicking it opens the Picker in Settings on that field.
 
-**One writer:** `kindle-send` is the only program that writes Settings (`kindle-send save` for the form, the wizard in a terminal). It writes the whole Settings file atomically (temp file, then rename), mode 600.
+**One writer:** `kindle-send` is the only program that writes Settings (`kindle-send save` for the form, the wizard in a terminal). It writes the whole Settings file atomically (temp file, then rename), mode 600, in a mode-700 `kindle-send` folder (an existing folder loses group and other permissions). The temp file is created afresh (`O_EXCL|O_NOFOLLOW`), so a link left in its place is never written through.
 
 ### Settings in the Picker ([#30](https://github.com/sorydi3/kindle-send/issues/30) to [#35](https://github.com/sorydi3/kindle-send/issues/35))
 
@@ -234,7 +235,7 @@ A missing value is flagged next to its label ("· needed", accent color). There 
 - **Saving** (`Enter`) checks values then, never on leaving a field; a field's flag clears as soon as it is edited. A problem replaces that field's help line in the accent color, focus jumps to the first problem, and the status line above the footer sums up ("2 values need fixing.").
   - **Blocks saving:** an empty required field ("N still needed before Books can be sent."), or something that isn't an email address.
   - **Saves with a warning:** a Kindle address not ending in `@kindle.com` ("Kindle addresses usually end in @kindle.com."), a sender not on `@gmail.com` ("Make sure this is a Google account."; Google Workspace addresses send through Gmail too), a Book folder that doesn't exist ("~/Bokos doesn't exist, so the Picker skips it."; it is never created).
-  - **App password check:** when the Gmail address or app password changed, saving first signs in to Gmail without sending (with a typed app password the status line says "Checking the app password with Gmail…", otherwise "Saving…"). Rejected: nothing is saved, "Gmail rejected this app password." under the field. Gmail unreachable: saved anyway, "Couldn't reach Gmail to check the password. Saved anyway."
+  - **App password check:** when the Gmail address or app password changed, saving first signs in to Gmail without sending (with a typed app password the status line says "Checking the app password with Gmail…", otherwise "Saving…"). Rejected: nothing is saved, "Gmail rejected this app password." under the field. Gmail unreachable: saved anyway, "Couldn't reach Gmail to check the password. Saved anyway." Gmail's certificate can't be verified (Section 6): the password is not sent, and it is saved anyway with "Couldn't verify Gmail's certificate, so the password wasn't checked: <detail>. Saved anyway." (code `password_check_untrusted`).
   - The first save creates `~/Books` if missing, then suggests the test: "Saved. Ctrl+T sends a test Book to check it all works."
 - **Test send** (`Ctrl+T`): the Service sends `assets/test.epub` as "Kindle Send Test" by email like any Send (`kindle-send send --route email --test`; same notifications, a Send history entry). The Picker stays in Settings with one status line: "Sending a test Book…", then "Gmail accepted the test Book at <time>. Check your Kindle in a few minutes.", or the failure next to its field. Its success notification carries the usual causes instead of a question: "Sent to Amazon. Not on your Kindle in a few minutes? Check that <Gmail> is on Amazon's approved list and the Kindle address is right." Clicking it opens Settings.
 
@@ -276,7 +277,7 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 
 ## 12. Send history ([#16](https://github.com/sorydi3/kindle-send/issues/16))
 
-- `~/.local/state/kindle-send/history.jsonl`, one line per Book: `{"time","name","size","route","result","reason"?}`. Entries older than 90 days are dropped on write. A USB Book that finds no Kindle gets no line: it becomes a Pending Send and is recorded when it is copied or fails for another reason. A cancelled Pending Send leaves no line.
+- `~/.local/state/kindle-send/history.jsonl`, one line per Book: `{"time","name","size","route","result","reason"?}`. Entries older than 90 days are dropped on write. Private like the Settings file: written atomically, mode 600, in a mode-700 `~/.local/state/kindle-send/` (`$XDG_STATE_HOME`); an existing folder or 644 history is tightened on the next write. The cached Email limit (`email-limit.json`) beside it is written the same way. A USB Book that finds no Kindle gets no line: it becomes a Pending Send and is recorded when it is copied or fails for another reason. A cancelled Pending Send leaves no line.
 - Same Book = same file name and size.
 - Failed Sends are recorded too, but only successful ones (`sent` or `copied`) mark a Book as sent (`lastSent`) or count toward the Send limit (`sent` only).
 - Used only for: the Picker's "sent N days ago" mark, the Send limit count, and `kindle-send history` (last 20, newest first, local time, e.g. `Nov 4 23:17 · Dune.epub · Email · Sent to Amazon`; also `… · USB · Copied to Kindle` and `… · Email · Failed: <reason>`).
@@ -295,6 +296,7 @@ All through `omarchy-notification-send` (`-p` for the id, `-r` to replace, `-u` 
 | Not enough space on Kindle | "Not enough space on the Kindle (needs N MB)." | no |
 | Copy to the Kindle failed | "Couldn't copy to the Kindle: <error>." | no |
 | Network or SMTP error | "Couldn't reach Gmail: <error>." | no |
+| Gmail's certificate can't be verified | "Couldn't verify Gmail's certificate: <detail>." | no |
 | Eject failed | Books copied; "Please eject the Kindle." | no |
 
 ## 14. Install, extras and removal ([#17](https://github.com/sorydi3/kindle-send/issues/17), [#55](https://github.com/sorydi3/kindle-send/issues/55))
