@@ -130,6 +130,35 @@ def private_dir(path):
         os.chmod(path, current & 0o700)
 
 
+def tighten_existing(path, keep):
+    """Drop group and other permissions from `path` if it exists, never through a
+    link: it is opened with O_NOFOLLOW (a link fails to open and is left alone)
+    and changed with fchmod. Missing or unopenable paths are skipped quietly."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW | (os.O_DIRECTORY if keep == 0o700 else 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        return
+    try:
+        current = stat.S_IMODE(os.fstat(fd).st_mode)
+        if current & ~keep & 0o777:
+            os.fchmod(fd, current & keep)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def secure_existing_files():
+    """Tighten what earlier versions left readable, on every start, so an older
+    install's Send history and Settings aren't exposed until the next write."""
+    for folder, files in ((state_dir(), ("history.jsonl", "email-limit.json")),
+                          (settings_path().parent, (settings_path().name,))):
+        tighten_existing(folder, 0o700)
+        for name in files:
+            tighten_existing(folder / name, 0o600)
+
+
 def write_private(path, text):
     """Replace `path` with `text` atomically, mode 600, in a mode-700 folder.
     The temp file is created afresh (O_EXCL, O_NOFOLLOW): a link left in its
@@ -1267,6 +1296,7 @@ def main(argv=None):
     pick_parser = sub.add_parser("pick", help="open the Picker with just these Books (Strata's action)")
     pick_parser.add_argument("files", nargs="+")
     args = parser.parse_args(argv)
+    secure_existing_files()
     if args.command == "send":
         if args.test and args.route != "email":
             send.error("--test sends by email only: use --route email")
