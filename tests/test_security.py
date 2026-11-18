@@ -164,6 +164,73 @@ def test_a_link_left_where_the_history_is_written_is_replaced_not_followed(ks, h
     assert [e["name"] for e in ks.read_history()] == ["Atlas.pdf"]
 
 
+OLD_ENTRY = ('{"time": "2026-11-18T10:00:00+00:00", "name": "Old.pdf", "size": 1, '
+             '"route": "usb", "result": "copied"}\n')
+
+
+def open_history(home):
+    """An existing install from before the fix: open state folder and history."""
+    state(home).mkdir(parents=True)
+    state(home).chmod(0o755)
+    history = state(home) / "history.jsonl"
+    history.write_text(OLD_ENTRY)
+    history.chmod(0o644)
+    return history
+
+
+@pytest.mark.parametrize("argv", [["history"], ["plan", "--folders"], ["limit"], ["formats"]])
+def test_an_existing_open_history_is_tightened_by_commands_that_only_read(ks, home, capsys, argv):
+    """The review's follow-up: opening the Picker or the history must not leave
+    an older install's history readable until the next Send."""
+    history = open_history(home)
+
+    ks.main(argv)
+    capsys.readouterr()
+
+    assert mode(state(home)) == 0o700
+    assert mode(history) == 0o600
+    assert history.read_text() == OLD_ENTRY
+
+
+def test_an_existing_open_settings_file_is_tightened_by_reading_it(ks, home, capsys):
+    write_settings(home, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=["~/Books"])
+    config(home).chmod(0o755)
+    (config(home) / "settings.json").chmod(0o644)
+
+    ks.main(["settings"])
+    capsys.readouterr()
+
+    assert mode(config(home)) == 0o700
+    assert mode(config(home) / "settings.json") == 0o600
+
+
+def test_securing_on_start_never_follows_a_link(ks, home, tmp_path, capsys):
+    elsewhere = tmp_path / "elsewhere.txt"
+    elsewhere.write_text("not ours")
+    elsewhere.chmod(0o644)
+    state(home).mkdir(parents=True)
+    (state(home) / "history.jsonl").symlink_to(elsewhere)
+    outside = tmp_path / "outside-dir"
+    outside.mkdir()
+    outside.chmod(0o755)
+    config(home).parent.mkdir(parents=True, exist_ok=True)
+    config(home).symlink_to(outside)
+
+    ks.main(["formats"])
+    capsys.readouterr()
+
+    assert mode(elsewhere) == 0o644
+    assert mode(outside) == 0o755
+
+
+def test_securing_on_start_is_quiet_when_nothing_exists_yet(ks, home, capsys):
+    assert ks.main(["formats"]) == 0
+    capsys.readouterr()
+
+    assert not state(home).exists()
+    assert not config(home).exists()
+
+
 def test_the_settings_folder_is_private_and_an_open_one_is_tightened(ks, home, keyring, smtp, capsys,
                                                                        monkeypatch, tmp_path):
     config(home).mkdir(parents=True)
