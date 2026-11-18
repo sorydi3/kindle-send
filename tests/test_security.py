@@ -98,3 +98,79 @@ def test_a_certificate_failure_while_checking_a_password_is_named_not_hidden(ks,
         {"field": "appPassword", "code": "password_check_untrusted", "values": {"detail": CERT_DETAIL},
          "message": f"Couldn't verify Gmail's certificate, so the password wasn't checked: {CERT_DETAIL}. "
                     "Saved anyway.", "blocking": False}]
+
+
+# --- Private state and config files -----------------------------------------------------
+
+def state(home):
+    return home / ".local" / "state" / "kindle-send"
+
+
+def config(home):
+    return home / ".config" / "kindle-send"
+
+
+@pytest.fixture
+def kindle(usb, tmp_path):
+    mount = usb.plug(tmp_path / "Kindle")
+    (mount / "documents").mkdir()
+    return mount
+
+
+def usb_send(ks, capsys, tmp_path, name="Atlas.pdf"):
+    book = tmp_path / name
+    book.write_bytes(b"%PDF-1.7 atlas")
+    return run(ks, capsys, "send", "--route", "usb", str(book))
+
+
+def test_the_send_history_is_readable_only_by_its_owner(ks, home, kindle, tmp_path, capsys):
+    usb_send(ks, capsys, tmp_path)
+
+    assert mode(state(home)) == 0o700
+    assert mode(state(home) / "history.jsonl") == 0o600
+
+
+def test_an_existing_open_state_folder_and_history_are_tightened(ks, home, kindle, tmp_path, capsys):
+    state(home).mkdir(parents=True)
+    state(home).chmod(0o755)
+    history = state(home) / "history.jsonl"
+    history.write_text('{"time": "2026-11-18T10:00:00+00:00", "name": "Old.pdf", "size": 1, '
+                       '"route": "usb", "result": "copied"}\n')
+    history.chmod(0o644)
+
+    usb_send(ks, capsys, tmp_path)
+
+    assert mode(state(home)) == 0o700
+    assert mode(history) == 0o600
+    assert [e["name"] for e in ks.read_history()] == ["Old.pdf", "Atlas.pdf"]
+
+
+def test_the_cached_email_limit_is_private_too(ks, home, smtp, setup_done, book, capsys):
+    run(ks, capsys, "send", "--route", "email", str(book))
+
+    assert mode(state(home)) == 0o700
+    assert mode(state(home) / "email-limit.json") == 0o600
+
+
+def test_a_link_left_where_the_history_is_written_is_replaced_not_followed(ks, home, kindle, tmp_path, capsys):
+    state(home).mkdir(parents=True)
+    elsewhere = tmp_path / "elsewhere.txt"
+    elsewhere.write_text("untouched\n")
+    (state(home) / "history.jsonl.tmp").symlink_to(elsewhere)
+
+    usb_send(ks, capsys, tmp_path)
+
+    assert elsewhere.read_text() == "untouched\n"
+    assert [e["name"] for e in ks.read_history()] == ["Atlas.pdf"]
+
+
+def test_the_settings_folder_is_private_and_an_open_one_is_tightened(ks, home, keyring, smtp, capsys,
+                                                                       monkeypatch, tmp_path):
+    config(home).mkdir(parents=True)
+    config(home).chmod(0o755)
+
+    save(ks, capsys, monkeypatch, kindleAddress=KINDLE, senderAddress=SENDER, bookFolders=[str(tmp_path)],
+         appPassword=PASSWORD)
+
+    assert mode(config(home)) == 0o700
+    assert mode(config(home) / "settings.json") == 0o600
