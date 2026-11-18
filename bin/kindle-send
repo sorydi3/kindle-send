@@ -11,6 +11,8 @@ import math
 import os
 import shutil
 import smtplib
+import ssl
+import stat
 import subprocess
 import sys
 import tempfile
@@ -188,6 +190,7 @@ MESSAGES = {
     "no_app_password": lambda v: "No app password stored.",
     "password_rejected": lambda v: "Gmail rejected the app password.",
     "gmail_unreachable": lambda v: f"Couldn't reach Gmail: {v['detail']}.",
+    "gmail_certificate_invalid": lambda v: f"Couldn't verify Gmail's certificate: {v['detail']}.",
     "kindle_not_plugged_in": lambda v: "Kindle not plugged in. Plug it in and send again.",
     "kindle_full": lambda v: f"Not enough space on the Kindle (needs {v['mb']} MB).",
     "copy_failed": lambda v: f"Couldn't copy to the Kindle: {v['detail']}.",
@@ -210,6 +213,8 @@ MESSAGES = {
     "book_folders_missing": lambda v: f"{and_list(v['folders'])} don't exist, so the Picker skips them.",
     "app_password_rejected": lambda v: "Gmail rejected this app password.",
     "password_check_unreachable": lambda v: "Couldn't reach Gmail to check the password. Saved anyway.",
+    "password_check_untrusted": lambda v: ("Couldn't verify Gmail's certificate, so the password wasn't "
+                                           f"checked: {v['detail']}. Saved anyway."),
     "secret_tool_missing": lambda v: "secret-tool is missing. Install libsecret, then save again.",
     "password_not_stored": lambda v: "Couldn't store the app password in the keyring.",
     "form_unreadable": lambda v: "The Settings form sent something unreadable.",
@@ -355,7 +360,7 @@ def send_email(book):
     msg = build_message(book, sender, kindle)
     too_big = SendFailed("too_big_for_email", mb=megabytes(book.stat().st_size))
     try:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
+        with connect_gmail() as server:
             server.ehlo()
             sign_in(server, sender, password)
             advertised = advertised_size(server)
@@ -364,6 +369,9 @@ def send_email(book):
                 if len(msg.as_bytes()) > advertised:
                     raise too_big
             server.send_message(msg)
+    except ssl.SSLCertVerificationError as error:
+        raise SendFailed("gmail_certificate_invalid",
+                         detail=certificate_problem(error).replace(password, "***")) from None
     except smtplib.SMTPAuthenticationError:
         raise SendFailed("password_rejected", field="appPassword") from None
     except smtplib.SMTPResponseException as error:
@@ -373,6 +381,20 @@ def send_email(book):
     except (smtplib.SMTPException, OSError) as error:
         raise unreachable(error, password) from None
     return {"result": "sent"}
+
+
+def connect_gmail():
+    """An SMTP connection to Gmail over TLS that verifies Gmail's certificate and
+    host name (the system's trusted CAs). Never falls back to an unverified one:
+    a certificate Gmail can't prove raises ssl.SSLCertVerificationError."""
+    context = ssl.create_default_context()
+    return smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT, context=context)
+
+
+def certificate_problem(error):
+    """What was wrong with the certificate, e.g. "self-signed certificate"."""
+    return getattr(error, "verify_message", None) or getattr(error, "reason", None) or str(error) \
+        or type(error).__name__
 
 
 def sign_in(server, user, password):
@@ -1074,16 +1096,20 @@ def typed_password(raw):
 
 
 def check_password(sender, password):
-    """Sign in to Gmail without sending (spec §9): "accepted", "rejected" or "unreachable"."""
+    """Sign in to Gmail without sending (spec §9): ("accepted" | "rejected" |
+    "unreachable" | "untrusted", detail). "untrusted": Gmail's certificate
+    couldn't be verified, so the password was never sent."""
     try:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
+        with connect_gmail() as server:
             server.ehlo()
             sign_in(server, sender, password)
+    except ssl.SSLCertVerificationError as error:
+        return "untrusted", certificate_problem(error).replace(password, "***")
     except smtplib.SMTPAuthenticationError:
-        return "rejected"
+        return "rejected", ""
     except (smtplib.SMTPException, OSError):
-        return "unreachable"
-    return "accepted"
+        return "unreachable", ""
+    return "accepted", ""
 
 
 def store_typed_password(sender, password):
@@ -1143,12 +1169,14 @@ def save_form():
     # A changed address is checked with the password already stored for it, if any.
     password = typed or (lookup_password(sender) if address_changed else None)
     if password:
-        outcome = check_password(sender, password)
+        outcome, detail = check_password(sender, password)
         if outcome == "rejected":
             emit({"saved": False, "problems": [problem("appPassword", "app_password_rejected", True)]})
             return 0
         if outcome == "unreachable":
             password_problems.append(problem("appPassword", "password_check_unreachable", False))
+        if outcome == "untrusted":
+            password_problems.append(problem("appPassword", "password_check_untrusted", False, detail=detail))
     if typed:
         stored = store_typed_password(sender, typed)
         if stored:

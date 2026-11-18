@@ -48,7 +48,9 @@ def gmail_that_hangs_up():
 def test_a_rejected_password_is_reported_even_when_gmail_hangs_up(ks, keyring, setup_done, book,
                                                                    gmail_that_hangs_up, monkeypatch, capsys):
     port, commands = gmail_that_hangs_up
-    monkeypatch.setattr(ks.smtplib, "SMTP_SSL", lambda host, _port, **kw: REAL_SMTP("127.0.0.1", port, **kw))
+    # Plain SMTP on loopback: the TLS context (checked in test_security.py) has no use here.
+    monkeypatch.setattr(ks.smtplib, "SMTP_SSL", lambda host, _port, context=None, **kw:
+                        REAL_SMTP("127.0.0.1", port, **kw))
 
     ks.main(["send", "--route", "email", str(book)])
 

@@ -171,6 +171,8 @@ class FakeSMTP:
         if FakeSMTP.connect_error:
             raise FakeSMTP.connect_error
         self.host, self.port = host, port
+        self.context = kwargs.get("context")
+        self.timeout = kwargs.get("timeout")
         self.logins = []
         self.sent = []
         self.esmtp_features = {}
