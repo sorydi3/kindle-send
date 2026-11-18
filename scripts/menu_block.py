@@ -14,7 +14,9 @@ only whole-line // comments and trailing commas are allowed.
 import json
 import os
 import re
+import stat
 import sys
+import tempfile
 
 START = "// >>> kindle-send menu (added by scripts/install.sh) >>>"
 END = "// <<< kindle-send <<<"
@@ -89,10 +91,25 @@ def current(text):
 
 
 def write(path, text):
-    tmp = f"{path}.kindle-send-tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, path)
+    """Replace `path` with `text` in one step, keeping its mode. Staged in a fresh
+    file (never a fixed path, which a planted link could redirect); the rename
+    replaces a link at `path` rather than writing through it."""
+    try:
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+    except FileNotFoundError:
+        umask = os.umask(0)
+        os.umask(umask)
+        mode = 0o666 & ~umask
+    folder, name = os.path.split(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=f".{name}.", suffix=".kindle-send-tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            os.fchmod(f.fileno(), mode)
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
 
 
 def main(argv):

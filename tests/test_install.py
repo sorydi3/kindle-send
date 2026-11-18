@@ -20,7 +20,7 @@ INSTALL = REPO / "scripts" / "install.sh"
 PROGRAM = REPO / "bin" / "kindle-send"
 PLUGIN_ID = "sorydi3.kindle-send"
 BASIC_TOOLS = ["awk", "bash", "cat", "chmod", "cmp", "cp", "date", "dirname", "grep", "install", "ln", "mkdir",
-               "mv", "python3", "readlink", "rm", "rmdir", "sed", "sleep"]
+               "mktemp", "mv", "python3", "readlink", "rm", "rmdir", "sed", "sleep"]
 
 
 def basic_tools(directory):
@@ -520,16 +520,155 @@ def test_without_a_terminal_an_older_menu_block_is_left_as_it_is(env):
     assert m.read_text() == MENU_WITH_OLD_BLOCK
 
 
-def test_an_older_nautilus_extension_is_updated_and_nautilus_reloaded(env):
+OLDER_NAUTILUS = f'"""Nautilus right-click "Send to Kindle"."""\nPLUGIN_ID = "{PLUGIN_ID}"\n# older\n'
+SOMEONE_ELSES = "# someone else's kindle-send.py\n"
+
+
+def test_an_older_nautilus_extension_is_backed_up_then_replaced_and_nautilus_reloaded(env):
     install(env, "--yes")
     p = paths(env)
-    p["nautilus"].write_text("# older\n")
+    p["nautilus"].write_text(OLDER_NAUTILUS)
     logged = len(calls(env))
 
-    install(env, "--yes")
+    result = install(env, "--yes")
 
+    assert result.returncode == 0, result.stderr
     assert p["nautilus"].read_bytes() == (REPO / "nautilus" / "kindle-send.py").read_bytes()
+    assert stat.S_IMODE(p["nautilus"].stat().st_mode) == 0o644
+    backup = p["nautilus"].with_name("kindle-send.py.before-kindle-send")
+    assert backup.read_text() == OLDER_NAUTILUS
+    assert str(backup) in result.stdout
     assert "nautilus -q" in calls(env)[logged:]
+    # No temp file is left beside it for Nautilus to load.
+    assert sorted(f.name for f in p["nautilus"].parent.iterdir()) == ["kindle-send.py",
+                                                                      "kindle-send.py.before-kindle-send"]
+
+
+def test_an_older_nautilus_extension_that_is_a_link_is_replaced_not_written_through(env, tmp_path):
+    p = paths(env)
+    p["nautilus"].parent.mkdir(parents=True)
+    elsewhere = tmp_path / "dotfiles-kindle-send.py"
+    elsewhere.write_text(OLDER_NAUTILUS)
+    p["nautilus"].symlink_to(elsewhere)
+
+    result = install(env, "--yes")
+
+    assert result.returncode == 0, result.stderr
+    assert elsewhere.read_text() == OLDER_NAUTILUS
+    assert not p["nautilus"].is_symlink()
+    assert p["nautilus"].read_bytes() == (REPO / "nautilus" / "kindle-send.py").read_bytes()
+    assert p["nautilus"].with_name("kindle-send.py.before-kindle-send").read_text() == OLDER_NAUTILUS
+
+
+@pytest.mark.parametrize("theirs", ["file", "link"])
+def test_someone_elses_nautilus_extension_is_left_alone_and_not_offered_for_replacement(env, tmp_path, theirs):
+    p = paths(env)
+    p["nautilus"].parent.mkdir(parents=True)
+    if theirs == "file":
+        p["nautilus"].write_text(SOMEONE_ELSES)
+    else:
+        target = tmp_path / "theirs.py"
+        target.write_text(SOMEONE_ELSES)
+        p["nautilus"].symlink_to(target)
+    before = snapshot(env)
+
+    # Link, menu, then no to the terminal setup (spare answers in case it wrongly asks more).
+    code, out = run_tty(INSTALL, env, ["y", "y", "n", "n", "n"])
+    yes = install(env, "--yes")
+
+    assert code == 0, out
+    assert yes.returncode == 0, yes.stderr
+    after = snapshot(env)
+    key = str(p["nautilus"].relative_to(env["home"]))
+    assert after[key] == before[key]
+    assert p["nautilus"].read_text() == SOMEONE_ELSES
+    for said in (out, yes.stdout):
+        assert f"{p['nautilus']} is not Books to Kindle's; left alone." in said
+        assert "Nautilus right-click item to" not in said and "Update the Nautilus" not in said
+    assert not p["nautilus"].with_name("kindle-send.py.before-kindle-send").exists()
+    assert "nautilus -q" not in calls(env)
+
+
+# ---- links planted where it stages or backs up files
+
+VICTIM = "someone's file, not to be touched\n"
+
+
+def plant_link(path, tmp_path):
+    """A link at `path` to a file outside HOME; returns that file."""
+    victim = tmp_path / f"victim-{path.name}"
+    victim.write_text(VICTIM)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.symlink_to(victim)
+    return victim
+
+
+# Each fixed path an older version staged or backed up through, with the setup that makes it write there.
+PLANTED = {
+    "bindings backup (add)": ("hypr/bindings.lua.before-kindle-send", BINDINGS_TEXT, MENU_TEXT),
+    "bindings backup (update)": ("hypr/bindings.lua.before-kindle-send", OLD_BINDING, MENU_TEXT),
+    "bindings staging (update)": ("hypr/bindings.lua.kindle-send-tmp", OLD_BINDING, MENU_TEXT),
+    "menu backup (add)": ("omarchy/extensions/omarchy-menu.jsonc.before-kindle-send", BINDINGS_TEXT, MENU_TEXT),
+    "menu backup (update)": ("omarchy/extensions/omarchy-menu.jsonc.before-kindle-send", BINDINGS_TEXT,
+                             MENU_WITH_OLD_BLOCK),
+    "menu staging (add)": ("omarchy/extensions/omarchy-menu.jsonc.kindle-send-tmp", BINDINGS_TEXT, MENU_TEXT),
+    "menu staging (new file)": ("omarchy/extensions/omarchy-menu.jsonc.kindle-send-tmp", BINDINGS_TEXT, None),
+}
+
+
+@pytest.mark.parametrize("case", PLANTED)
+def test_a_link_planted_at_a_staging_or_backup_path_is_not_written_through(env, tmp_path, case):
+    planted, bindings, menu = PLANTED[case]
+    b, m = config_files(env, bindings=bindings, menu=menu)
+    link = env["home"] / ".config" / planted
+    victim = plant_link(link, tmp_path)
+
+    result = install(env, "--yes")
+
+    assert result.returncode == 0, result.stderr
+    assert victim.read_text() == VICTIM
+    assert BIND_LINE in b.read_text()
+    assert "kindle-send.settings" in shell_parse(m.read_text())
+    if planted.endswith(".before-kindle-send"):
+        # The backup replaced the link and holds the file as it was.
+        assert not link.is_symlink()
+        assert link.read_text() == (bindings if "bindings" in planted else menu)
+    # No staging file is left behind.
+    assert not [f for f in (b.parent.iterdir()) if "kindle-send-" in f.name and f != link]
+    assert not [f for f in (m.parent.iterdir()) if "kindle-send-" in f.name and f != link]
+
+
+def test_a_link_planted_at_the_nautilus_backup_path_is_replaced_not_written_through(env, tmp_path):
+    p = paths(env)
+    p["nautilus"].parent.mkdir(parents=True)
+    p["nautilus"].write_text(OLDER_NAUTILUS)
+    backup = p["nautilus"].with_name("kindle-send.py.before-kindle-send")
+    victim = plant_link(backup, tmp_path)
+
+    result = install(env, "--yes")
+
+    assert result.returncode == 0, result.stderr
+    assert victim.read_text() == VICTIM
+    assert not backup.is_symlink()
+    assert backup.read_text() == OLDER_NAUTILUS
+    assert p["nautilus"].read_bytes() == (REPO / "nautilus" / "kindle-send.py").read_bytes()
+
+
+@pytest.mark.parametrize("planted", ["hypr/bindings.lua.kindle-send-tmp",
+                                     "omarchy/extensions/omarchy-menu.jsonc.kindle-send-remove",
+                                     "omarchy/extensions/omarchy-menu.jsonc.kindle-send-tmp"])
+def test_remove_does_not_write_through_a_link_planted_at_a_staging_path(env, tmp_path, planted):
+    installed(env)
+    victim = plant_link(env["home"] / ".config" / planted, tmp_path)
+
+    result = install(env, "--remove")
+
+    assert result.returncode == 0, result.stderr
+    assert victim.read_text() == VICTIM
+    b, m = (env["home"] / ".config" / "hypr" / "bindings.lua",
+            env["home"] / ".config" / "omarchy" / "extensions" / "omarchy-menu.jsonc")
+    assert BIND_START not in b.read_text()
+    assert "kindle-send menu" not in m.read_text()
 
 
 # ---- finish

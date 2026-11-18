@@ -107,11 +107,49 @@ binding_block_current() {
   ' "$bindings"
 }
 
-# rewrite_bindings AWK_PROGRAM: run it over the bindings file, in place.
+# ---- writing safely
+#
+# Nothing is written to a fixed path beside the user's files: whatever sits at
+# such a path (a stale file, or a link pointing elsewhere) could be overwritten
+# or written through. Staging files are fresh, private ones from mktemp in the
+# same folder, and a file is put in place by renaming, which replaces a link
+# instead of following it.
+
+# temp_beside FILE: a new, empty, owner-only file in FILE's folder; prints its path.
+temp_beside() {
+  mktemp "$(dirname "$1")/.$(basename "$1").kindle-send-XXXXXX"
+}
+
+# backup FILE: copy FILE (its content and mode) to FILE.before-kindle-send.
+# Whatever is already at that path, a link included, is replaced, not written through.
+backup() {
+  local tmp
+  tmp=$(temp_beside "$1")
+  if cp -p "$1" "$tmp" && mv -fT "$tmp" "$1.before-kindle-send"; then return 0; fi
+  rm -f "$tmp"
+  return 1
+}
+
+# put_in_place SOURCE MODE FILE: replace FILE with a copy of SOURCE in one step.
+# A link at FILE is replaced, not followed.
+put_in_place() {
+  local tmp
+  tmp=$(temp_beside "$3")
+  if cp "$1" "$tmp" && chmod "$2" "$tmp" && mv -fT "$tmp" "$3"; then return 0; fi
+  rm -f "$tmp"
+  return 1
+}
+
+# rewrite_bindings AWK_PROGRAM: run it over the bindings file, in place. The new
+# text is copied into the file (not renamed over it), so a bindings file that is
+# a link into the user's dotfiles stays one.
 rewrite_bindings() {
-  awk -v start="$bind_start" -v end="$bind_end" -v line="$bind_line" "$1" "$bindings" >"$bindings.kindle-send-tmp"
-  cat "$bindings.kindle-send-tmp" >"$bindings"
-  rm -f "$bindings.kindle-send-tmp"
+  local tmp status=0
+  tmp=$(temp_beside "$bindings")
+  awk -v start="$bind_start" -v end="$bind_end" -v line="$bind_line" "$1" "$bindings" >"$tmp" &&
+    cat "$tmp" >"$bindings" || status=$?
+  rm -f "$tmp"
+  return "$status"
 }
 
 # ---- --remove and --purge
@@ -135,7 +173,7 @@ if [[ $mode != add ]]; then
 
   echo "==> Omarchy menu"
   if [[ -f $menu ]] && grep -qF -- "// >>> kindle-send menu" "$menu"; then
-    before="$menu.kindle-send-remove"
+    before=$(temp_beside "$menu")
     cp -p "$menu" "$before"
     python3 -I "${menu_block[@]}" remove "$menu"
     if python3 -I "${menu_block[@]}" check "$menu"; then
@@ -263,17 +301,31 @@ elif [[ $linked == no ]]; then
   echo "    Skipped: the right-click items need the kindle-send link."
 elif [[ -f $nautilus_ext ]] && cmp -s "$repo/nautilus/kindle-send.py" "$nautilus_ext"; then
   echo "    Already in $nautilus_dir."
-else
-  question="Add the Nautilus right-click item to $nautilus_dir?"
-  [[ -f $nautilus_ext ]] && question="Update the Nautilus right-click item in $nautilus_dir?"
-  if ask "$question"; then
-    mkdir -p "$nautilus_dir"
-    install -m 644 "$repo/nautilus/kindle-send.py" "$nautilus_ext"
-    echo "    $nautilus_ext"
-    nautilus_changed=yes
+elif [[ -e $nautilus_ext || -L $nautilus_ext ]] && ! ours_nautilus_ext; then
+  # Someone else's kindle-send.py: never offered for replacement.
+  echo "    $nautilus_ext is not Books to Kindle's; left alone."
+elif [[ -e $nautilus_ext || -L $nautilus_ext ]]; then
+  # An older version of ours.
+  if ask "Update the Nautilus right-click item in $nautilus_dir?"; then
+    if backup "$nautilus_ext" && put_in_place "$repo/nautilus/kindle-send.py" 644 "$nautilus_ext"; then
+      echo "    Updated $nautilus_ext. The previous one is kept as $nautilus_ext.before-kindle-send."
+      nautilus_changed=yes
+    else
+      echo "    Warning: the Nautilus right-click item was not updated." >&2
+    fi
   else
     not_added
   fi
+elif ask "Add the Nautilus right-click item to $nautilus_dir?"; then
+  mkdir -p "$nautilus_dir"
+  if put_in_place "$repo/nautilus/kindle-send.py" 644 "$nautilus_ext"; then
+    echo "    $nautilus_ext"
+    nautilus_changed=yes
+  else
+    echo "    Warning: the Nautilus right-click item was not added." >&2
+  fi
+else
+  not_added
 fi
 
 echo "==> Strata right-click action"
@@ -304,7 +356,7 @@ elif has_binding_block && binding_block_current; then
   echo "    Already in $bindings."
 elif has_binding_block; then
   if ask "Replace the older SUPER + SHIFT + K binding in $bindings?"; then
-    cp -p "$bindings" "$bindings.before-kindle-send"
+    backup "$bindings"
     rewrite_bindings '
       inside      { if ($0 == end) { inside = 0; print }; next }
       $0 == start { print; print line; inside = 1; next }
@@ -314,7 +366,7 @@ elif has_binding_block; then
     not_added
   fi
 elif ask "Add SUPER + SHIFT + K (open the Picker) to $bindings?"; then
-  cp -p "$bindings" "$bindings.before-kindle-send"
+  backup "$bindings"
   printf '\n%s\n%s\n%s\n' "$bind_start" "$bind_line" "$bind_end" >>"$bindings"
   echo "    Added. Your previous file is kept as $bindings.before-kindle-send."
 else
@@ -335,7 +387,7 @@ elif ask "$question"; then
   backup=""
   if [[ -f $menu ]]; then
     backup="$menu.before-kindle-send"
-    cp -p "$menu" "$backup"
+    backup "$menu"
   fi
   status=0
   python3 -I "${menu_block[@]}" "$edit" "$menu" || status=$?
