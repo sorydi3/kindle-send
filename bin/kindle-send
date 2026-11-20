@@ -5,10 +5,12 @@ Standard library only. See docs/spec.md.
 """
 import argparse
 import contextlib
+import errno
 import io
 import json
 import math
 import os
+import secrets
 import shutil
 import smtplib
 import ssl
@@ -653,8 +655,14 @@ def find_kindle():
     return None
 
 
-def free_space(mount):
-    return shutil.disk_usage(mount).free
+def is_mount_point(path):
+    return os.path.ismount(path)
+
+
+def free_space(where):
+    """Free bytes on the file system at `where`, a path or an open folder."""
+    st = os.statvfs(where)
+    return st.f_bavail * st.f_frsize
 
 
 def kindle_status():
@@ -664,26 +672,54 @@ def kindle_status():
     return {"present": True, "mount": kindle["mount"], "free": free_space(kindle["mount"])}
 
 
-def copy_to_kindle(source, mount):
-    """Copy `source` into documents/ under a temporary name, then rename and flush (spec §7).
-    Never writes through a link: documents/ must be on the Kindle, and the staging
-    file is created afresh (O_EXCL, O_NOFOLLOW) after removing whatever was there."""
-    part = f".{source.name}.part"
-    dfd = None
+def mount_identity(mount):
+    """What makes the Kindle's mount folder that Kindle: its device id and inode."""
+    st = os.stat(mount)
+    return st.st_dev, st.st_ino
+
+
+def open_kindle(kindle, identity):
+    """The Kindle's mount folder, opened, if it is still the Kindle found at the start.
+
+    Between detection and the copy (an EPUB's Conversion takes a while) the Kindle can
+    be unmounted, leaving its empty mount folder on the local disk. So: it must still be
+    listed as that Kindle, still be a mount point, and the folder opened must be the same
+    device and inode recorded at detection. Everything after works from this folder, so
+    nothing is ever created on the local disk. Otherwise the Book is a Pending Send."""
+    mount = kindle["mount"]
     try:
-        dfd = open_documents(Path(mount))
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(part, dir_fd=dfd)  # a file or link left over; links aren't followed
-        out = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=dfd)
+        fd = os.open(mount, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError:
+        raise NoKindle() from None
+    again = find_kindle()
+    st = os.fstat(fd)
+    if (again is None or (again["mount"], again["partition"]) != (mount, kindle["partition"])
+            or not is_mount_point(mount) or (st.st_dev, st.st_ino) != identity):
+        os.close(fd)
+        raise NoKindle()
+    return fd
+
+
+def copy_to_kindle(source, kindle_fd):
+    """Copy `source` into documents/ under a staging name of its own, then rename and
+    flush (spec §7). `kindle_fd` is the checked Kindle (open_kindle). Never writes
+    through a link: documents/ must be on the Kindle, and the staging file is new
+    (O_EXCL, O_NOFOLLOW) and unique to this copy, so two sends of the same Book never
+    touch each other's. Only this copy's staging file is ever removed."""
+    dfd = part = None
+    try:
+        dfd = open_documents(kindle_fd)
+        part, out = create_staging(source.name, dfd)
         with open(source, "rb") as src, os.fdopen(out, "wb") as dst:
             shutil.copyfileobj(src, dst, 1024 * 1024)
             dst.flush()
             os.fsync(dst.fileno())
         # Replaces a same-name file (or link) itself; never follows it.
         os.replace(part, source.name, src_dir_fd=dfd, dst_dir_fd=dfd)
+        part = None
         os.fsync(dfd)
     except OSError as error:
-        if dfd is not None:
+        if part is not None:
             with contextlib.suppress(OSError):
                 os.unlink(part, dir_fd=dfd)
         raise SendFailed("copy_failed", detail=str(error.strerror or error)) from None
@@ -692,29 +728,52 @@ def copy_to_kindle(source, mount):
             os.close(dfd)
 
 
+def create_staging(name, dfd):
+    """A new staging file `.<name>.<random>.part` in documents/: (its name, an fd)."""
+    while True:
+        part = f".{name}.{secrets.token_hex(4)}.part"
+        try:
+            return part, os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                 0o644, dir_fd=dfd)
+        except FileExistsError:
+            continue
+
+
 class OffKindle(OSError):
     pass
 
 
-def open_documents(mount):
+def open_documents(kindle_fd):
     """A file descriptor for the Kindle's documents/ folder, creating it if missing.
-    A documents/ that is a link may only lead to a folder on the Kindle itself."""
-    documents = mount / "documents"
-    if not os.path.lexists(documents):
-        os.mkdir(documents)
-    real_mount = os.path.realpath(mount)
-    real = os.path.realpath(documents)
+    Works from the open Kindle folder; a documents/ that is a link may only lead to a
+    folder on the Kindle itself."""
+    kindle_dev = os.fstat(kindle_fd).st_dev
+    with contextlib.suppress(FileExistsError):
+        os.mkdir("documents", 0o755, dir_fd=kindle_fd)
+    try:
+        fd = os.open("documents", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=kindle_fd)
+    except OSError as error:
+        if error.errno not in (errno.ELOOP, errno.ENOTDIR):
+            raise
+        fd = open_linked_documents(kindle_fd)
+    if os.fstat(fd).st_dev != kindle_dev:
+        os.close(fd)
+        raise OffKindle("documents links outside the Kindle")
+    return fd
+
+
+def open_linked_documents(kindle_fd):
+    """documents/ is a link: follow it only to a folder under the Kindle's mount."""
     off = OffKindle("documents links outside the Kindle")
+    real_mount = os.path.realpath(f"/proc/self/fd/{kindle_fd}")
+    target = os.readlink("documents", dir_fd=kindle_fd)
+    real = os.path.realpath(os.path.join(real_mount, target))
     if os.path.commonpath([real_mount, real]) != real_mount:
         raise off
     try:
-        fd = os.open(real, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    except FileNotFoundError:
+        return os.open(real, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except (FileNotFoundError, NotADirectoryError):
         raise off from None
-    if os.fstat(fd).st_dev != os.stat(real_mount).st_dev:
-        os.close(fd)
-        raise off
-    return fd
 
 
 def eject():
@@ -765,13 +824,18 @@ def send_usb(book):
     kindle = find_kindle()
     if kindle is None:
         raise NoKindle()
+    identity = mount_identity(kindle["mount"])
     with tempfile.TemporaryDirectory(prefix="kindle-send-") as workdir:
         source = convert_for_usb(book, Path(workdir)) if fmt == "epub" else book
         size = source.stat().st_size
-        if size > free_space(kindle["mount"]):
-            raise SendFailed("kindle_full", mb=megabytes(size))
-        emit({"stage": "copying"})
-        copy_to_kindle(source, kindle["mount"])
+        kindle_fd = open_kindle(kindle, identity)  # still that Kindle, or a Pending Send
+        try:
+            if size > free_space(kindle_fd):
+                raise SendFailed("kindle_full", mb=megabytes(size))
+            emit({"stage": "copying"})
+            copy_to_kindle(source, kindle_fd)
+        finally:
+            os.close(kindle_fd)
     return {"result": "copied"}
 
 

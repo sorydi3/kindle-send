@@ -73,7 +73,7 @@ def test_usb_send_without_a_kindle_fails_before_copying_and_leaves_no_history(ks
     _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
 
     assert lines == [{"result": "failed", "code": "kindle_not_plugged_in", "values": {},
-                      "reason": "Kindle not plugged in. Plug it in and send again."}]
+        "reason": "Kindle not plugged in. Plug it in and send again."}]
     # The Service makes it a Pending Send; it is recorded once it is copied (or fails for another reason).
     assert ks.read_history() == []
 
@@ -166,3 +166,121 @@ def test_an_eject_step_that_fails_silently_is_named(ks, usb, tmp_path, capsys):
 
     assert line == {"ejected": False, "code": "eject_step_failed", "values": {"step": "unmount"},
                     "reason": "unmount failed."}
+
+
+# --- The Kindle must still be there when the copy starts (spec §7) ------------------------
+
+def gone_during_conversion(ks, monkeypatch, tmp_path, swap):
+    """An EPUB whose Conversion runs `swap()` (the Kindle going away) before it finishes."""
+    def convert(book, workdir):
+        swap()
+        target = workdir / f"{book.stem}.azw3"
+        target.write_bytes(b"AZW3")
+        return target
+    monkeypatch.setattr(ks, "convert_for_usb", convert)
+    return make_book(tmp_path, "Dune.epub")
+
+
+NOT_PLUGGED_IN = [
+    {"result": "failed", "code": "kindle_not_plugged_in", "values": {},
+     "reason": "Kindle not plugged in. Plug it in and send again."}]
+
+
+def test_a_kindle_unmounted_during_conversion_gets_nothing_written_to_its_empty_folder(
+        ks, usb, tmp_path, capsys, monkeypatch):
+    kindle = usb.plug(tmp_path / "Kindle")
+    (kindle / "documents").mkdir()
+
+    def unplug():
+        (kindle / "documents").rmdir()  # what the mount held is gone; the folder stays
+        usb.unmount(kindle)
+    book = gone_during_conversion(ks, monkeypatch, tmp_path, unplug)
+
+    _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
+
+    assert lines == NOT_PLUGGED_IN
+    assert list(kindle.iterdir()) == []
+    assert ks.read_history() == []
+
+
+def test_a_mount_folder_that_is_no_longer_a_mount_point_gets_nothing(ks, usb, tmp_path, capsys, monkeypatch):
+    kindle = usb.plug(tmp_path / "Kindle")
+    book = gone_during_conversion(ks, monkeypatch, tmp_path, lambda: usb.forget_mount(kindle))
+
+    _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
+
+    assert lines == NOT_PLUGGED_IN
+    assert list(kindle.iterdir()) == []
+
+
+def test_a_different_folder_now_at_the_kindles_mount_gets_nothing(ks, usb, tmp_path, capsys, monkeypatch):
+    kindle = usb.plug(tmp_path / "Kindle")
+    (kindle / "documents").mkdir()
+
+    def swap():  # another file system now sits at the same path
+        kindle.rename(tmp_path / "old-kindle")
+        kindle.mkdir()
+    book = gone_during_conversion(ks, monkeypatch, tmp_path, swap)
+
+    _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
+
+    assert lines == NOT_PLUGGED_IN
+    assert list(kindle.iterdir()) == []
+    assert list((tmp_path / "old-kindle" / "documents").iterdir()) == []
+
+
+# --- Two copies of the same Book at once (spec §7) ---------------------------------------
+
+def test_two_sends_of_the_same_book_at_once_both_copy_and_leave_no_staging_file(
+        ks, usb, tmp_path, capsys, monkeypatch):
+    kindle = usb.plug(tmp_path / "Kindle")
+    (kindle / "documents").mkdir()
+    book = make_book(tmp_path, "Atlas.pdf", b"%PDF-1.7 atlas")
+    real_copy = ks.shutil.copyfileobj
+    interleaved = []
+
+    def copy_then_let_the_other_send_run(src, dst, length=0):
+        real_copy(src, dst, length)
+        if not interleaved:  # the Picker's send runs while the CLI's is mid-copy
+            interleaved.append(True)
+            ks.main(["send", "--route", "usb", str(book)])
+    monkeypatch.setattr(ks.shutil, "copyfileobj", copy_then_let_the_other_send_run)
+
+    _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
+
+    assert [l for l in lines if "result" in l] == [{"result": "copied"}, {"result": "copied"}]
+    assert sorted(p.name for p in (kindle / "documents").iterdir()) == ["Atlas.pdf"]
+    assert (kindle / "documents" / "Atlas.pdf").read_bytes() == b"%PDF-1.7 atlas"
+
+
+def test_a_send_leaves_another_sends_staging_file_alone(ks, usb, tmp_path, capsys):
+    kindle = usb.plug(tmp_path / "Kindle")
+    (kindle / "documents").mkdir()
+    others = [kindle / "documents" / ".Atlas.pdf.part", kindle / "documents" / ".Atlas.pdf.k3x9q1.part"]
+    for other in others:
+        other.write_bytes(b"another send, still copying")
+    book = make_book(tmp_path, "Atlas.pdf", b"%PDF-1.7 atlas")
+
+    _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
+
+    assert lines[-1] == {"result": "copied"}
+    assert all(o.read_bytes() == b"another send, still copying" for o in others)
+    assert sorted(p.name for p in (kindle / "documents").iterdir()) == sorted(
+        ["Atlas.pdf"] + [o.name for o in others])
+
+
+def test_a_failed_copy_removes_only_its_own_staging_file(ks, usb, tmp_path, capsys, monkeypatch):
+    kindle = usb.plug(tmp_path / "Kindle")
+    (kindle / "documents").mkdir()
+    other = kindle / "documents" / ".Atlas.pdf.k3x9q1.part"
+    other.write_bytes(b"another send, still copying")
+    book = make_book(tmp_path, "Atlas.pdf")
+
+    def broken(src, dst, length=0):
+        raise OSError(5, "Input/output error")
+    monkeypatch.setattr(ks.shutil, "copyfileobj", broken)
+
+    _, lines = run(ks, capsys, "send", "--route", "usb", str(book))
+
+    assert lines[-1]["code"] == "copy_failed"
+    assert sorted(p.name for p in (kindle / "documents").iterdir()) == [other.name]
