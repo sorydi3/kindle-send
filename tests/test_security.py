@@ -245,7 +245,7 @@ def test_the_settings_folder_is_private_and_an_open_one_is_tightened(ks, home, k
 
 # --- The USB copy never writes through a link -------------------------------------------
 
-def test_a_link_where_the_staging_file_goes_is_removed_not_written_through(ks, kindle, tmp_path, capsys):
+def test_a_link_left_at_an_old_staging_name_is_never_written_through(ks, kindle, tmp_path, capsys):
     outside = tmp_path / "outside.txt"
     outside.write_text("untouched\n")
     (kindle / "documents" / ".Atlas.pdf.part").symlink_to(outside)
@@ -256,7 +256,8 @@ def test_a_link_where_the_staging_file_goes_is_removed_not_written_through(ks, k
     assert outside.read_text() == "untouched\n"
     assert (kindle / "documents" / "Atlas.pdf").read_bytes() == b"%PDF-1.7 atlas"
     assert not (kindle / "documents" / "Atlas.pdf").is_symlink()
-    assert sorted(p.name for p in (kindle / "documents").iterdir()) == ["Atlas.pdf"]
+    # Each copy stages under a name of its own, so a leftover is left alone, not reused.
+    assert sorted(p.name for p in (kindle / "documents").iterdir()) == [".Atlas.pdf.part", "Atlas.pdf"]
 
 
 def test_a_documents_folder_that_links_off_the_kindle_is_refused(ks, usb, tmp_path, capsys):

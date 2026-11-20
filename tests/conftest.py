@@ -225,10 +225,13 @@ class FakeUsb:
     argv; `fail_eject()` makes it exit 1 with an error on stderr.
     """
 
-    def __init__(self, tmp_path, monkeypatch):
+    def __init__(self, tmp_path, monkeypatch, ks):
         self.dir = tmp_path / "fakeusb"
         self.dir.mkdir()
         self.devices = []
+        # A temp dir isn't a real mount point, so the fake answers for its own drives.
+        self.mounts = set()
+        monkeypatch.setattr(ks, "is_mount_point", lambda path: str(path) in self.mounts)
         self.lsblk_json = tmp_path / "lsblk.json"
         self.vendor_dir = tmp_path / "vendors"
         self.vendor_dir.mkdir()
@@ -271,8 +274,20 @@ class FakeUsb:
         for name in (disk, partition):
             if name:
                 (self.vendor_dir / name).write_text(vendor)
+        self.mounts.add(str(mount))
         self._write()
         return mount
+
+    def unmount(self, mount):
+        """The drive at `mount` is unmounted; its (now empty-looking) folder stays."""
+        for dev in self.devices:
+            dev["mountpoints"] = [m for m in dev["mountpoints"] if m != str(mount)]
+        self.mounts.discard(str(mount))
+        self._write()
+
+    def forget_mount(self, mount):
+        """`mount` is no longer a mount point, though lsblk still lists it."""
+        self.mounts.discard(str(mount))
 
     def fail_eject(self, message):
         self.eject_error.write_text(message + "\n")
@@ -282,5 +297,5 @@ class FakeUsb:
 
 
 @pytest.fixture
-def usb(tmp_path, monkeypatch, home):
-    return FakeUsb(tmp_path, monkeypatch)
+def usb(tmp_path, monkeypatch, home, ks):
+    return FakeUsb(tmp_path, monkeypatch, ks)
